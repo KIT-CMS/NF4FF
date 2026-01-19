@@ -1,0 +1,17 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.pkl
+
+# Large datasets
+data/
+src/FF_results
+src/NF_results
+src/Training_results
+src/*.spm
+
+# logs
+*.log
