@@ -1,0 +1,26 @@
+data: data.root
+no_embedding:
+  - diboson_J.root
+  - DYjets_J.root
+  - ST_J.root 
+  - ttbar_J.root
+  - diboson_T.root
+  - DYjets.root
+  - ST_T.root
+  - ttbat_T.root
+  - diboson_L.root
+  - DYjets.root
+  - ST_T.root
+  - ttbar_T.root
+  - Wjets.root
+embedding:
+  - embedding.root
+  - diboson_J.root
+  - DYjets_J.root
+  - ST_J.root 
+  - ttbar_J.root
+  - diboson_T.root
+  - DYjets.root
+  - ST_T.root
+  - ttbat_T.root
+  - Wjets.root

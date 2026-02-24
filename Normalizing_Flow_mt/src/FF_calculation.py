@@ -14,7 +14,9 @@ from classes.config_loader import load_config
 from classes.models import RealNVP
 from classes.dataloading import Datasets
 from classes.path_managment import StorePathHelper
-from logging_setup_configs import setup_logging
+
+from CustomLogging import setup_logging
+
 
 # ----- logging -----
 
@@ -24,6 +26,14 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 class Args(Tap):
     preselection: Literal["loose", "tight"] = "loose"
+
+    njets: Literal["all", "0", "1", "2"] = "all"
+
+# ----- paths -----
+
+config_path = "../configs/config_NF.yaml"
+used_trainings_path = "../configs/paths1.yaml"
+
 
 # ----- constants -----
 
@@ -181,11 +191,7 @@ def plot_ff_distribution(
     fig.savefig(str(outdir.autopath / 'ff.pdf'))
     plt.close(fig)
 
-def plot_ff_estimation(data, ff_eventwise_clipped, global_ff, clip_mask, plot_dir):
-    SR = create_4d_numpy_data(data.SR_tight)
-    SR_weights = data.SR_tight.weight
-    AR = create_4d_numpy_data(data.AR_tight)
-    AR_weights = data.AR_tight.weight
+def plot_ff_estimation(SR, SR_weights, AR, AR_weights, ff_eventwise_clipped, global_ff, clip_mask, plot_dir):
 
     AR_clipped = AR[clip_mask]
     AR_weights_clipped = AR_weights[clip_mask]
@@ -301,17 +307,47 @@ def main():
 
     # --- configs ---
 
-    model_cfg = load_model_config("../configs/config_NF.yaml")
-    paths_cfg = load_config('../configs/used_paths.yaml')
+    model_cfg = load_model_config(config_path)
+    paths_cfg = load_config(used_trainings_path)
 
-    path_AR = paths_cfg["training_results"][preselection]["AR-like"]
-    path_SR = paths_cfg["training_results"][preselection]["SR-like"]
+    path_AR = paths_cfg["training_results"][str(args.njets)][preselection]["AR-like"]
+    path_SR = paths_cfg["training_results"][str(args.njets)][preselection]["SR-like"]
 
     # --- data ---
 
     data = Datasets()
+    SR = create_4d_numpy_data(data.SR_tight)
+    SR_njets = data.SR_tight.njets
+    SR_weights = data.SR_tight.weight
     AR = create_4d_numpy_data(data.AR_tight)
+    AR_njets = data.AR_tight.njets
     AR_weights = data.AR_tight.weight
+
+
+    # --- masking for njets ----
+    
+    if args.njets == "all":
+        AR = AR
+        AR_weights = AR_weights
+        SR = SR
+        SR_weights = SR_weights
+    elif args.njets == '0':
+        AR = AR[AR_njets == 0]
+        AR_weights = AR_weights[AR_njets == 0]
+        SR = SR[SR_njets == 0]
+        SR_weights = SR_weights[SR_njets == 0]
+    elif args.njets == '1':
+        AR = AR[AR_njets == 1]
+        AR_weights = AR_weights[AR_njets == 1]
+        SR = SR[SR_njets == 1]
+        SR_weights = SR_weights[SR_njets == 1]
+    elif args.njets == '2':
+        AR = AR[AR_njets >= 2]
+        AR_weights = AR_weights[AR_njets >= 2]
+        SR = SR[SR_njets >= 2]
+        SR_weights = SR_weights[SR_njets >= 2]
+    else:
+        raise ValueError(f"{args.njets} no valid input")
 
     events = to_tensor(AR, device)
     dim = AR.shape[1]
@@ -347,15 +383,15 @@ def main():
 
     # --- save FF ---
 
-    ff_dir = StorePathHelper(directory=f"../data/FF/{preselection}")
+    ff_dir = StorePathHelper(directory=f"../data/FF/{args.njets}/{preselection}")
     np.save(str(ff_dir.autopath / 'FF_event_wise.npy'), ff_eventwise_full)
 
     # --- plots ---
     
-    plot_dir = StorePathHelper(directory=f'FF_results/{preselection}')
+    plot_dir = StorePathHelper(directory=f'FF_results/{args.njets}/{preselection}')
     plot_pdf_comparison(pdf_AR, pdf_SR, plot_dir)
     plot_ff_distribution(ff_eventwise_clipped, global_ff, global_ff_corr, plot_dir)
-    plot_ff_estimation(data, ff_eventwise_clipped, global_ff_corr, clip_mask, plot_dir)
+    plot_ff_estimation(SR, SR_weights, AR, AR_weights, ff_eventwise_clipped, global_ff_corr, clip_mask, plot_dir)
 
 # -----------
 
