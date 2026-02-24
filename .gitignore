@@ -21,11 +21,9 @@ __pycache__/
 # Large datasets
 
 CODE/
-CustomLogging/
 plots/
 data/
 
-Classifier/CustomLogging/
 Classifier/data/
 Classifier/plots/
 Classifier/Categorizer_results/
@@ -35,8 +33,8 @@ Classifier/Categorizer_results/
 Classifier_all_in_one/.cache/
 Classifier_all_in_one/Categorizer_results/
 Classifier_all_in_one/CODE/
-Classifier_all_in_one/CustomLogging/
 Classifier_all_in_one/plots/
+CustomLogging/
 
 FakeFaktor/
 Helper/
@@ -45,7 +43,6 @@ data/
 Normalizing_Flow_et/plots/
 Normalizing_Flow_et/.cache/
 Normalizing_Flow_et/CODE/
-Normalizing_Flow_et/CustomLogging/
 Normalizing_Flow_et/FF_results/
 Normalizing_Flow_et/NF_results/
 Normalizing_Flow_et/NF_results_new/
