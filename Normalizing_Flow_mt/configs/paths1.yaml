@@ -1,0 +1,19 @@
+# training paths for no njet separation, split: 0.8 training, 0.2 val
+
+training_results:
+  all:
+    loose:
+      AR-like: Training_results_new/all/AR-like/loose/2026-02-05/0_15-29-43/model_checkpoint.pth
+      SR-like: Training_results_new/all/SR-like/loose/2026-02-05/0_15-27-29/model_checkpoint.pth
+  '0':
+    loose:
+      AR-like: ../src/Training_results/0/AR-like/loose/2026-01-20/0_09-49-40/model_checkpoint.pth
+      SR-like: ../src/Training_results/0/SR-like/loose/2026-01-20/0_09-44-34/model_checkpoint.pth
+  '1':
+    loose:
+      AR-like: ../src/Training_results/1/AR-like/loose/2026-01-20/0_10-22-42/model_checkpoint.pth
+      SR-like: ../src/Training_results/1/SR-like/loose/2026-01-20/0_10-18-09/model_checkpoint.pth
+  '2':
+    loose:
+      AR-like: ../src/Training_results/2/AR-like/loose/2026-01-20/0_10-56-48/model_checkpoint.pth
+      SR-like: ../src/Training_results/2/SR-like/loose/2026-01-20/0_10-50-11/model_checkpoint.pth
