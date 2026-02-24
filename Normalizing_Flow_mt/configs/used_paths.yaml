@@ -1,0 +1,12 @@
+training_results:
+ loose:
+  AR-like: ../src/Training_results/AR-like/loose/2026-01-19/0_16-45-26/model_checkpoint.pth
+  SR-like: ../src/Training_results/SR-like/loose/2026-01-19/0_16-46-55/model_checkpoint.pth
+ tight:
+  AR-like: 'Training_results/AR-like/tight/2026-01-16/0_09-28-45/folder1/model_checkpoint.pth'
+  SR-like: 'Training_results/SR-like/tight/2026-01-16/0_09-27-07/folder1/model_checkpoint.pth'
+FF_results:
+ loose:
+  FF_event_wise: data/FF/loose/2026-01-16/0_13-53-47/FF_event_wise.npy
+ tight:
+  FF_event_wise: data/FF/tight/2026-01-16/0_14-21-42/FF_event_wise.npy

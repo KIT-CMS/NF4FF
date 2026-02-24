@@ -1,0 +1,22 @@
+!!python/object:__main__.Config
+bsize_test: 500
+bsize_train: 500
+bsize_val: 500
+eps: 1.0e-08
+grad_clip: 5.0
+hidden_dims: 64
+lr: 0.01
+n_epochs: 300
+n_layers: 8
+s_scale: 3.0
+s_scale_max: 1.5
+scheduler_cooldown: 0
+scheduler_eps: 1.0e-08
+scheduler_factor: 0.1
+scheduler_gamma: 0.1
+scheduler_min_lr: 1.0e-06
+scheduler_patience: 10
+scheduler_step_size: 10
+scheduler_threshold: 0.0001
+use_amp: false
+weight_decay: 1.0e-05

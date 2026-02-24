@@ -1,0 +1,13 @@
+training_results:
+  all:
+    AR-like: Training_results_new/all/AR-like/2026-02-12/0_17-37-20/model_checkpoint.pth
+    SR-like: Training_results_new/all/SR-like/2026-02-05/0_21-03-20/model_checkpoint.pth
+  '0':
+    AR-like: ../src/Training_results/0/AR-like/loose/2026-01-20/0_09-49-40/model_checkpoint.pth
+    SR-like: ../src/Training_results/0/SR-like/loose/2026-01-20/0_09-44-34/model_checkpoint.pth
+  '1':
+    AR-like: ../src/Training_results/1/AR-like/loose/2026-01-20/0_10-22-42/model_checkpoint.pth
+    SR-like: ../src/Training_results/1/SR-like/loose/2026-01-20/0_10-18-09/model_checkpoint.pth
+  '2':
+    AR-like: ../src/Training_results/2/AR-like/loose/2026-01-20/0_10-56-48/model_checkpoint.pth
+    SR-like: ../src/Training_results/2/SR-like/loose/2026-01-20/0_10-50-11/model_checkpoint.pth
