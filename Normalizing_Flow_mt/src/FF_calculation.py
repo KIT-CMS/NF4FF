@@ -14,7 +14,9 @@ from classes.config_loader import load_config
 from classes.models import RealNVP
 from classes.dataloading import Datasets
 from classes.path_managment import StorePathHelper
+
 from CustomLogging import setup_logging
+
 
 # ----- logging -----
 
@@ -24,12 +26,14 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 class Args(Tap):
     preselection: Literal["loose", "tight"] = "loose"
+
     njets: Literal["all", "0", "1", "2"] = "all"
 
 # ----- paths -----
 
 config_path = "../configs/config_NF.yaml"
 used_trainings_path = "../configs/paths1.yaml"
+
 
 # ----- constants -----
 
