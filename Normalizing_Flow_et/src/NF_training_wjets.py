@@ -45,16 +45,9 @@ random.seed(SEED)
 
 t.set_num_threads(8)
 
+with open('../configs/training_variables.yaml', 'r') as f:
+    variables = yaml.safe_load(f)['variables']
 
-variables = [
-    'pt_1',
-    'pt_2',
-    'm_vis',
-    'deltaR_ditaupair',
-    'pt_vis',
-    'eta_1',
-    'eta_2',
-]
 
 dim = len(variables)
 
@@ -87,8 +80,15 @@ N_SAMPLES = 1000000
 
 # ----- TAP Arguments -----
 class Args(Tap):
-    region: Literal["AR-like", "SR-like"] = "AR-like"
     njets: Literal["all", "0", "1", "2"] = "all"
+
+
+# ------ variables definition -------
+
+with open('../configs/training_variables.yaml', 'r') as f:
+    variables = yaml.safe_load(f)['variables']
+dim = len(variables)
+
 
 
 @dataclass
@@ -461,7 +461,7 @@ def main():
 
     data_DR = data_DR[(data_DR.process == 0) & (data_DR.OS == True)].reset_index(drop=True)
 
-    train1, val1, train2, val2 = split_even_odd(data_DR)
+    train1, val1 = train_test_split(data_DR)
 
     train1_AR_like = mask_preselection_loose(AR_like(train1))
     val1_AR_like = mask_preselection_loose(AR_like(val1))
@@ -474,205 +474,202 @@ def main():
         pd.concat([train1_SR_like['weight_wjets'], val1_SR_like['weight_wjets']]).sum()
     )
 
-    if args.region == "AR-like":
-        train1 = train1_AR_like
-        val1 = val1_AR_like
-    elif args.region == "SR-like":
-        train1 = train1_SR_like
-        val1 = val1_SR_like
-
-    if args.njets == "njet0":
-        train1 = train1[train1.njet == 0]
-        val1 = val1[val1.njet == 0]
-    elif args.njets == "njet1":
-        train1 = train1[train1.njet == 1]
-        val1 = val1[val1.njet == 1]
-    elif args.njets == "njet2":
-        train1 = train1[train1.njet >= 2]
-        val1 = val1[val1.njet >= 2]
+    for region, val1, train1 in zip(['AR-like', 'SR-like'], [val1_AR_like, val1_SR_like], [train1_AR_like, train1_SR_like]):
 
 
-    print(data_DR['weight_wjets'])
-
-    train1 = get_my_data(train1, variables).to_torch(device=None)
-    val1 = get_my_data(val1, variables).to_torch(device=None)
-
-
-    X_train = train1.X
-    X_val = val1.X
-    weights_train = train1.weights
-    weights_val = val1.weights  
-
-    weights_train = weights_train / torch.sum(weights_train)
-    weights_val   = weights_val / torch.sum(weights_val)
+        if args.njets == "njet0":
+            train1 = train1[train1.njet == 0]
+            val1 = val1[val1.njet == 0]
+        elif args.njets == "njet1":
+            train1 = train1[train1.njet == 1]
+            val1 = val1[val1.njet == 1]
+        elif args.njets == "njet2":
+            train1 = train1[train1.njet >= 2]
+            val1 = val1[val1.njet >= 2]
 
 
-    # Normalize weights
-    if args.region == "SR-like":
-        weights_train = weights_train * weight_corr_factor
-        weights_val = weights_val * weight_corr_factor
-    elif args.region == "AR-like":
-        pass  # no correction needed for AR-like region
+        print(data_DR['weight_wjets'])
 
-    # -------------------------------------
-    #  DataLoaders
-    # -------------------------------------
-    train_loader = DataLoader(
-        TensorDataset(X_train, weights_train),
-        batch_size=config.bsize_train,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=4
-    )
+        train1 = get_my_data(train1, variables).to_torch(device=None)
+        val1 = get_my_data(val1, variables).to_torch(device=None)
 
-    val_loader = DataLoader(
-        TensorDataset(X_val, weights_val),
-        batch_size=config.bsize_val,
-        shuffle=False,
-        pin_memory=True,
-        num_workers=4
-    )
 
-    # --- model setup ---
+        X_train = train1.X
+        X_val = val1.X
+        weights_train = train1.weights
+        weights_val = val1.weights  
 
-    dim  = len(variables)
+        weights_train = weights_train / torch.sum(weights_train)
+        weights_val   = weights_val / torch.sum(weights_val)
 
-    shift = X_train.mean(dim=0)
-    scale  = X_train.std(dim=0, unbiased=False).clamp_min(1e-12) 
 
-    model = RealNVP(dim=dim, n_layers=config.n_layers, hidden_dims=(config.hidden_dims,), s_scale=config.s_scale).to(device)
-    model.initialize_scaler(shift=shift, scale=scale)           
-    #optimizer = torch.optim.NAdam(model.parameters(), lr=config.lr)
-    optimizer= torch.optim.AdamW(model.parameters(), lr=config.lr)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min',
-        factor=config.scheduler_factor,
-        patience=config.scheduler_patience,
-        threshold=config.scheduler_threshold,
-        threshold_mode='rel',
-        cooldown=config.scheduler_cooldown,
-        min_lr=config.scheduler_min_lr,
-        eps=config.scheduler_eps
-    )
+        # Normalize weights
+        if region == "SR-like":
+            weights_train = weights_train * weight_corr_factor
+            weights_val = weights_val * weight_corr_factor
+        elif region == "AR-like":
+            pass  # no correction needed for AR-like region
 
-    # AMP
-    scaler = torch.amp.GradScaler('cuda',enabled=config.use_amp)
+        # -------------------------------------
+        #  DataLoaders
+        # -------------------------------------
+        train_loader = DataLoader(
+            TensorDataset(X_train, weights_train),
+            batch_size=config.bsize_train,
+            shuffle=True,
+            pin_memory=True,
+            num_workers=4
+        )
 
-    # -------------------------------------
-    #  Training bookkeeping
-    # -------------------------------------
-    NLL_training = []
-    NLL_validation = []
-    best_val_nll = float('inf')
-    counter = 0
-    log_rows = []
+        val_loader = DataLoader(
+            TensorDataset(X_val, weights_val),
+            batch_size=config.bsize_val,
+            shuffle=False,
+            pin_memory=True,
+            num_workers=4
+        )
 
-    # -------------------------------------
-    #  Training Loop
-    # -------------------------------------
-    for epoch in range(1, config.n_epochs + 1):
-        epoch_start = time.time()
+        # --- model setup ---
 
-        # --------------------
-        #  TRAIN
-        # --------------------
-        model.train()
-        train_loss_sum = 0.0
-        train_weight_sum = 0.0
+        dim  = len(variables)
 
-        for Xb, Wb in train_loader:
-            Xb = Xb.to(device, non_blocking=True)
-            Wb = Wb.to(device, non_blocking=True)
+        shift = X_train.mean(dim=0)
+        scale  = X_train.std(dim=0, unbiased=False).clamp_min(1e-12) 
 
-            optimizer.zero_grad(set_to_none=True)
+        model = RealNVP(dim=dim, n_layers=config.n_layers, hidden_dims=(config.hidden_dims,), s_scale=config.s_scale).to(device)
+        model.initialize_scaler(shift=shift, scale=scale)           
+        #optimizer = torch.optim.NAdam(model.parameters(), lr=config.lr)
+        optimizer= torch.optim.AdamW(model.parameters(), lr=config.lr)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min',
+            factor=config.scheduler_factor,
+            patience=config.scheduler_patience,
+            threshold=config.scheduler_threshold,
+            threshold_mode='rel',
+            cooldown=config.scheduler_cooldown,
+            min_lr=config.scheduler_min_lr,
+            eps=config.scheduler_eps
+        )
 
-            with torch.amp.autocast('cuda', enabled=False):
+        # AMP
+        scaler = torch.amp.GradScaler('cuda',enabled=config.use_amp)
 
-                log_px = model(Xb)
-                loss = (-(log_px) * Wb).sum() / Wb.sum()
+        # -------------------------------------
+        #  Training bookkeeping
+        # -------------------------------------
+        NLL_training = []
+        NLL_validation = []
+        best_val_nll = float('inf')
+        counter = 0
+        log_rows = []
 
-            scaler.scale(loss).backward()
-            nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
-            scaler.step(optimizer)
-            scaler.update()
+        # -------------------------------------
+        #  Training Loop
+        # -------------------------------------
+        for epoch in range(1, config.n_epochs + 1):
+            epoch_start = time.time()
 
-            train_loss_sum += loss.item() * Wb.sum().item()
-            train_weight_sum += Wb.sum().item()
+            # --------------------
+            #  TRAIN
+            # --------------------
+            model.train()
+            train_loss_sum = 0.0
+            train_weight_sum = 0.0
 
-        avg_train_nll = train_loss_sum / train_weight_sum
-        NLL_training.append(avg_train_nll)
-
-        # --------------------
-        #  VALIDATION
-        # --------------------
-        model.eval()
-        val_loss_sum = 0.0
-        val_weight_sum = 0.0
-
-        with torch.no_grad():
-            for Xb, Wb in val_loader:
+            for Xb, Wb in train_loader:
                 Xb = Xb.to(device, non_blocking=True)
                 Wb = Wb.to(device, non_blocking=True)
 
+                optimizer.zero_grad(set_to_none=True)
+
                 with torch.amp.autocast('cuda', enabled=False):
+
                     log_px = model(Xb)
-                    vloss = (-(log_px) * Wb).sum() / Wb.sum()
+                    loss = (-(log_px) * Wb).sum() / Wb.sum()
 
-                val_loss_sum += vloss.item() * Wb.sum().item()
-                val_weight_sum += Wb.sum().item()
+                scaler.scale(loss).backward()
+                nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
+                scaler.step(optimizer)
+                scaler.update()
 
-        avg_val_nll = val_loss_sum / val_weight_sum
-        NLL_validation.append(avg_val_nll)
+                train_loss_sum += loss.item() * Wb.sum().item()
+                train_weight_sum += Wb.sum().item()
 
-        scheduler.step(avg_val_nll)
-        epoch_time = time.time() - epoch_start
+            avg_train_nll = train_loss_sum / train_weight_sum
+            NLL_training.append(avg_train_nll)
 
-        log_rows.append({
-        "epoch": epoch,
-        "train_loss": avg_train_nll,
-        "val_loss": avg_val_nll,
-        "lr": scheduler.get_last_lr(),
-        "time_s": epoch_time,
-        "type": "epoch",
-         })
+            # --------------------
+            #  VALIDATION
+            # --------------------
+            model.eval()
+            val_loss_sum = 0.0
+            val_weight_sum = 0.0
 
+            with torch.no_grad():
+                for Xb, Wb in val_loader:
+                    Xb = Xb.to(device, non_blocking=True)
+                    Wb = Wb.to(device, non_blocking=True)
 
-        # --------------------
-        #  Early stopping
-        # --------------------
-        if avg_val_nll < best_val_nll:
-            best_val_nll = avg_val_nll
-            counter = 0
-            checkpoint = {
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-            }
-        else:
-            counter += 1
+                    with torch.amp.autocast('cuda', enabled=False):
+                        log_px = model(Xb)
+                        vloss = (-(log_px) * Wb).sum() / Wb.sum()
 
-        if epoch % 5 == 0:
-            logger.info(f"Epoch {epoch}: train={avg_train_nll:.6f}, val={avg_val_nll:.6f}, lr = {scheduler.get_last_lr()}")
+                    val_loss_sum += vloss.item() * Wb.sum().item()
+                    val_weight_sum += Wb.sum().item()
 
-        if counter >= PATIENCE:
-            logger.info("Early stopping triggered.")
-            break
+            avg_val_nll = val_loss_sum / val_weight_sum
+            NLL_validation.append(avg_val_nll)
 
+            scheduler.step(avg_val_nll)
+            epoch_time = time.time() - epoch_start
 
-    # -------------------------------------
-    #  Save training artifacts
-    # -------------------------------------
-    paths_training = StorePathHelper(directory=f"Training_results_new/{args.njets}/{args.region}")
-    paths_plots = StorePathHelper(directory=f"NF_results_new/{args.njets}/{args.region}")
-
-    torch.save(checkpoint, paths_training.autopath.joinpath("model_checkpoint.pth"))
-
-    pd.DataFrame(log_rows).to_pickle(str(paths_training.autopath.joinpath('training_logs.pkl')))
+            log_rows.append({
+            "epoch": epoch,
+            "train_loss": avg_train_nll,
+            "val_loss": avg_val_nll,
+            "lr": scheduler.get_last_lr(),
+            "time_s": epoch_time,
+            "type": "epoch",
+            })
 
 
-    with open(paths_training.autopath.joinpath("config.yaml"), "w") as f:
-        yaml.dump(config, f)
+            # --------------------
+            #  Early stopping
+            # --------------------
+            if avg_val_nll < best_val_nll:
+                best_val_nll = avg_val_nll
+                counter = 0
+                checkpoint = {
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                }
+            else:
+                counter += 1
 
-    logger.info("Model saved successfully")
+            if epoch % 5 == 0:
+                logger.info(f"Epoch {epoch}: train={avg_train_nll:.6f}, val={avg_val_nll:.6f}, lr = {scheduler.get_last_lr()}")
+
+            if counter >= PATIENCE:
+                logger.info("Early stopping triggered.")
+                break
+
+
+        # -------------------------------------
+        #  Save training artifacts
+        # -------------------------------------
+        paths_training = StorePathHelper(directory=f"Training_results_new/Wjets/{args.njets}/{region}")
+
+        torch.save(checkpoint, paths_training.autopath.joinpath("model_checkpoint.pth"))
+        torch.save(checkpoint, f"Training_results_new/Wjets/{args.njets}/{region}/latest/model_checkpoint.pth")
+
+        pd.DataFrame(log_rows).to_pickle(str(paths_training.autopath.joinpath('training_logs.pkl')))
+        pd.DataFrame(log_rows).to_pickle(str(f"Training_results_new/Wjets/{args.njets}/{region}/latest/training_logs.pkl"))
+
+
+        with open(paths_training.autopath.joinpath("config.yaml"), "w") as f:
+            yaml.dump(config, f)
+
+        logger.info("Model saved successfully")
 
 # --------------
 
