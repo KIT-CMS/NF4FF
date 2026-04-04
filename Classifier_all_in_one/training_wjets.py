@@ -42,6 +42,13 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 INPUT_DIM = 20
 CONFIG_MODEL_PATH = 'configs/config_NN.yaml'
 PATIENCE = 25
+QCD_WEIGHT_BINNING = 'dynamic'
+QCD_WEIGHT_N_BINS = 10
+QCD_WEIGHT_DYNAMIC_DELTA = 2.0
+QCD_WEIGHT_DYNAMIC_DELTA_LAST = 2.0
+QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD = 2.0
+QCD_WEIGHT_REFRESH_EVERY = 5
+QCD_WEIGHT_REFRESH_UNTIL_EPOCH = 100
 
 # ----- data classes -----
 @dataclass
@@ -117,6 +124,129 @@ class _collection:
     @property
     def unrolled(self) -> tuple[Any, ...]:
         return (self.values, self.weights, self.histograms)
+
+
+def find_dynamic_bin_edges(
+    values_A: Union[np.ndarray, t.Tensor],
+    weights_A: Union[np.ndarray, t.Tensor],
+    values_B: Union[np.ndarray, t.Tensor],
+    weights_B: Union[np.ndarray, t.Tensor],
+    delta: float = 0.0,
+    delta_last: float = 0.0,
+    min_A_yield: float = 0.0,
+    max_val: float = 1.0,
+    min_val: float = 0.0,
+) -> Union[np.ndarray, t.Tensor]:
+    """
+    Finds bin edges dynamically by walking from max_val down to min_val.
+    Ensures that for each bin: Sum(w_A) >= min_A_yield AND Sum(w_A) - Sum(w_B) > delta.
+    Compatible with both NumPy arrays and PyTorch tensors.
+    """
+
+    is_torch = isinstance(values_A, t.Tensor)
+
+    if is_torch:
+        values_all = t.cat([values_A, values_B])
+        weights_net = t.cat([weights_A, -weights_B])
+        weights_A_only = t.cat([weights_A, t.zeros_like(weights_B)])
+
+        sort_idx = t.argsort(values_all, descending=True)
+
+    else:
+        values_all = np.concatenate([values_A, values_B])
+        weights_net = np.concatenate([weights_A, -weights_B])
+        weights_A_only = np.concatenate([weights_A, np.zeros_like(weights_B)])
+
+        sort_idx = np.argsort(values_all)[::-1]
+
+    weights_sorted = values_all[sort_idx]
+    weights_net_sorted = weights_net[sort_idx]
+    weights_A_only_sorted = weights_A_only[sort_idx]
+
+    values_sorted_list = weights_sorted.tolist()
+    weights_net_sorted_list = weights_net_sorted.tolist()
+    weights_A_only_sorted_list = weights_A_only_sorted.tolist()
+
+    # Top-Down Cumulative Sum Walking
+    edges, accumulative_net, accumulative_A = [max_val], 0.0, 0.0
+    for i in range(len(values_sorted_list)):
+        if values_sorted_list[i] < min_val:
+            break
+
+        accumulative_net += weights_net_sorted_list[i]
+        accumulative_A += weights_A_only_sorted_list[i]
+
+        if accumulative_A >= min_A_yield and accumulative_net > delta:
+            edges.append(values_sorted_list[i])
+            accumulative_net, accumulative_A = 0.0, 0.0
+
+    edges.append(min_val)
+
+    # Upward merging if needed
+    while len(edges) > 2:
+        low, high = edges[-1], edges[-2]
+
+        if is_torch:
+            mask = (values_all >= low) & (values_all < high)
+            final_bin_net = t.sum(weights_net[mask]).item()
+        else:
+            mask = (values_all >= low) & (values_all < high)
+            final_bin_net = np.sum(weights_net[mask])
+
+        if final_bin_net > delta_last:
+            break
+
+        edges.pop(-2)
+
+    edges.reverse()
+
+    if is_torch:
+        return t.tensor(edges, dtype=values_A.dtype, device=values_A.device)
+    else:
+        return np.array(edges, dtype=values_A.dtype)
+
+
+def build_qcd_weight_bins(
+    qcd_values: t.Tensor,
+    qcd_weights: t.Tensor,
+    non_qcd_values: t.Tensor,
+    non_qcd_weights: t.Tensor,
+    binning: Literal['quantile', 'dynamic'] = 'quantile',
+    n_bins: int = 10,
+    dynamic_delta: float = 100.0,
+    dynamic_delta_last: float = 100.0,
+    dynamic_min_qcd_yield: float = 100.0,
+) -> t.Tensor:
+    if binning == 'quantile':
+        bins = t.quantile(qcd_values, t.linspace(0, 1, n_bins + 1, device=qcd_values.device))
+    elif binning == 'dynamic':
+        min_val = t.minimum(qcd_values.min(), non_qcd_values.min()).item()
+        max_val = t.maximum(qcd_values.max(), non_qcd_values.max()).item()
+        bins = find_dynamic_bin_edges(
+            values_A=qcd_values,
+            weights_A=qcd_weights,
+            values_B=non_qcd_values,
+            weights_B=non_qcd_weights,
+            delta=dynamic_delta,
+            delta_last=dynamic_delta_last,
+            min_A_yield=dynamic_min_qcd_yield,
+            min_val=min_val,
+            max_val=max_val,
+        )
+    else:
+        raise ValueError(f"Unknown qcd binning option: {binning}")
+
+    bins = t.unique(bins, sorted=True)
+    if bins.numel() < 2:
+        logger.warning("QCD bin builder returned <2 unique edges. Falling back to quantile binning.")
+        bins = t.quantile(qcd_values, t.linspace(0, 1, n_bins + 1, device=qcd_values.device))
+        bins = t.unique(bins, sorted=True)
+
+    if bins.numel() < 2:
+        raise RuntimeError("Could not construct valid QCD bin edges.")
+
+    return bins
+
 
 
 # ------ lists -----
@@ -233,6 +363,84 @@ def get_class_weights(
             _weights[mask] = 0.0
 
     return _weights * (weights if class_weighted else 1.0)
+
+
+@torch.no_grad()
+def evaluate_binary_classifier(
+    model: nn.Module,
+    loader: DataLoader,
+    criterion: nn.Module,
+    device: torch.device,
+    w_signal: float = 1.0,
+    w_bkg: float = 1.0,
+    w_qcd: float = 3.0,
+) -> tuple[float, float]:
+    model.eval()
+    loss_sum = 0.0
+    weight_sum = 0.0
+    correct = 0
+    total = 0
+
+    for Xb, yb, wb, pb in loader:
+        Xb = Xb.to(device, non_blocking=True)
+        yb = yb.to(device, non_blocking=True)
+        wb = wb.to(device, non_blocking=True)
+        pb = pb.to(device, non_blocking=True)
+
+        logits = model(Xb)
+        y = yb.float().view(-1, 1)
+        w = wb.float().view(-1, 1)
+
+        is_signal = (y == 1).float()
+        is_qcd = (pb == 2).float().view(-1, 1)
+        is_bkg = (y == 0).float() * (1 - is_qcd)
+
+        base_loss = criterion(logits.float(), y)
+        loss_per_event = (
+            w_signal * base_loss * is_signal
+            + w_bkg * base_loss * is_bkg
+            + w_qcd * base_loss * is_qcd
+        )
+
+        loss_sum += (loss_per_event * w).sum().item()
+        weight_sum += w.sum().item()
+
+        preds = (logits >= 0.5).float()
+        correct += (preds.view(-1) == yb.view(-1)).sum().item()
+        total += yb.numel()
+
+    avg_loss = loss_sum / max(weight_sum, 1e-12)
+    accuracy = correct / max(total, 1)
+    return avg_loss, accuracy
+
+
+def should_refresh_qcd_weights(epoch: int) -> bool:
+    return epoch == 1 or (epoch % QCD_WEIGHT_REFRESH_EVERY == 0 and epoch <= QCD_WEIGHT_REFRESH_UNTIL_EPOCH)
+
+
+def refresh_qcd_weights(
+    dataset: _component_collection,
+    model: nn.Module,
+    qcd_mask_os_loaded: torch.Tensor,
+    device: torch.device,
+) -> _component_collection:
+    return get_ff_dataset_with_qcd_weights_os(
+        dataset=dataset,
+        model=model,
+        qcd_mask_os_loaded=qcd_mask_os_loaded,
+        device=device,
+        njets_idx=11,
+        njets_groups=((0,), (1,), (2, 100)),
+        subtract_njets_based=True,
+        reweight_njets_based=True,
+        qcd_weight_binning=QCD_WEIGHT_BINNING,
+        qcd_weight_n_bins=QCD_WEIGHT_N_BINS,
+        qcd_weight_dynamic_delta=QCD_WEIGHT_DYNAMIC_DELTA,
+        qcd_weight_dynamic_delta_last=QCD_WEIGHT_DYNAMIC_DELTA_LAST,
+        qcd_weight_dynamic_min_qcd_yield=QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD,
+    )
+
+
 # inside training.py
 
 def _predict_in_batches(x: torch.Tensor, model: torch.nn.Module, batch_size: int = 65536) -> torch.Tensor:
@@ -256,6 +464,11 @@ def get_ff_dataset_with_qcd_weights_os(
     njets_groups: Tuple[Tuple[int, ...], ...] = ((0,), (1,), (2, 100)),
     subtract_njets_based: bool = False,
     reweight_njets_based: bool = True,
+    qcd_weight_binning: Literal['quantile', 'dynamic'] = 'quantile',
+    qcd_weight_n_bins: int = 10,
+    qcd_weight_dynamic_delta: float = 100.0,
+    qcd_weight_dynamic_delta_last: float = 100.0,
+    qcd_weight_dynamic_min_qcd_yield: float = 100.0,
 ) -> _component_collection:
     """
     Build a dataset with OS QCD weights computed from SS control region shapes.
@@ -325,13 +538,29 @@ def get_ff_dataset_with_qcd_weights_os(
             ):
                 continue
 
-            # Build histogram of non-QCD in SS using bins from QCD SS quantiles
+            bins = build_qcd_weight_bins(
+                qcd_values=prediction.ss[qcd_mask_ss_sr].squeeze(),
+                qcd_weights=_dataset.weights.ss[qcd_mask_ss_sr].squeeze(),
+                non_qcd_values=prediction.ss[non_qcd_mask_ss_sr].squeeze(),
+                non_qcd_weights=_dataset.weights.ss[non_qcd_mask_ss_sr].squeeze(),
+                binning=qcd_weight_binning,
+                n_bins=qcd_weight_n_bins,
+                dynamic_delta=qcd_weight_dynamic_delta,
+                dynamic_delta_last=qcd_weight_dynamic_delta_last,
+                dynamic_min_qcd_yield=qcd_weight_dynamic_min_qcd_yield,
+            )
+
+            logger.info(
+                "QCD weight bins (%s, njets=%s, SR_like=%s): %d",
+                qcd_weight_binning,
+                njets_group,
+                sr_value,
+                max(int(bins.numel()) - 1, 0),
+            )
+
             non_qcd_ss_hist, bins = t.histogram(
                 input=prediction.ss[non_qcd_mask_ss_sr],
-                bins=t.quantile(
-                    prediction.ss[qcd_mask_ss_sr],
-                    t.linspace(0, 1, 11),
-                ),
+                bins=bins,
                 weight=_dataset.weights.ss[non_qcd_mask_ss_sr],
             )
 
@@ -527,6 +756,19 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     logger.info(f"Using device: {device}")
+    logger.info(
+        "QCD weight binning: %s (n_bins=%d, delta=%.1f, delta_last=%.1f, min_qcd_yield=%.1f)",
+        QCD_WEIGHT_BINNING,
+        QCD_WEIGHT_N_BINS,
+        QCD_WEIGHT_DYNAMIC_DELTA,
+        QCD_WEIGHT_DYNAMIC_DELTA_LAST,
+        QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD,
+    )
+    logger.info(
+        "QCD weight refresh cadence: every %d epochs until epoch %d",
+        QCD_WEIGHT_REFRESH_EVERY,
+        QCD_WEIGHT_REFRESH_UNTIL_EPOCH,
+    )
 
     if device.type == "cuda":
         logger.info(torch.cuda.get_device_name())
@@ -578,38 +820,34 @@ def main():
         checkpoint = None
 
         log_rows = []
-        logger.info("Start training ")
+        logger.info("Starting training for %s", fold)
 
         njets_groups = ((0,), (1,), (2, 1000))
 
         qcd_mask_os_train = (train_pt.Y.os == 2)
         qcd_mask_os_val = (val_pt.Y.os == 2)
-        for epoch in range(config.n_epochs):
+        for epoch in range(1, config.n_epochs + 1):
+
+            refresh_qcd = should_refresh_qcd_weights(epoch)
 
             # ------- update qcd weights (every 5 epochs) ------
 
-            if epoch % 5 == 0 and epoch < 100:
+            if refresh_qcd:
+                logger.info("Refreshing QCD weights for %s at epoch %d", fold, epoch)
                 model.eval()
                 with torch.no_grad():
-                    train_pt = get_ff_dataset_with_qcd_weights_os(
-                        dataset = train_pt,
-                        model = model,
-                        qcd_mask_os_loaded = qcd_mask_os_train,
-                        device = device,
-                        njets_idx = 11,
-                        njets_groups = ((0,), (1,), (2,100)),
-                        subtract_njets_based = True,
-                        reweight_njets_based = True,
+                    train_pt = refresh_qcd_weights(
+                        dataset=train_pt,
+                        model=model,
+                        qcd_mask_os_loaded=qcd_mask_os_train,
+                        device=device,
                     )
 
-                    val_pt = get_ff_dataset_with_qcd_weights_os(
-                        dataset = val_pt,
-                        model = model,
-                        qcd_mask_os_loaded = qcd_mask_os_val,
-                        device = device,
-                        njets_groups = ((0,), (1,), (2,100)),
-                        subtract_njets_based = True,
-                        reweight_njets_based = True,
+                    val_pt = refresh_qcd_weights(
+                        dataset=val_pt,
+                        model=model,
+                        qcd_mask_os_loaded=qcd_mask_os_val,
+                        device=device,
                     )
 
 
@@ -707,54 +945,25 @@ def main():
                 train_loss_sum += batch_loss.item()
                 train_weight_sum += batch_weight.item()
 
-            train_loss = train_loss_sum / train_weight_sum
-
-
-
-            # ------- VALIDATION -------
-            model.eval()
-            val_loss_sum = 0.0
-            val_weight_sum = 0.0
-            correct = 0
-            total = 0
-
-
-            with torch.no_grad():
-                for Xb, yb, wb, pb in val_loader:
-
-                    Xb = Xb.to(device, non_blocking=True)
-                    yb = yb.to(device, non_blocking=True)
-                    wb = wb.to(device, non_blocking=True)
-                    pb = pb.to(device, non_blocking=True)
-
-                    logits = model(Xb)
-                    y = yb.float().view(-1, 1)
-                    w = wb.float().view(-1, 1)
-
-                    is_signal = (y == 1).float()
-                    is_qcd    = (pb == 2).float().view(-1, 1)
-                    is_bkg    = ((y == 0).float() * (1 - is_qcd))
-
-                    base_loss = criterion(logits.float(), y)
-
-                    val_loss_event = (
-                        w_signal * base_loss * is_signal
-                        + w_bkg    * base_loss * is_bkg
-                        + w_qcd    * base_loss * is_qcd
-                    )
-
-                    val_loss_sum += (val_loss_event * w).sum().item()
-                    val_weight_sum += w.sum().item()
-
-
-                    # Predictions for accuracy
-                    preds = (logits >= 0.5).float()
-                    correct += (preds.view(-1) == yb.view(-1)).sum().item()
-                    total += yb.numel()
-
-
-            val_loss = val_loss_sum / val_weight_sum
-            val_acc = correct / total
+            train_loss_optim = train_loss_sum / max(train_weight_sum, 1e-12)
+            train_loss, train_acc = evaluate_binary_classifier(
+                model,
+                train_loader,
+                criterion,
+                device,
+                w_signal=w_signal,
+                w_bkg=w_bkg,
+                w_qcd=w_qcd,
+            )
+            val_loss, val_acc = evaluate_binary_classifier(
+                model,
+                val_loader,
+                criterion,
+                device,
+                w_signal=w_signal,
+                w_bkg=w_bkg,
+                w_qcd=w_qcd,
+            )
             epoch_time = time.time() - epoch_start
 
 
@@ -764,17 +973,30 @@ def main():
             current_lr = optimizer.param_groups[0]['lr']
 
             logger.info(
-                f"Epoch {epoch}: train={train_loss:.6f}, "
-                f"val={val_loss:.6f}, acc={val_acc:.4f}, LR={current_lr:.6e}"
+                "%s epoch %03d/%03d | train=%.6f | train_optim=%.6f | train_acc=%.4f | val=%.6f | val_acc=%.4f | lr=%.6e | time=%.2fs | qcd_refresh=%s",
+                fold,
+                epoch,
+                config.n_epochs,
+                train_loss,
+                train_loss_optim,
+                train_acc,
+                val_loss,
+                val_acc,
+                current_lr,
+                epoch_time,
+                "yes" if refresh_qcd else "no",
             )
 
             log_rows.append({
                 "epoch": epoch,
                 "train_loss": train_loss,
+                "train_loss_optim": train_loss_optim,
+                "train_acc": train_acc,
                 "val_loss": val_loss,
                 "val_acc": val_acc,
                 "lr": current_lr,
                 "time_s": epoch_time,
+                "qcd_weight_refresh": refresh_qcd,
                 "type": "epoch"
             })
 
@@ -794,7 +1016,7 @@ def main():
             else:
                 counter += 1
                 if counter >= PATIENCE:
-                    logger.info(f"Early stopping at epoch {epoch}")
+                    logger.info("Early stopping for %s at epoch %d", fold, epoch)
                     break
 
         # save checkpoint
@@ -803,26 +1025,19 @@ def main():
         # Ensure QCD weights are computed one final time before saving
         model.eval()
         with torch.no_grad():
-            train_pt = get_ff_dataset_with_qcd_weights_os(
-                dataset = train_pt,
-                model = model,
-                qcd_mask_os_loaded = qcd_mask_os_train,
-                device = device,
-                njets_idx = 11,
-                njets_groups = ((0,), (1,), (2,100)),
-                subtract_njets_based = True,
-                reweight_njets_based = True,
+            logger.info("Running final QCD-weight refresh before saving %s", fold)
+            train_pt = refresh_qcd_weights(
+                dataset=train_pt,
+                model=model,
+                qcd_mask_os_loaded=qcd_mask_os_train,
+                device=device,
             )
 
-            val_pt = get_ff_dataset_with_qcd_weights_os(
-                dataset = val_pt,
-                model = model,
-                qcd_mask_os_loaded = qcd_mask_os_val,
-                device = device,
-                njets_idx = 11,
-                njets_groups = ((0,), (1,), (2,100)),
-                subtract_njets_based = True,
-                reweight_njets_based = True,
+            val_pt = refresh_qcd_weights(
+                dataset=val_pt,
+                model=model,
+                qcd_mask_os_loaded=qcd_mask_os_val,
+                device=device,
             )
 
         if checkpoint is None:
@@ -840,6 +1055,7 @@ def main():
         
         # save log file
         pd.DataFrame(log_rows).to_pickle(str(paths_training.autopath.joinpath('training_logs.pkl')))
+        logger.info("Saved %s artifacts to %s", fold, paths_training.autopath)
 
         
 

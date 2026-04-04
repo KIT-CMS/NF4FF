@@ -1,6 +1,5 @@
 import random
 import logging
-import os
 from dataclasses import KW_ONLY, dataclass
 import CODE.HELPER as helper
 import math
@@ -38,14 +37,6 @@ t.set_num_threads(8)
 
 class Args(Tap):
     bins: Literal['equi_populated' , 'uniform'] ='equi_populated'
-    n_bins: int = 20
-    data_complete_path: str = '../data/data_complete.feather'
-    output_dir: str = 'plots'
-    #ckpt_pth_fold1: str = 'Categorizer_results/inclusive/fold1/2026-02-19/0_19-25-17/'
-    #ckpt_pth_fold2: str = 'Categorizer_results/inclusive/fold2/2026-02-19/0_19-28-32/'
-    ckpt_pth_fold1: str = 'Categorizer_results/inclusive/fold1/2026-03-30/0_15-59-24/'
-    ckpt_pth_fold2: str = 'Categorizer_results/inclusive/fold2/2026-03-30/0_16-07-09/'
-    write_back: bool = False
 
 # ----- Constants
 
@@ -54,44 +45,8 @@ INPUT_DIM = 37
 MC_PATH   = "../data/MC_data/MC_data.pkl"
 DATA_PATH = "../data/MC_data/data.pkl" 
 
-
-# one hidden layer
-
-#ckpt_pth_fold1 = 'Categorizer_results/inclusive/fold1/2026-02-16/0_13-04-24/'
-#ckpt_pth_fold2 = 'Categorizer_results/inclusive/fold2/2026-02-16/0_13-18-44/'
-
-# two hidden layers
-
-PROCESS_ORDER = [1, 10, 2, 3, 4, 5, 6, 7, 8, 9, 0]
-PROCESS_LABELS = {
-    0: 'QCD',
-    1: 'Wjets',
-    2: 'diboson_J',
-    3: 'diboson_L',
-    4: 'DYjets_J',
-    5: 'DYjets_L',
-    6: 'ST_J',
-    7: 'ST_L',
-    8: 'ttbar_J',
-    9: 'ttbar_L',
-    10: 'embedding',
-}
-
-PROCESS_COLORS = {
-    0: '#b9ac70',
-    1: '#e76300',
-    2: '#9f887e',
-    3: '#94a4a2',
-    4: '#b9ac70',
-    5: '#3f90da',
-    6: '#717581',
-    7: '#5882ae',
-    8: '#964c88',
-    9: '#615fc8',
-    10: '#ffa90e',
-}
-
-
+ckpt_pth_fold1 = 'Categorizer_results/inclusive/fold1/2026-02-19/0_19-25-17/'
+ckpt_pth_fold2 = 'Categorizer_results/inclusive/fold2/2026-02-19/0_19-28-32/'
 
 # ------- lists ----
 
@@ -106,16 +61,6 @@ variables = [
 
 dim = len(variables)
 
-
-CHECKPOINT_PATH = (
-    "../src/Categorizer_results/2026-01-29/0_16-32-09/model_checkpoint.pth"
-)
-
-LOG_PATH = (
-    "../src/Categorizer_results/2026-01-29/0_16-32-09/training_logs.pkl"
-)
-
-
 # ----- Logging -----
 
 logger = setup_logging(logger=logging.getLogger(__name__))
@@ -123,7 +68,6 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 
 # ------ config -----
-
 
 @dataclass
 class Config:
@@ -560,35 +504,6 @@ def plot_nn_output(
     plt.close()
 
 
-def _collect_processwise_probs_weights(
-    model1: nn.Module,
-    model2: nn.Module,
-    train1: _component_collection,
-    val1: _component_collection,
-    train2: _component_collection,
-    val2: _component_collection,
-    process_ids: List[int],
-    device: torch.device,
-) -> Tuple[Dict[int, np.ndarray], Dict[int, np.ndarray]]:
-    probs_by_process: Dict[int, np.ndarray] = {}
-    weights_by_process: Dict[int, np.ndarray] = {}
-
-    model_pairs = ((model1, train2, val2), (model2, train1, val1))
-    for process_id in process_ids:
-        prob_parts = []
-        weight_parts = []
-        for model, train_ds, val_ds in model_pairs:
-            for ds in (train_ds, val_ds):
-                mask = ds.process.os == process_id
-                prob_parts.append(predict_probabilities(model, ds.X.os[mask], device))
-                weight_parts.append(ds.weights.os[mask])
-
-        probs_by_process[process_id] = torch.concat(prob_parts, dim=0).detach().cpu().numpy()
-        weights_by_process[process_id] = torch.concat(weight_parts, dim=0).detach().cpu().numpy()
-
-    return probs_by_process, weights_by_process
-
-
 # ----- main -----
 
 def main() -> None:
@@ -602,12 +517,12 @@ def main() -> None:
 
 
 
-    model1 = load_model(INPUT_DIM, args.ckpt_pth_fold1 + 'model_checkpoint.pth', device)
-    model2 = load_model(INPUT_DIM, args.ckpt_pth_fold2 + 'model_checkpoint.pth', device)
+    model1 = load_model(INPUT_DIM, ckpt_pth_fold1 + 'model_checkpoint.pth', device)
+    model2 = load_model(INPUT_DIM, ckpt_pth_fold2 + 'model_checkpoint.pth', device)
 
     logger.info("Loading data")
 
-    data_complete = pd.read_feather(args.data_complete_path)
+    data_complete = pd.read_feather('../data/data_complete.feather')
     data_DR = mask_DR(data_complete)
     train1, val1, train2, val2 = split_even_odd(data_DR)
 
@@ -630,46 +545,89 @@ def main() -> None:
                                   data_v1.X.os], dim = 0).detach().cpu().numpy()
 
     '''
-    weights_qcd_train1 = torch.load(args.ckpt_pth_fold1 + 'qcd_weights_train.pt')
-    weights_qcd_val1 = torch.load(args.ckpt_pth_fold1 + 'qcd_weights_val.pt')
-    weights_qcd_train2 = torch.load(args.ckpt_pth_fold2 + 'qcd_weights_train.pt')
-    weights_qcd_val2 = torch.load(args.ckpt_pth_fold2 + 'qcd_weights_val.pt')
+    weights_qcd_train1 = torch.load(ckpt_pth_fold1 + 'qcd_weights_train.pt')
+    weights_qcd_val1 = torch.load(ckpt_pth_fold1 + 'qcd_weights_val.pt')
+    weights_qcd_train2 = torch.load(ckpt_pth_fold2 + 'qcd_weights_train.pt')
+    weights_qcd_val2 = torch.load(ckpt_pth_fold2 + 'qcd_weights_val.pt')
     
     probs_datat1 = predict_probabilities(model1, data_t1.X.os, device)
     probs_datav1 = predict_probabilities(model1, data_v1.X.os, device)
     probs_datat2 = predict_probabilities(model2, data_t2.X.os, device)
     probs_datav2 = predict_probabilities(model2, data_v2.X.os, device)
 
-    probs_by_process, weights_by_process = _collect_processwise_probs_weights(
-        model1=model1,
-        model2=model2,
-        train1=train1,
-        val1=val1,
-        train2=train2,
-        val2=val2,
-        process_ids=PROCESS_ORDER,
-        device=device,
-    )
+    probs_Wjetst1 = predict_probabilities(model1, train2.X.os[train2.process.os == 1], device)
+    probs_Wjetsv1 = predict_probabilities(model1, val2.X.os[val2.process.os == 1], device)
+    probs_Wjetst2 = predict_probabilities(model2, train1.X.os[train1.process.os == 1], device)
+    probs_Wjetsv2 = predict_probabilities(model2, val1.X.os[val1.process.os == 1], device)
 
-    probs_Wjets = probs_by_process[1]
+    probs_diboson_Jt1 = predict_probabilities(model1, train2.X.os[train2.process.os == 2], device)
+    probs_diboson_Jv1 = predict_probabilities(model1, val2.X.os[val2.process.os == 2], device)
+    probs_diboson_Jt2 = predict_probabilities(model2, train1.X.os[train1.process.os == 2], device)
+    probs_diboson_Jv2 = predict_probabilities(model2, val1.X.os[val1.process.os == 2], device)
+
+    probs_diboson_Lt1 = predict_probabilities(model1, train2.X.os[train2.process.os == 3], device)
+    probs_diboson_Lv1 = predict_probabilities(model1, val2.X.os[val2.process.os == 3], device)
+    probs_diboson_Lt2 = predict_probabilities(model2, train1.X.os[train1.process.os == 3], device)
+    probs_diboson_Lv2 = predict_probabilities(model2, val1.X.os[val1.process.os == 3], device)
+
+    probs_DYjets_Jt1 = predict_probabilities(model1, train2.X.os[train2.process.os == 4], device)
+    probs_DYjets_Jv1 = predict_probabilities(model1, val2.X.os[val2.process.os == 4], device)
+    probs_DYjets_Jt2 = predict_probabilities(model2, train1.X.os[train1.process.os == 4], device)
+    probs_DYjets_Jv2 = predict_probabilities(model2, val1.X.os[val1.process.os == 4], device)
+
+    probs_DYjets_Lt1 = predict_probabilities(model1, train2.X.os[train2.process.os == 5], device)
+    probs_DYjets_Lv1 = predict_probabilities(model1, val2.X.os[val2.process.os == 5], device)
+    probs_DYjets_Lt2 = predict_probabilities(model2, train1.X.os[train1.process.os == 5], device)
+    probs_DYjets_Lv2 = predict_probabilities(model2, val1.X.os[val1.process.os == 5], device)
+
+    probs_ST_Jt1 = predict_probabilities(model1, train2.X.os[train2.process.os == 6], device)
+    probs_ST_Jv1 = predict_probabilities(model1, val2.X.os[val2.process.os == 6], device)
+    probs_ST_Jt2 = predict_probabilities(model2, train1.X.os[train1.process.os == 6], device)
+    probs_ST_Jv2 = predict_probabilities(model2, val1.X.os[val1.process.os == 6], device)
+
+    probs_ST_Lt1 = predict_probabilities(model1, train2.X.os[train2.process.os == 7], device)
+    probs_ST_Lv1 = predict_probabilities(model1, val2.X.os[val2.process.os == 7], device)
+    probs_ST_Lt2 = predict_probabilities(model2, train1.X.os[train1.process.os == 7], device)
+    probs_ST_Lv2 = predict_probabilities(model2, val1.X.os[val1.process.os == 7], device)
+
+    probs_ttbar_Jt1 = predict_probabilities(model1, train2.X.os[train2.process.os == 8], device)
+    probs_ttbar_Jv1 = predict_probabilities(model1, val2.X.os[val2.process.os == 8], device)
+    probs_ttbar_Jt2 = predict_probabilities(model2, train1.X.os[train1.process.os == 8], device)
+    probs_ttbar_Jv2 = predict_probabilities(model2, val1.X.os[val1.process.os == 8], device)
+
+    probs_ttbar_Lt1 = predict_probabilities(model1, train2.X.os[train2.process.os == 9], device)
+    probs_ttbar_Lv1 = predict_probabilities(model1, val2.X.os[val2.process.os == 9], device)
+    probs_ttbar_Lt2 = predict_probabilities(model2, train1.X.os[train1.process.os == 9], device)
+    probs_ttbar_Lv2 = predict_probabilities(model2, val1.X.os[val1.process.os == 9], device)
+
+    probs_embeddingt1 = predict_probabilities(model1, train2.X.os[train2.process.os == 10], device)
+    probs_embeddingv1 = predict_probabilities(model1, val2.X.os[val2.process.os == 10], device)
+    probs_embeddingt2 = predict_probabilities(model2, train1.X.os[train1.process.os == 10], device)
+    probs_embeddingv2 = predict_probabilities(model2, val1.X.os[val1.process.os == 10], device)
+                                                              
+    probs_nFFt1 = predict_probabilities(model1, train2.X.os[train2.process.os > 1], device)
+    probs_nFFv1 = predict_probabilities(model1, val2.X.os[val2.process.os > 1], device)
+    probs_nFFt2 = predict_probabilities(model2, train1.X.os[train1.process.os > 1], device)
+    probs_nFFv2 = predict_probabilities(model2, val1.X.os[val1.process.os > 1], device)
+
+    probs_qcdt1 = predict_probabilities(model1, train2.X.os[train2.process.os == 0], device)
+    probs_qcdv1 = predict_probabilities(model1, val2.X.os[val2.process.os == 0], device)
+    probs_qcdt2 = predict_probabilities(model2, train1.X.os[train1.process.os == 0], device)
+    probs_qcdv2 = predict_probabilities(model2, val1.X.os[val1.process.os == 0], device)
+    
+
+    probs_Wjets = torch.concat([probs_Wjetst1, probs_Wjetsv1, probs_Wjetst2, probs_Wjetsv2], dim = 0).detach().cpu().numpy()
     probs_data = torch.concat([probs_datat1, probs_datav1, probs_datat2, probs_datav2], dim = 0).detach().cpu().numpy()
-    probs_diboson_J = probs_by_process[2]
-    probs_diboson_L = probs_by_process[3]
-    probs_ST_J = probs_by_process[6]
-    probs_ST_L = probs_by_process[7]
-    probs_DYjets_J = probs_by_process[4]
-    probs_DYjets_L = probs_by_process[5]
-    probs_ttbar_J = probs_by_process[8]
-    probs_ttbar_L = probs_by_process[9]
-    probs_embedding = probs_by_process[10]
-    probs_qcd = probs_by_process[0]
-
-    probs_nFF = torch.concat([
-        predict_probabilities(model1, train2.X.os[train2.process.os > 1], device),
-        predict_probabilities(model1, val2.X.os[val2.process.os > 1], device),
-        predict_probabilities(model2, train1.X.os[train1.process.os > 1], device),
-        predict_probabilities(model2, val1.X.os[val1.process.os > 1], device),
-    ], dim=0).detach().cpu().numpy()
+    probs_diboson_J = torch.concat([probs_diboson_Jt1, probs_diboson_Jv1, probs_diboson_Jt2, probs_diboson_Jv2], dim = 0).detach().cpu().numpy()
+    probs_diboson_L = torch.concat([probs_diboson_Lt1, probs_diboson_Lv1, probs_diboson_Lt2, probs_diboson_Lv2], dim = 0).detach().cpu().numpy()
+    probs_ST_J = torch.concat([probs_ST_Jt1, probs_ST_Jv1, probs_ST_Jt2, probs_ST_Jv2], dim = 0).detach().cpu().numpy()
+    probs_ST_L = torch.concat([probs_ST_Lt1, probs_ST_Lv1, probs_ST_Lt2, probs_ST_Lv2], dim = 0).detach().cpu().numpy()
+    probs_DYjets_J = torch.concat([probs_DYjets_Jt1, probs_DYjets_Jv1, probs_DYjets_Jt2, probs_DYjets_Jv2], dim = 0).detach().cpu().numpy()
+    probs_DYjets_L = torch.concat([probs_DYjets_Lt1, probs_DYjets_Lv1, probs_DYjets_Lt2, probs_DYjets_Lv2], dim = 0).detach().cpu().numpy()
+    probs_ttbar_J = torch.concat([probs_ttbar_Jt1, probs_ttbar_Jv1, probs_ttbar_Jt2, probs_ttbar_Jv2], dim = 0).detach().cpu().numpy()
+    probs_ttbar_L = torch.concat([probs_ttbar_Lt1, probs_ttbar_Lv1, probs_ttbar_Lt2, probs_ttbar_Lv2], dim = 0).detach().cpu().numpy()
+    probs_embedding = torch.concat([probs_embeddingt1, probs_embeddingv1, probs_embeddingt2, probs_embeddingv2], dim = 0).detach().cpu().numpy()
+    probs_nFF = torch.concat([probs_nFFt1, probs_nFFv1, probs_nFFt2, probs_nFFv2], dim = 0).detach().cpu().numpy()
 
     probs_diboson = np.concatenate([probs_diboson_J, probs_diboson_L], axis = 0)
     probs_ST = np.concatenate([probs_ST_J, probs_ST_L], axis = 0)
@@ -677,20 +635,70 @@ def main() -> None:
     probs_ttbar = np.concatenate([probs_ttbar_J, probs_ttbar_L], axis = 0)
 
 
-    weights_Wjets = weights_by_process[1]
+    probs_qcd = torch.concat([probs_qcdt1, probs_qcdv1, probs_qcdt2, probs_qcdv2], dim = 0).detach().cpu().numpy()
+
+    weights_Wjets = torch.concat(
+        [train2.weights.os[train2.process.os == 1], val2.weights.os[val2.process.os == 1], 
+         train1.weights.os[train1.process.os == 1], val1.weights.os[val1.process.os == 1]], 
+         dim = 0).detach().cpu().numpy()
     weights_data = torch.concat(
         [train2.weights.os[train2.process.os == 0], val2.weights.os[val2.process.os == 0],
          train1.weights.os[train1.process.os == 0], val1.weights.os[val1.process.os == 0]], 
          dim = 0).detach().cpu().numpy()
-    weights_diboson_J = weights_by_process[2]
-    weights_diboson_L = weights_by_process[3]
-    weights_DYjets_J = weights_by_process[4]
-    weights_DYjets_L = weights_by_process[5]
-    weights_ST_J = weights_by_process[6]
-    weights_ST_L = weights_by_process[7]
-    weights_ttbar_J = weights_by_process[8]
-    weights_ttbar_L = weights_by_process[9]
-    weights_embedding = weights_by_process[10]
+    weights_diboson_J = torch.concat(
+        [train2.weights.os[train2.process.os == 2], 
+             val2.weights.os[val2.process.os == 2],
+         train1.weights.os[train1.process.os == 2], 
+             val1.weights.os[val1.process.os == 2]], 
+         dim = 0).detach().cpu().numpy()
+    weights_diboson_L = torch.concat(
+        [train2.weights.os[train2.process.os == 3], 
+             val2.weights.os[val2.process.os == 3],
+         train1.weights.os[train1.process.os == 3], 
+             val1.weights.os[val1.process.os == 3]], 
+         dim = 0).detach().cpu().numpy()
+    weights_DYjets_J = torch.concat(
+        [train2.weights.os[train2.process.os == 4], 
+             val2.weights.os[val2.process.os == 4],
+         train1.weights.os[train1.process.os == 4], 
+             val1.weights.os[val1.process.os == 4]], 
+         dim = 0).detach().cpu().numpy()
+    weights_DYjets_L = torch.concat(
+        [train2.weights.os[train2.process.os == 5], 
+             val2.weights.os[val2.process.os == 5],
+         train1.weights.os[train1.process.os == 5], 
+             val1.weights.os[val1.process.os == 5]], 
+         dim = 0).detach().cpu().numpy()
+    weights_ST_J = torch.concat(
+        [train2.weights.os[train2.process.os == 6], 
+             val2.weights.os[val2.process.os == 6],
+         train1.weights.os[train1.process.os == 6], 
+             val1.weights.os[val1.process.os == 6]], 
+         dim = 0).detach().cpu().numpy()
+    weights_ST_L = torch.concat(
+        [train2.weights.os[train2.process.os == 7],
+             val2.weights.os[val2.process.os == 7],
+         train1.weights.os[train1.process.os == 7], 
+             val1.weights.os[val1.process.os == 7]], 
+         dim = 0).detach().cpu().numpy()
+    weights_ttbar_J = torch.concat(
+        [train2.weights.os[train2.process.os == 8], 
+             val2.weights.os[val2.process.os == 8],
+         train1.weights.os[train1.process.os == 8], 
+             val1.weights.os[val1.process.os == 8]], 
+         dim = 0).detach().cpu().numpy()
+    weights_ttbar_L = torch.concat(
+        [train2.weights.os[train2.process.os == 9], 
+             val2.weights.os[val2.process.os == 9],
+         train1.weights.os[train1.process.os == 9], 
+             val1.weights.os[val1.process.os == 9]], 
+         dim = 0).detach().cpu().numpy()
+    weights_embedding = torch.concat(
+        [train2.weights.os[train2.process.os == 10], 
+             val2.weights.os[val2.process.os == 10],
+         train1.weights.os[train1.process.os == 10], 
+             val1.weights.os[val1.process.os == 10]], 
+         dim = 0).detach().cpu().numpy()
 
     weights_nFF = torch.concat(
         [train2.weights.os[train2.process.os > 1], 
@@ -726,9 +734,9 @@ def main() -> None:
     # -------- calculate 
 
     if args.bins == 'equi_populated':
-        bins = equi_populated_bins(probs_data, args.n_bins)
+        bins = equi_populated_bins(probs_data, 20)
     elif args.bins == 'uniform':
-        bins = np.linspace(0, 1, args.n_bins + 1)
+        bins = np.linspace(0, 1, 21)
 
     bin_widths = np.diff(bins)
 
@@ -742,24 +750,42 @@ def main() -> None:
     )
 
 
-    if args.write_back:
-        mask_wjets_data = (data_DR["OS"] == True) & (data_DR["process"] == 0)
-        indices_wjets_DR = data_DR.index[mask_wjets_data].to_numpy()
+    # Add Wjets_weights back into data_DR
 
-        assert len(indices_wjets_DR) == len(Wjets_weights), (
-            f"Error: DR mask gives {len(indices_wjets_DR)} rows but "
-            f"Wjets_weights has {len(Wjets_weights)} entries"
-        )
 
-        data_DR["weight_wjets"] = np.nan
-        data_DR.loc[indices_wjets_DR, "weight_wjets"] = Wjets_weights
+    # Mask that corresponds exactly to the probs_data events
+    mask_wjets_data = (data_DR["OS"] == True) & (data_DR["process"] == 0)
 
-        data_complete["weight_wjets"] = np.nan
-        data_complete.loc[data_DR.index, "weight_wjets"] = data_DR["weight_wjets"]
-        data_complete.reset_index(drop=True).to_feather(args.data_complete_path)
-        logger.info("Successfully inserted weight_wjets into %s", args.data_complete_path)
-    else:
-        logger.info("Skipping write-back to data frame/file (--write_back is False).")
+    # Extract row positions inside data_DR
+    indices_wjets_DR = data_DR.index[mask_wjets_data].to_numpy()
+
+    # Safety check
+    assert len(indices_wjets_DR) == len(Wjets_weights), (
+        f"Error: DR mask gives {len(indices_wjets_DR)} rows but "
+        f"Wjets_weights has {len(Wjets_weights)} entries"
+    )
+
+    # Add new column (NaN everywhere initially)
+    data_DR["weight_wjets"] = np.nan
+    data_DR.loc[indices_wjets_DR, "weight_wjets"] = Wjets_weights
+
+
+    # ----------------------------------------------------
+    # Insert weight_wjets into the FULL data_complete
+    # ----------------------------------------------------
+
+    # Create empty column in full dataset
+    data_complete["weight_wjets"] = np.nan
+
+    # Copy values from data_DR into their original row positions
+    data_complete.loc[data_DR.index, "weight_wjets"] = data_DR["weight_wjets"]
+
+    # ----------------------------------------------------
+    # Save updated file
+    # ----------------------------------------------------
+    data_complete.reset_index(drop=True).to_feather("../data/data_complete.feather")
+
+    logger.info("Successfully inserted weight_wjets into full data_complete.feather")
 
     
 
@@ -851,8 +877,8 @@ def main() -> None:
     ax[0].errorbar(bin_centers,counts_data_reduced, yerr = y_error, xerr = x_error, color = 'black', fmt = 'o' ,markersize = 5, label = 'data (reduced)')
     ax[0].bar(bin_centers, Wjets_counts, width = bin_widths, color ='#e76300', label = 'MC W+jets')
     ax[0].set_ylabel('Events')
-    ax[0].legend()
-    adjust_ylim_for_legend(ax[0])
+    ax[0].legend(loc='upper right',bbox_to_anchor=(0.8, 0.9), ncol=3, frameon=False)
+    ax[0].set_ylim([0, 20000])
 
     ax[1].errorbar(bin_centers, counts_data_reduced/Wjets_counts, yerr = y_error/data_counts, xerr = x_error, label = 'Ratio', color = 'black', fmt = 'o')
     ax[1].fill_between(
@@ -869,15 +895,14 @@ def main() -> None:
     ax[1].set_ylim([0.5, 1.5])
     ax[1].legend()
     ax[1].set_xlabel('NN output')
-    os.makedirs(args.output_dir, exist_ok=True)
-    fig.savefig(os.path.join(args.output_dir, 'results_data_reduced_wjets.png'))
-    fig.savefig(os.path.join(args.output_dir, 'results_data_reduced_wjets.pdf'))
+    fig.savefig('plots/results_data_reduced_wjets.png')
+    fig.savefig('plots/results_data_reduced_wjets.pdf')
 
     fig, ax = plt.subplots(
-        3, 1,
+        2, 1,
         figsize=(12,12),
         sharex=True,
-        gridspec_kw={'height_ratios': [3,1,1], 'hspace': 0.05}
+        gridspec_kw={'height_ratios': [3,1], 'hspace': 0.05}
     )
 
     CMS_CHANNEL_TITLE(ax)
@@ -925,6 +950,9 @@ def main() -> None:
     ax[1].grid(True, linestyle=':', alpha=0.7)
     ax[1].tick_params(direction='in', top=True, right=True)
     ax[1].legend(loc = 'upper right', ncol = 2)
+    ax[1].set_xlabel(r'NN output')
+
+    '''    
     ax[2].bar(bin_centers, Wjets_counts_norm, color ='#e76300', width = bin_widths)
     ax[2].bar(bin_centers, embedding_counts_norm, bottom = Wjets_counts_norm, color = '#ffa90e', width = bin_widths)
     ax[2].bar(bin_centers, diboson_counts_norm, bottom = Wjets_counts_norm + embedding_counts_norm, color = '#94a4a2', width = bin_widths)
@@ -936,16 +964,17 @@ def main() -> None:
     ax[2].set_ylabel('Proc. frac.')
     #ax[2].set_ylim([0,1])
     # Tight layout
+    '''
 
     fig.tight_layout()
     fig.subplots_adjust(hspace=0.05)
 
     if args.bins == 'equi_populated':
-        fig.savefig(os.path.join(args.output_dir, 'results_training_equi_wjets.png'))
-        fig.savefig(os.path.join(args.output_dir, 'results_training_equi_wjets.pdf'))
+        fig.savefig(f'plots/results_training_equi_wjets.png')
+        fig.savefig(f'plots/results_training_equi_wjets.pdf')
     elif args.bins == 'uniform':
-        fig.savefig(os.path.join(args.output_dir, 'results_training_uniform.png'))
-        fig.savefig(os.path.join(args.output_dir, 'results_training_uniform.pdf'))
+        fig.savefig(f'plots/results_training_uniform.png')
+        fig.savefig(f'plots/results_training_uniform.pdf')
 
 
 
