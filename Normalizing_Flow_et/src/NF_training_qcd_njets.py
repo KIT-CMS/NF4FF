@@ -1,41 +1,24 @@
-import math
-import torch
+import torch as t
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
-from classes.config_loader import load_config
-from classes.training import train_epoch, val_epoch
 from classes.path_managment import StorePathHelper
 import logging
-from CustomLogging import setup_logging, TrainingDashboard, LogContext
+from CustomLogging import setup_logging, LogContext
 import yaml
 import numpy as np
 import random
-from contextlib import contextmanager
-from tap import Tap
-from typing import Literal, Generator
-import matplotlib.pyplot as plt
-from dataclasses import dataclass
-from typing import Tuple, Any, Dict
-import numpy as np
+from sklearn.model_selection import train_test_split
 import pandas as pd
 import torch as t
-import CODE.HELPER as helper
-import logging
 import random
-from dataclasses import KW_ONLY, dataclass
+import math
+from classes.NeuralNetworks import RealNVP_NN, GroupedNFRouter, RealNVP, AffineCoupling, MLP
+from classes.Dataclasses import _component_collection, RealNVP_config, _same_sign_opposite_sign_split
+from classes.Collection import get_my_data_qcd
+
 from typing import (Any, Callable, Dict, Iterable, List, Protocol, Tuple,
                     Union, runtime_checkable)
-from contextlib import contextmanager
-from sklearn.model_selection import train_test_split
-
-from CustomLogging import setup_logging
 import time
-
-from classes.NeuralNetworks import RealNVP, AffineCoupling, MLP
-from classes.Dataclasses import _component_collection, Config
-from classes.Collection import get_my_data_wjets
-
 
 
 SEED = 42
@@ -58,25 +41,21 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 log = LogContext(logger)
 # ----- constants -----
 
-#N_EPOCHS_MAX = 500
+N_EPOCHS_MAX = 50
 PATIENCE = 30
 N_SAMPLES = 1000000
 
 
-# ----- TAP Arguments -----
-class Args(Tap):
-    njets: Literal["all", "0", "1", "2"] = "all"
+# ------ variables definition -------
 
+with open('../configs/training_variables.yaml', 'r') as f:
+    variables = yaml.safe_load(f)['variables']
 
+dim = len(variables)
 
-# ----- Configuration -----
-
-
-def load_config(path: str = "config.yaml") -> Dict[str, Any]:
-    with open(path, "r") as f:
-        return yaml.safe_load(f)
 
 # ------ model ------
+
 
 class MLP(nn.Module):
     def __init__(self, in_dim, out_dim, hidden_dims=(128, 128)):
@@ -94,10 +73,6 @@ class MLP(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-
-# -------------------------
-# Affine Coupling Layer
-# -------------------------
 class AffineCoupling(nn.Module):
     def __init__(self, dim, mask, hidden_dims=(128, 128), s_scale=2.0):
         super().__init__()
@@ -111,10 +86,10 @@ class AffineCoupling(nn.Module):
     def forward(self, x):
         x_masked = x * self.mask
 
-        s, t = torch.chunk(self.st_net(x_masked), 2, dim=-1)
-        s = torch.tanh(s) * self.s_scale
+        s, shift = t.chunk(self.st_net(x_masked), 2, dim=-1)
+        s = t.tanh(s) * self.s_scale
 
-        y = x_masked + (1 - self.mask) * (x * torch.exp(s) + t)
+        y = x_masked + (1 - self.mask) * (x * t.exp(s) + shift)
         log_det = ((1 - self.mask) * s).sum(dim=-1)
 
         return y, log_det
@@ -122,25 +97,23 @@ class AffineCoupling(nn.Module):
     def inverse(self, y):
         y_masked = y * self.mask
 
-        s, t = torch.chunk(self.st_net(y_masked), 2, dim=-1)
-        s = torch.tanh(s) * self.s_scale
+        s, t = t.chunk(self.st_net(y_masked), 2, dim=-1)
+        s = t.tanh(s) * self.s_scale
 
-        x = y_masked + (1 - self.mask) * ((y - t) * torch.exp(-s))
+        x = y_masked + (1 - self.mask) * ((y - t) * t.exp(-s))
         return x
-
-
 
 class RealNVP(nn.Module):
     """
     Stack of affine coupling layers with alternating masks.
     Base distribution: standard Normal.
     """
-    def __init__(self, dim, n_layers=6, hidden_dims=(128, 128), s_scale=2.0, device= torch.device("cuda" if torch.cuda.is_available() else "cpu")):
+    def __init__(self, dim, n_layers=6, hidden_dims=(128, 128), s_scale=2.0, device= t.device("cuda" if t.cuda.is_available() else "cpu")):
         super().__init__()
-        torch.device(device)
+        t.device(device)
         self.dim = dim
         logger.info(f"Dimension of RealNVP input: {self.dim}")
-        base_mask = torch.tensor([i % 2 for i in range(dim)], dtype=torch.float32)
+        base_mask = t.tensor([i % 2 for i in range(dim)], dtype=t.float32)
 
         masks = []
         for i in range(n_layers):
@@ -156,11 +129,11 @@ class RealNVP(nn.Module):
         ])
 
         # Learnable base distribution parameters (optional; here fixed to standard normal)
-        self.register_buffer('base_mean', torch.zeros(dim))
-        self.register_buffer('base_log_std', torch.zeros(dim))
+        self.register_buffer('base_mean', t.zeros(dim))
+        self.register_buffer('base_log_std', t.zeros(dim))
                 # StandardScaler or RobustScaler
-        self.register_buffer("_scaler_shift", torch.full((dim,), 0.0))
-        self.register_buffer("_scaler_scale", torch.full((dim,), 1.0))
+        self.register_buffer("_scaler_shift", t.full((dim,), 0.0))
+        self.register_buffer("_scaler_scale", t.full((dim,), 1.0))
 
     def _init_permute(self, m):
         # For invertible mixing layers, orthogonal init is robust
@@ -181,7 +154,7 @@ class RealNVP(nn.Module):
 
     def f(self, x):
         """Forward through all couplings: x -> z. Returns z and sum log-dets."""
-        log_det_total = torch.zeros(x.shape[0], device=x.device)
+        log_det_total = t.zeros(x.shape[0], device=x.device)
         z = x
         for layer in self.couplings:
             z, log_det = layer(z)
@@ -200,7 +173,7 @@ class RealNVP(nn.Module):
         """Compute log p(x) via change of variables."""
         z, log_det = self.f(x)
         # base log prob (diagonal Normal)
-        std = torch.exp(self.base_log_std)
+        std = t.exp(self.base_log_std)
         log_pz = (-0.5 * (((z - self.base_mean) / std) ** 2).sum(dim=-1)
                   - 0.5 * self.dim * math.log(2 * math.pi)
                   - self.base_log_std.sum())
@@ -208,8 +181,8 @@ class RealNVP(nn.Module):
 
     def sample(self, n):
         """Sample x by drawing z from base and mapping through inverse."""
-        std = torch.exp(self.base_log_std)
-        z = self.base_mean + std * torch.randn(n, self.dim, device=self.base_mean.device)
+        std = t.exp(self.base_log_std)
+        z = self.base_mean + std * t.randn(n, self.dim, device=self.base_mean.device)
         x_scaled = self.f_inv(z)
         # map back to original (un-scaled) space: x = x_scaled * scale + shift
         x = x_scaled * self._scaler_scale.to(x_scaled.device) + self._scaler_shift.to(x_scaled.device)
@@ -218,14 +191,14 @@ class RealNVP(nn.Module):
 
     @property
     def _is_initialized(self):
-        initialized = (torch.isnan(self._scaler_shift) | torch.isnan(self._scaler_scale)).sum() == 0
+        initialized = (t.isnan(self._scaler_shift) | t.isnan(self._scaler_scale)).sum() == 0
         initialized &= (self._scaler_scale != 1).all() & (self._scaler_shift != 0).all()
         return initialized
 
     def initialize_scaler(
         self,
-        shift: Union[np.ndarray, torch.Tensor, None] = None,
-        scale: Union[np.ndarray, torch.Tensor, None] = None,
+        shift: Union[np.ndarray, t.Tensor, None] = None,
+        scale: Union[np.ndarray, t.Tensor, None] = None,
     ):
         # Both shift and scale must be provided (no partial initialization)
         if shift is None or scale is None:
@@ -237,8 +210,8 @@ class RealNVP(nn.Module):
             raise ValueError(msg)
 
         # convert numpy arrays to tensors if needed
-        shift = torch.from_numpy(shift) if isinstance(shift, np.ndarray) else shift
-        scale = torch.from_numpy(scale) if isinstance(scale, np.ndarray) else scale
+        shift = t.from_numpy(shift) if isinstance(shift, np.ndarray) else shift
+        scale = t.from_numpy(scale) if isinstance(scale, np.ndarray) else scale
 
         if self._is_initialized:
             logger.warning("Scaler already initialized. Overwriting the current values.")
@@ -257,29 +230,8 @@ class RealNVP(nn.Module):
         logp_scaled = self.log_prob(Xs)
         # account for the scaling Jacobian: Xs = (X - shift)/scale -> det = prod(1/scale)
         # so log|det| = -sum(log(scale)). Add this constant per-sample.
-        log_det_scale = -torch.log(self._scaler_scale.to(X.device)).sum()
+        log_det_scale = -t.log(self._scaler_scale.to(X.device)).sum()
         return logp_scaled + log_det_scale
-
-
-@torch.no_grad()
-def estimate_Z(flow, T1, T2, nsamples=512):
-    """
-    Monte Carlo estimate of Z = P(x1 > T1 AND x2 > T2)
-    using samples from the current flow.
-    """
-    s = flow.sample(nsamples)                # shape: (nsamples, dim)
-    mask = (s[:, 0] > T1) & (s[:, 1] > T2)   # apply your thresholds here
-    Z = mask.float().mean()
-    return torch.clamp(Z, 1e-12, 1.0)
-
-
-def truncated_log_prob(flow, x, T1, T2, Z):
-    """
-    Computes log p_obs(x) = log p_true(x) - log Z
-    where Z is estimated separately.
-    """
-    lp_true = flow.forward(x)     # your RealNVP.forward already returns log p(x)
-    return lp_true - torch.log(Z)
 
 
 # ------ functions and masks --------
@@ -287,11 +239,11 @@ def truncated_log_prob(flow, x, T1, T2, Z):
 def mask_DR(df):
 
     mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
-    mask_a2 = (df.nbtag == 0)
-    mask_a4 = ((df.iso_1 > 0.0) & (df.iso_1 < 0.15))
+    mask_a2 = (df.q_1 * df.q_2 > 0)
+    mask_a4 = ((df.iso_1 > 0.02) & (df.iso_1 < 0.15))
     mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_a6 = (df.mt_1 > 70)
-    mask_DR = (mask_a1 & mask_a2  & mask_a4 & mask_a5 & mask_a6)
+    mask_a6 = (df.mt_1 < 50)
+    mask_DR = (mask_a1 & mask_a2 & mask_a4 & mask_a5 & mask_a6)
 
     return df[mask_DR].copy()
 
@@ -300,74 +252,42 @@ def mask_preselection_loose(df):
     mask_pt = (df.pt_1 >= 33) & (df.pt_2 >= 30)
     #mask_m_vis = (df.m_vis >= 35)
     mask_tau_decay_mode = (df.tau_decaymode_2 == 0) | (df.tau_decaymode_2 == 1) | (df.tau_decaymode_2 == 10) | (df.tau_decaymode_2 == 11)
-    return df[mask_eta & mask_pt &  mask_tau_decay_mode]
-
+    return df[mask_eta & mask_pt & mask_tau_decay_mode]
 
 def SR_like(df):
     mask_s1 = (df.id_tau_vsJet_Tight_2 > 0.5)
     return(df[mask_s1])
 
-# AR-like mask
 def AR_like(df):
     mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5) & (df.id_tau_vsJet_Tight_2 < 0.5))
 
     return(df[mask_a1])
 
 
-def split_even_odd(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    fold1 = df[df.event_var  == 0].reset_index(drop=True)
-    fold2 = df[df.event_var == 1].reset_index(drop=True)
-
-    train1, val1 = train_test_split(
-        fold1, test_size=0.5, random_state=SEED
-    )
-    train2, val2 = train_test_split(
-        fold2, test_size=0.5, random_state=SEED
-    )
-
-    return train1.reset_index(drop=True), val1.reset_index(drop=True), train2.reset_index(drop=True), val2.reset_index(drop=True)
-
-def get_my_data(df, training_var):
-    _df = df
-
-    return _component_collection(
-        X=_df[training_var].to_numpy(dtype=np.float32),
-        weights=_df["weight_wjets"].to_numpy(dtype=np.float32),
-
-    )
-
-
-
 # ----- main -----
 
 def main():
 
-    torch.manual_seed(42)
+    t.manual_seed(42)
     np.random.seed(42)
     random.seed(42)
 
-    args = Args().parse_args()
-
     config_path = '../configs/config_NF.yaml'
 
-
-    raw = load_config(config_path)
-    config = Config.from_dict(raw)
+    config = RealNVP_config.from_yaml(config_path)
 
     # --- load device ---
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = t.device("cuda" if t.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
 
     # --- load data ---
 
     data_complete = pd.read_feather('../../data/data_complete.feather')
 
-
-
     data_DR = mask_DR(data_complete)
 
-    data_DR = data_DR[(data_DR.process == 0) & (data_DR.OS == True)].reset_index(drop=True)
+    data_DR = data_DR[(data_DR.process == 0) & (data_DR.SS == True)].reset_index(drop=True)
 
     train1, val1 = train_test_split(data_DR)
 
@@ -377,29 +297,15 @@ def main():
     val1_SR_like = mask_preselection_loose(SR_like(val1))    
 
     weight_corr_factor = (
-        pd.concat([train1_AR_like['weight_wjets'], val1_AR_like['weight_wjets']]).sum()
+        pd.concat([train1_AR_like['weight_qcd'], val1_AR_like['weight_qcd']]).sum()
         /
-        pd.concat([train1_SR_like['weight_wjets'], val1_SR_like['weight_wjets']]).sum()
+        pd.concat([train1_SR_like['weight_qcd'], val1_SR_like['weight_qcd']]).sum()
     )
 
     for region, val1, train1 in zip(['AR-like', 'SR-like'], [val1_AR_like, val1_SR_like], [train1_AR_like, train1_SR_like]):
-
-
-        if args.njets == "njet0":
-            train1 = train1[train1.njet == 0]
-            val1 = val1[val1.njet == 0]
-        elif args.njets == "njet1":
-            train1 = train1[train1.njet == 1]
-            val1 = val1[val1.njet == 1]
-        elif args.njets == "njet2":
-            train1 = train1[train1.njet >= 2]
-            val1 = val1[val1.njet >= 2]
-
-
-        print(data_DR['weight_wjets'])
-
-        train1 = get_my_data(train1, variables).to_torch(device=None)
-        val1 = get_my_data(val1, variables).to_torch(device=None)
+        variables_with_njets = ['njets'] + variables
+        train1 = get_my_data_qcd(train1, variables_with_njets).to_torch(device=None)
+        val1 = get_my_data_qcd(val1, variables_with_njets).to_torch(device=None)
 
 
         X_train = train1.X
@@ -407,20 +313,20 @@ def main():
         weights_train = train1.weights
         weights_val = val1.weights  
 
-        weights_train = weights_train / torch.sum(weights_train)
-        weights_val   = weights_val / torch.sum(weights_val)
+        weights_train = weights_train / t.sum(weights_train)
+        weights_val   = weights_val / t.sum(weights_val)
 
 
-        # Normalize weights
+        # ----------- Normalize weights -----------
+
         if region == "SR-like":
             weights_train = weights_train * weight_corr_factor
             weights_val = weights_val * weight_corr_factor
         elif region == "AR-like":
-            pass  # no correction needed for AR-like region
+            pass 
 
-        # -------------------------------------
-        #  DataLoaders
-        # -------------------------------------
+        # -------------- DataLoaders ------------
+
         train_loader = DataLoader(
             TensorDataset(X_train, weights_train),
             batch_size=config.bsize_train,
@@ -437,18 +343,85 @@ def main():
             num_workers=4
         )
 
+
         # --- model setup ---
 
         dim  = len(variables)
 
-        shift = X_train.mean(dim=0)
-        scale  = X_train.std(dim=0, unbiased=False).clamp_min(1e-12) 
+        shift = X_train[:, 1:].mean(dim=0)
+        scale  = X_train[:, 1:].std(dim=0, unbiased=False).clamp_min(1e-12) 
+        
+        model_0 = RealNVP(
+            dim = dim,
+            n_layers = config.n_layers,
+            hidden_dims=(config.hidden_dims,),
+            s_scale = config.s_scale,
+        ).to(device)
+        
+        model_1 = RealNVP(
+            dim = dim,
+            n_layers = config.n_layers,
+            hidden_dims=(config.hidden_dims,),
+            s_scale = config.s_scale,
+        ).to(device)
+        
+        model_2 = RealNVP(
+            dim = dim,
+            n_layers = config.n_layers,
+            hidden_dims=(config.hidden_dims,),
+            s_scale = config.s_scale,
+        ).to(device)
+        
+        '''
+        model_0 = RealNVP_NN(
+            input_nodes=dim, 
+            hidden_nodes = (config.hidden_dims,),
+            n_layers=config.n_layers, 
+            dropout = 0.0,
+            activation = 'ReLU',
+            s_scale = config.s_scale,
+            ).to(device)
+        model_1 = RealNVP_NN(
+            input_nodes=dim, 
+            hidden_nodes = (config.hidden_dims,),
+            n_layers=config.n_layers, 
+            dropout = 0.0,
+            activation = 'ReLU',
+            s_scale = config.s_scale,
+            ).to(device)
+        model_2 = RealNVP_NN(
+            input_nodes=dim, 
+            hidden_nodes = (config.hidden_dims,),
+            n_layers=config.n_layers, 
+            dropout = 0.0,
+            activation = 'ReLU',
+            s_scale = config.s_scale,
+            ).to(device)
+        '''
+        model_0.initialize_scaler(shift, scale)
+        model_1.initialize_scaler(shift, scale)
+        model_2.initialize_scaler(shift, scale)
 
-        model = RealNVP(dim=dim, n_layers=config.n_layers, hidden_dims=(config.hidden_dims,), s_scale=config.s_scale).to(device)
-        model.initialize_scaler(shift=shift, scale=scale)           
-        #optimizer = torch.optim.NAdam(model.parameters(), lr=config.lr)
-        optimizer= torch.optim.AdamW(model.parameters(), lr=config.lr)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        router = GroupedNFRouter()
+
+        router._fallback_payload = model_2
+        router._wrapped_delegate = model_2
+        
+        # Register all models
+        router.models.append(model_0)
+        router.models.append(model_1)
+        router.models.append(model_2)
+        
+        router._logic_pipeline = [
+            ([(0, (0,))], model_0),
+            ([(0, (1,))], model_1),
+            ([(0, (2, 11000))], model_2),
+        ]
+       
+       
+        #optimizer = t.optim.NAdam(model.parameters(), lr=config.lr)
+        optimizer= t.optim.AdamW(router.parameters(), lr=config.lr)
+        scheduler = t.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min',
             factor=config.scheduler_factor,
             patience=config.scheduler_patience,
@@ -460,7 +433,7 @@ def main():
         )
 
         # AMP
-        scaler = torch.amp.GradScaler('cuda',enabled=config.use_amp)
+        scaler = t.amp.GradScaler('cuda',enabled=config.use_amp)
 
         # -------------------------------------
         #  Training bookkeeping
@@ -471,15 +444,6 @@ def main():
         counter = 0
         log_rows = []
 
-
-        T1 = 33.0    # threshold for variable 0
-        T2 = 30.0    # threshold for variable 1
-        # ----------------------------------
-
-        Z = None
-
-
-
         # -------------------------------------
         #  Training Loop
         # -------------------------------------
@@ -487,10 +451,12 @@ def main():
             for epoch in range(1, config.n_epochs + 1):
                 epoch_start = time.time()
 
+
+
                 # --------------------
                 #  TRAIN
                 # --------------------
-                model.train()
+                router.train()
                 train_loss_sum = 0.0
                 train_weight_sum = 0.0
 
@@ -500,45 +466,47 @@ def main():
 
                     optimizer.zero_grad(set_to_none=True)
 
-
                     #if (Z is None) or (step % 20 == 0):
                     #    Z = estimate_Z(model, T1, T2, nsamples=512)
 
 
-                    with torch.amp.autocast('cuda', enabled=False):
+                    with t.amp.autocast('cuda', enabled=False):
 
-                        log_px = model(Xb)
-                        loss = (-(log_px) * Wb).sum() / Wb.sum()
+
+                        log_px = router(Xb)      # [N,1]
+                        log_px = log_px.squeeze(1)   # [N]
+                        loss = (-(log_px) * Wb).sum()
+
 
                     scaler.scale(loss).backward()
-                    nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
+                    nn.utils.clip_grad_norm_(router.parameters(), config.grad_clip)
                     scaler.step(optimizer)
                     scaler.update()
 
-                    train_loss_sum += loss.item() * Wb.sum().item()
+                    train_loss_sum += loss.item()
                     train_weight_sum += Wb.sum().item()
 
                 avg_train_nll = train_loss_sum / train_weight_sum
                 NLL_training.append(avg_train_nll)
 
                 # --------------------
-                #  VALIDATION
-                # --------------------
-                model.eval()
+
+                router.eval()
                 val_loss_sum = 0.0
                 val_weight_sum = 0.0
 
-                with torch.no_grad():
+                with t.no_grad():
                     for Xb, Wb in val_loader:
                         Xb = Xb.to(device, non_blocking=True)
                         Wb = Wb.to(device, non_blocking=True)
 
-                        with torch.amp.autocast('cuda', enabled=False):
+                        with t.amp.autocast('cuda', enabled=False):
                             #log_p_obs = truncated_log_prob(model, Xb, T1, T2, Z)
-                            log_px = model(Xb)
-                            vloss = (-(log_px) * Wb).sum() / Wb.sum()
+                            log_px = router(Xb)      # [N,1]
+                            log_px = log_px.squeeze(1)   # [N]
+                            vloss = (-(log_px) * Wb).sum()
 
-                        val_loss_sum += vloss.item() * Wb.sum().item()
+                        val_loss_sum += vloss.item()
                         val_weight_sum += Wb.sum().item()
 
                 avg_val_nll = val_loss_sum / val_weight_sum
@@ -563,12 +531,19 @@ def main():
                 if avg_val_nll < best_val_nll:
                     best_val_nll = avg_val_nll
                     counter = 0
+
                     checkpoint = {
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
+                        "router_state_dict": router.state_dict(),       # <- preferred key
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        # store a plain dict, not the config object itself
+                        #"config": config.to_dict() if hasattr(config, "to_dict") else dict(config),
+                        "variables": list(variables),                   # <- features only (NO 'njets')
+                        "schema": "grouped_nf_router_v1"
                     }
+
                 else:
                     counter += 1
+
                 dash.update(epoch = epoch, train_loss=np.round(avg_train_nll, 6), val_loss=np.round(avg_val_nll, 6), lr = scheduler.get_last_lr(), region = region)
 
                 if counter >= PATIENCE:
@@ -576,21 +551,20 @@ def main():
                     break
 
 
+
         # -------------------------------------
         #  Save training artifacts
         # -------------------------------------
-        paths_training_latest = StorePathHelper(directory=f"Training_results_new/Wjets/{args.njets}/{region}/latest")
-        paths_training = StorePathHelper(directory=f"Training_results_new/Wjets/{args.njets}/{region}/latest")
-        torch.save(checkpoint, paths_training_latest.autopath.joinpath("model_checkpoint.pth"))
-        torch.save(checkpoint, paths_training.autopath.joinpath("model_checkpoint.pth"))
+        paths_training = StorePathHelper(directory=f"Training_results_new/QCD/all/{region}")
 
-        pd.DataFrame(log_rows).to_pickle(str(paths_training_latest.autopath.joinpath('training_logs.pkl')))
+        t.save(checkpoint, paths_training.autopath.joinpath("model_checkpoint.pth"))
+        t.save(checkpoint, f"Training_results_new/QCD/all/{region}/latest/model_checkpoint.pth")
+
         pd.DataFrame(log_rows).to_pickle(str(paths_training.autopath.joinpath('training_logs.pkl')))
+        pd.DataFrame(log_rows).to_pickle(str(f"Training_results_new/QCD/all/{region}/latest/training_logs.pkl"))
 
 
         with open(paths_training.autopath.joinpath("config.yaml"), "w") as f:
-            yaml.dump(config, f)
-        with open(paths_training_latest.autopath.joinpath("config.yaml"), "w") as f:
             yaml.dump(config, f)
 
         logger.info("Model saved successfully")

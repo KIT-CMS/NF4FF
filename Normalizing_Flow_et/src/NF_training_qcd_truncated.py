@@ -7,7 +7,7 @@ from classes.config_loader import load_config
 from classes.training import train_epoch, val_epoch
 from classes.path_managment import StorePathHelper
 import logging
-from CustomLogging import setup_logging, TrainingDashboard, LogContext
+from CustomLogging import setup_logging
 import yaml
 import numpy as np
 import random
@@ -17,6 +17,7 @@ from typing import Literal, Generator
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from typing import Tuple, Any, Dict
+from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd
 import torch as t
@@ -27,14 +28,12 @@ from dataclasses import KW_ONLY, dataclass
 from typing import (Any, Callable, Dict, Iterable, List, Protocol, Tuple,
                     Union, runtime_checkable)
 from contextlib import contextmanager
+from typing import (Any, Callable, Dict, Generator, Iterable, Iterator, List,
+                    Optional, Tuple, Type, Union, get_args, get_origin)
 from sklearn.model_selection import train_test_split
 
 from CustomLogging import setup_logging
 import time
-
-from classes.NeuralNetworks import RealNVP, AffineCoupling, MLP
-from classes.Dataclasses import _component_collection, Config
-from classes.Collection import get_my_data_wjets
 
 
 
@@ -46,19 +45,34 @@ random.seed(SEED)
 
 t.set_num_threads(8)
 
+
 with open('../configs/training_variables.yaml', 'r') as f:
     variables = yaml.safe_load(f)['variables']
-
-
 dim = len(variables)
 
 # ------ logger -----
 
 logger = setup_logging(logger=logging.getLogger(__name__))
-log = LogContext(logger)
+
+# ------ RNG handling ------------------
+
+@contextmanager
+def rng_seed(seed: int) -> Generator[None, None, None]:
+    np_state, py_state = np.random.get_state(), random.getstate()
+    torch_state = torch.get_rng_state()
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    try:
+        yield
+    finally:
+        np.random.set_state(np_state)
+        random.setstate(py_state)
+        torch.set_rng_state(torch_state)
+
 # ----- constants -----
 
-#N_EPOCHS_MAX = 500
+N_EPOCHS_MAX = 500
 PATIENCE = 30
 N_SAMPLES = 1000000
 
@@ -68,15 +82,95 @@ class Args(Tap):
     njets: Literal["all", "0", "1", "2"] = "all"
 
 
+@dataclass
+class _component_collection(metaclass=helper.CollectionMeta):
+    _: KW_ONLY
+    X: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
+    Njets: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
+    weights: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
+    class_weights: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
+    process: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
+
 
 # ----- Configuration -----
 
+
+@dataclass
+class Config:
+    # training
+    bsize_train: int
+    bsize_val: int
+    bsize_test: int
+    grad_clip: float
+    n_epochs: int
+    use_amp: bool
+    s_scale_max: float
+
+    # model
+    n_layers: int
+    hidden_dims: int
+    s_scale: float
+
+    # optimizer
+    lr: float
+    weight_decay: float
+    eps: float
+
+    # scheduler
+    scheduler_step_size: int
+    scheduler_gamma: float
+    scheduler_factor: float
+    scheduler_patience: int
+    scheduler_threshold: float
+    scheduler_cooldown: int
+    scheduler_min_lr: float
+    scheduler_eps: float
+
+    @staticmethod
+    def from_dict(cfg: Dict[str, Any]) -> "Config":
+        """Construct from the original nested YAML structure."""
+        training = cfg["training"]
+        model = cfg["model"]
+        optimizer = cfg["optimizer"]
+        scheduler = cfg["scheduler"]
+
+        return Config(
+            # training
+            bsize_train=training["bsize_train"],
+            bsize_val=training["bsize_val"],
+            bsize_test=training["bsize_test"],
+            grad_clip=training["grad_clip"],
+            n_epochs=training["n_epochs"],
+            use_amp=training["use_amp"],
+            s_scale_max=training["s_scale_max"],
+
+            # model
+            n_layers=model["n_layers"],
+            hidden_dims=model["hidden_dims"],
+            s_scale=model["s_scale"],
+
+            # optimizer
+            lr=optimizer["lr"],
+            weight_decay=optimizer["weight_decay"],
+            eps=optimizer["eps"],
+
+            # scheduler
+            scheduler_step_size=scheduler["step_size"],
+            scheduler_gamma=scheduler["gamma"],
+            scheduler_factor=scheduler["factor"],
+            scheduler_patience=scheduler["patience"],
+            scheduler_threshold=scheduler["threshold"],
+            scheduler_cooldown=scheduler["cooldown"],
+            scheduler_min_lr=scheduler["min_lr"],
+            scheduler_eps=scheduler["eps"],
+        )
 
 def load_config(path: str = "config.yaml") -> Dict[str, Any]:
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
 # ------ model ------
+
 
 class MLP(nn.Module):
     def __init__(self, in_dim, out_dim, hidden_dims=(128, 128)):
@@ -262,45 +356,43 @@ class RealNVP(nn.Module):
 
 
 @torch.no_grad()
-def estimate_Z(flow, T1, T2, nsamples=512):
+def estimate_Z(flow, T1, T2, idx1=0, idx2=1, nsamples=512):
     """
-    Monte Carlo estimate of Z = P(x1 > T1 AND x2 > T2)
-    using samples from the current flow.
+    Monte Carlo estimate of Z = P(x[idx1] > T1 AND x[idx2] > T2)
+    using samples from the current flow (in DATA space).
     """
-    s = flow.sample(nsamples)                # shape: (nsamples, dim)
-    mask = (s[:, 0] > T1) & (s[:, 1] > T2)   # apply your thresholds here
+    s = flow.sample(nsamples)                       # (nsamples, dim), data space
+    mask = (s[:, idx1] > T1) & (s[:, idx2] > T2)
     Z = mask.float().mean()
     return torch.clamp(Z, 1e-12, 1.0)
 
 
-def truncated_log_prob(flow, x, T1, T2, Z):
+def truncated_log_prob(flow, X, T1, T2, Z):
     """
-    Computes log p_obs(x) = log p_true(x) - log Z
-    where Z is estimated separately.
+    log p_obs(x) = log p_true(x) - log Z.
+    Your flow.forward(X) already returns log p_true(X) (with scaling correction).
     """
-    lp_true = flow.forward(x)     # your RealNVP.forward already returns log p(x)
+    lp_true = flow(X)
     return lp_true - torch.log(Z)
-
 
 # ------ functions and masks --------
 
 def mask_DR(df):
 
     mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
-    mask_a2 = (df.nbtag == 0)
-    mask_a4 = ((df.iso_1 > 0.0) & (df.iso_1 < 0.15))
+    mask_a2 = (df.q_1 * df.q_2 > 0)
+    mask_a4 = ((df.iso_1 > 0.02) & (df.iso_1 < 0.15))
     mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_a6 = (df.mt_1 > 70)
-    mask_DR = (mask_a1 & mask_a2  & mask_a4 & mask_a5 & mask_a6)
+    mask_a6 = (df.mt_1 < 50)
+    mask_DR = (mask_a1 & mask_a2 & mask_a4 & mask_a5 & mask_a6)
 
     return df[mask_DR].copy()
 
 def mask_preselection_loose(df):
     mask_eta = (df.eta_1 <= 2.1) & (df.eta_2 <= 2.3)
     mask_pt = (df.pt_1 >= 33) & (df.pt_2 >= 30)
-    #mask_m_vis = (df.m_vis >= 35)
     mask_tau_decay_mode = (df.tau_decaymode_2 == 0) | (df.tau_decaymode_2 == 1) | (df.tau_decaymode_2 == 10) | (df.tau_decaymode_2 == 11)
-    return df[mask_eta & mask_pt &  mask_tau_decay_mode]
+    return df[mask_eta & mask_pt & mask_tau_decay_mode]
 
 
 def SR_like(df):
@@ -332,9 +424,22 @@ def get_my_data(df, training_var):
 
     return _component_collection(
         X=_df[training_var].to_numpy(dtype=np.float32),
-        weights=_df["weight_wjets"].to_numpy(dtype=np.float32),
+        weights=_df["weight_qcd"].to_numpy(dtype=np.float32),
 
     )
+
+@dataclass
+class _same_sign_opposite_sign_split(metaclass=helper.CollectionMeta):
+    ss: Union[torch.Tensor, pd.DataFrame, np.ndarray]
+    os: Union[torch.Tensor, pd.DataFrame, np.ndarray]
+
+
+@dataclass
+class _component_collection(metaclass=helper.CollectionMeta):
+    _: KW_ONLY
+    X: Union[torch.Tensor, pd.DataFrame, np.ndarray, None] = None
+    weights: Union[torch.Tensor, pd.DataFrame, np.ndarray, None] = None
+
 
 
 
@@ -367,7 +472,7 @@ def main():
 
     data_DR = mask_DR(data_complete)
 
-    data_DR = data_DR[(data_DR.process == 0) & (data_DR.OS == True)].reset_index(drop=True)
+    data_DR = data_DR[(data_DR.process == 0) & (data_DR.SS == True)].reset_index(drop=True)
 
     train1, val1 = train_test_split(data_DR)
 
@@ -377,9 +482,9 @@ def main():
     val1_SR_like = mask_preselection_loose(SR_like(val1))    
 
     weight_corr_factor = (
-        pd.concat([train1_AR_like['weight_wjets'], val1_AR_like['weight_wjets']]).sum()
+        pd.concat([train1_AR_like['weight_qcd'], val1_AR_like['weight_qcd']]).sum()
         /
-        pd.concat([train1_SR_like['weight_wjets'], val1_SR_like['weight_wjets']]).sum()
+        pd.concat([train1_SR_like['weight_qcd'], val1_SR_like['weight_qcd']]).sum()
     )
 
     for region, val1, train1 in zip(['AR-like', 'SR-like'], [val1_AR_like, val1_SR_like], [train1_AR_like, train1_SR_like]):
@@ -396,7 +501,7 @@ def main():
             val1 = val1[val1.njet >= 2]
 
 
-        print(data_DR['weight_wjets'])
+        print(data_DR['weight_qcd'])
 
         train1 = get_my_data(train1, variables).to_torch(device=None)
         val1 = get_my_data(val1, variables).to_torch(device=None)
@@ -413,8 +518,8 @@ def main():
 
         # Normalize weights
         if region == "SR-like":
-            weights_train = weights_train * weight_corr_factor
-            weights_val = weights_val * weight_corr_factor
+            weights_train = weights_train #* weight_corr_factor
+            weights_val = weights_val #* weight_corr_factor
         elif region == "AR-like":
             pass  # no correction needed for AR-like region
 
@@ -471,126 +576,131 @@ def main():
         counter = 0
         log_rows = []
 
+        IDX1 = 0   
+        IDX2 = 1  
+
+
 
         T1 = 33.0    # threshold for variable 0
         T2 = 30.0    # threshold for variable 1
         # ----------------------------------
 
+
+        Z_UPDATE_EVERY = 20
+        Z_NSAMPLES = 512
+        Z_EMA_DECAY = 0.9     # optional smoothing of Z to reduce noise
+
         Z = None
+        global_step = 0
 
 
 
         # -------------------------------------
         #  Training Loop
         # -------------------------------------
-        with log.training_dashboard() as dash:
-            for epoch in range(1, config.n_epochs + 1):
-                epoch_start = time.time()
+        for epoch in range(1, config.n_epochs + 1):
+            epoch_start = time.time()
 
-                # --------------------
-                #  TRAIN
-                # --------------------
-                model.train()
-                train_loss_sum = 0.0
-                train_weight_sum = 0.0
+            # --------------------
+            #  TRAIN
+            # --------------------
+            model.train()
+            train_loss_sum = 0.0
+            train_weight_sum = 0.0
 
-                for Xb, Wb in train_loader:
+            for Xb, Wb in train_loader:
+                Xb = Xb.to(device, non_blocking=True)
+                Wb = Wb.to(device, non_blocking=True)
+
+                optimizer.zero_grad(set_to_none=True)
+
+                if (Z is None) or (global_step % Z_UPDATE_EVERY == 0):
+                    Z_new = estimate_Z(model, T1, T2, idx1=IDX1, idx2=IDX2, nsamples=Z_NSAMPLES)
+                    Z = Z_new if Z is None else (Z_EMA_DECAY * Z + (1.0 - Z_EMA_DECAY) * Z_new)
+
+                with torch.amp.autocast('cuda', enabled=False):
+
+                    log_p_obs = truncated_log_prob(model, Xb, T1, T2, Z)
+                    loss = (-(log_p_obs) * Wb).sum() / Wb.sum()
+
+                scaler.scale(loss).backward()
+                nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
+                scaler.step(optimizer)
+                scaler.update()
+
+                train_loss_sum += loss.item() * Wb.sum().item()
+                train_weight_sum += Wb.sum().item()
+
+            avg_train_nll = train_loss_sum / train_weight_sum
+            NLL_training.append(avg_train_nll)
+
+            # --------------------
+            #  VALIDATION
+            # --------------------
+            model.eval()
+            val_loss_sum = 0.0
+            val_weight_sum = 0.0
+
+            with torch.no_grad():
+                for Xb, Wb in val_loader:
                     Xb = Xb.to(device, non_blocking=True)
                     Wb = Wb.to(device, non_blocking=True)
 
-                    optimizer.zero_grad(set_to_none=True)
-
-
-                    #if (Z is None) or (step % 20 == 0):
-                    #    Z = estimate_Z(model, T1, T2, nsamples=512)
-
-
                     with torch.amp.autocast('cuda', enabled=False):
+                        log_p_obs = truncated_log_prob(model, Xb, T1, T2, Z)
+                        vloss = (-(log_p_obs) * Wb).sum() / Wb.sum()
 
-                        log_px = model(Xb)
-                        loss = (-(log_px) * Wb).sum() / Wb.sum()
+                    val_loss_sum += vloss.item() * Wb.sum().item()
+                    val_weight_sum += Wb.sum().item()
 
-                    scaler.scale(loss).backward()
-                    nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
-                    scaler.step(optimizer)
-                    scaler.update()
+            avg_val_nll = val_loss_sum / val_weight_sum
+            NLL_validation.append(avg_val_nll)
 
-                    train_loss_sum += loss.item() * Wb.sum().item()
-                    train_weight_sum += Wb.sum().item()
+            scheduler.step(avg_val_nll)
+            epoch_time = time.time() - epoch_start
 
-                avg_train_nll = train_loss_sum / train_weight_sum
-                NLL_training.append(avg_train_nll)
-
-                # --------------------
-                #  VALIDATION
-                # --------------------
-                model.eval()
-                val_loss_sum = 0.0
-                val_weight_sum = 0.0
-
-                with torch.no_grad():
-                    for Xb, Wb in val_loader:
-                        Xb = Xb.to(device, non_blocking=True)
-                        Wb = Wb.to(device, non_blocking=True)
-
-                        with torch.amp.autocast('cuda', enabled=False):
-                            #log_p_obs = truncated_log_prob(model, Xb, T1, T2, Z)
-                            log_px = model(Xb)
-                            vloss = (-(log_px) * Wb).sum() / Wb.sum()
-
-                        val_loss_sum += vloss.item() * Wb.sum().item()
-                        val_weight_sum += Wb.sum().item()
-
-                avg_val_nll = val_loss_sum / val_weight_sum
-                NLL_validation.append(avg_val_nll)
-
-                scheduler.step(avg_val_nll)
-                epoch_time = time.time() - epoch_start
-
-                log_rows.append({
-                "epoch": epoch,
-                "train_loss": avg_train_nll,
-                "val_loss": avg_val_nll,
-                "lr": scheduler.get_last_lr(),
-                "time_s": epoch_time,
-                "type": "epoch",
-                })
+            log_rows.append({
+            "epoch": epoch,
+            "train_loss": avg_train_nll,
+            "val_loss": avg_val_nll,
+            "lr": scheduler.get_last_lr(),
+            "time_s": epoch_time,
+            "type": "epoch",
+            })
 
 
-                # --------------------
-                #  Early stopping
-                # --------------------
-                if avg_val_nll < best_val_nll:
-                    best_val_nll = avg_val_nll
-                    counter = 0
-                    checkpoint = {
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                    }
-                else:
-                    counter += 1
-                dash.update(epoch = epoch, train_loss=np.round(avg_train_nll, 6), val_loss=np.round(avg_val_nll, 6), lr = scheduler.get_last_lr(), region = region)
+            # --------------------
+            #  Early stopping
+            # --------------------
+            if avg_val_nll < best_val_nll:
+                best_val_nll = avg_val_nll
+                counter = 0
+                checkpoint = {
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                }
+            else:
+                counter += 1
 
-                if counter >= PATIENCE:
-                    logger.info("Early stopping triggered.")
-                    break
+            if epoch % 5 == 0:
+                logger.info(f"Epoch {epoch}: train={avg_train_nll:.6f}, val={avg_val_nll:.6f}, lr = {scheduler.get_last_lr()}")
+
+            if counter >= PATIENCE:
+                logger.info("Early stopping triggered.")
+                break
 
 
         # -------------------------------------
         #  Save training artifacts
         # -------------------------------------
-        paths_training_latest = StorePathHelper(directory=f"Training_results_new/Wjets/{args.njets}/{region}/latest")
-        paths_training = StorePathHelper(directory=f"Training_results_new/Wjets/{args.njets}/{region}/latest")
-        torch.save(checkpoint, paths_training_latest.autopath.joinpath("model_checkpoint.pth"))
+        paths_training = StorePathHelper(directory=f"Training_results_new/QCD/{args.njets}/{region}")
+
         torch.save(checkpoint, paths_training.autopath.joinpath("model_checkpoint.pth"))
-
-        pd.DataFrame(log_rows).to_pickle(str(paths_training_latest.autopath.joinpath('training_logs.pkl')))
+        torch.save(checkpoint, f"Training_results_new/QCD/{args.njets}/{region}/latest/model_checkpoint.pth")
         pd.DataFrame(log_rows).to_pickle(str(paths_training.autopath.joinpath('training_logs.pkl')))
-
+        pd.DataFrame(log_rows).to_pickle(str(f"Training_results_new/QCD/{args.njets}/{region}/latest/training_logs.pkl"))
 
         with open(paths_training.autopath.joinpath("config.yaml"), "w") as f:
-            yaml.dump(config, f)
-        with open(paths_training_latest.autopath.joinpath("config.yaml"), "w") as f:
             yaml.dump(config, f)
 
         logger.info("Model saved successfully")
