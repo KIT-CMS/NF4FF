@@ -1,0 +1,30 @@
+training:
+ bsize_train: 2000000
+ bsize_val: 2000000
+ bsize_test: 30000
+ grad_clip: 5.0
+ n_epochs: 100
+ use_amp: False
+ s_scale_max: 5
+ label_smoothing: 0.002
+
+model:
+  n_layers: 2
+  hidden_dims: 200
+  dropout: 0.15
+  s_scale: 1.5
+
+optimizer:
+ lr: 0.001
+ eps: 0.00000001
+ weight_decay: 0.00001
+
+scheduler:
+ step_size: 5
+ gamma: 0.1
+ factor: 0.1
+ patience: 5
+ threshold: 0.0001
+ cooldown: 0
+ min_lr: 0.000001
+ eps: 0.00000001
