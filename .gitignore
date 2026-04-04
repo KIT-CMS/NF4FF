@@ -75,3 +75,29 @@ src/*.spm
 *.log
 
 results*/
+
+# --- NF4FF generated artifacts (global) ---
+# Ignore all notebooks everywhere
+**/*.ipynb
+
+# Ignore common data and artifact files
+*.npy
+*.npz
+*.h5
+*.hdf5
+*.csv
+*.parquet
+*.root
+
+# Ignore generated folders anywhere in the repository
+**/data/
+**/logs/
+**/plots/
+**/*results*/
+**/FF_results/
+**/NF_results/
+**/NF_results_new/
+**/Training_results/
+**/Training_results_new/
+**/Training_results_to_remember/
+**/.cache/

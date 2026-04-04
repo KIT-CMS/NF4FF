@@ -42,6 +42,11 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 INPUT_DIM = 20
 CONFIG_MODEL_PATH = 'configs/config_NN.yaml'
 PATIENCE = 20
+QCD_WEIGHT_BINNING = 'quantile'
+QCD_WEIGHT_N_BINS = 20
+QCD_WEIGHT_DYNAMIC_DELTA = 100.0
+QCD_WEIGHT_DYNAMIC_DELTA_LAST = 100.0
+QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD = 100.0
 
 # ----- data classes -----
 @dataclass
@@ -93,6 +98,9 @@ class Config:
             scheduler_eps=scheduler["eps"],
         )
     
+
+
+
 @dataclass
 class _same_sign_opposite_sign_split(metaclass=helper.CollectionMeta):
     ss: Union[t.Tensor, pd.DataFrame, np.ndarray]
@@ -210,6 +218,114 @@ def equal_frequency_bins(x, n_bins):
     quantiles = np.linspace(0, 1, n_bins + 1)
     return np.quantile(x, quantiles)
 
+
+def find_dynamic_bin_edges(
+    values_A: Union[np.ndarray, t.Tensor],
+    weights_A: Union[np.ndarray, t.Tensor],
+    values_B: Union[np.ndarray, t.Tensor],
+    weights_B: Union[np.ndarray, t.Tensor],
+    delta: float = 0.0,
+    delta_last: float = 0.0,
+    min_A_yield: float = 0.0,
+    max_val: float = 1.0,
+    min_val: float = 0.0,
+) -> Union[np.ndarray, t.Tensor]:
+    is_torch = isinstance(values_A, t.Tensor)
+
+    if is_torch:
+        values_all = t.cat([values_A, values_B])
+        weights_net = t.cat([weights_A, -weights_B])
+        weights_A_only = t.cat([weights_A, t.zeros_like(weights_B)])
+        sort_idx = t.argsort(values_all, descending=True)
+    else:
+        values_all = np.concatenate([values_A, values_B])
+        weights_net = np.concatenate([weights_A, -weights_B])
+        weights_A_only = np.concatenate([weights_A, np.zeros_like(weights_B)])
+        sort_idx = np.argsort(values_all)[::-1]
+
+    values_sorted = values_all[sort_idx]
+    weights_net_sorted = weights_net[sort_idx]
+    weights_A_only_sorted = weights_A_only[sort_idx]
+
+    values_sorted_list = values_sorted.tolist()
+    weights_net_sorted_list = weights_net_sorted.tolist()
+    weights_A_only_sorted_list = weights_A_only_sorted.tolist()
+
+    edges, accumulative_net, accumulative_A = [max_val], 0.0, 0.0
+    for i in range(len(values_sorted_list)):
+        if values_sorted_list[i] < min_val:
+            break
+
+        accumulative_net += weights_net_sorted_list[i]
+        accumulative_A += weights_A_only_sorted_list[i]
+
+        if accumulative_A >= min_A_yield and accumulative_net > delta:
+            edges.append(values_sorted_list[i])
+            accumulative_net, accumulative_A = 0.0, 0.0
+
+    edges.append(min_val)
+
+    while len(edges) > 2:
+        low, high = edges[-1], edges[-2]
+        if is_torch:
+            mask = (values_all >= low) & (values_all < high)
+            final_bin_net = t.sum(weights_net[mask]).item()
+        else:
+            mask = (values_all >= low) & (values_all < high)
+            final_bin_net = np.sum(weights_net[mask])
+
+        if final_bin_net > delta_last:
+            break
+        edges.pop(-2)
+
+    edges.reverse()
+
+    if is_torch:
+        return t.tensor(edges, dtype=values_A.dtype, device=values_A.device)
+    return np.array(edges, dtype=values_A.dtype)
+
+
+def build_qcd_weight_bins(
+    qcd_values: t.Tensor,
+    qcd_weights: t.Tensor,
+    non_qcd_values: t.Tensor,
+    non_qcd_weights: t.Tensor,
+    binning: Literal['quantile', 'dynamic'] = 'quantile',
+    n_bins: int = 20,
+    dynamic_delta: float = 100.0,
+    dynamic_delta_last: float = 100.0,
+    dynamic_min_qcd_yield: float = 100.0,
+) -> t.Tensor:
+    if binning == 'quantile':
+        bins = t.quantile(qcd_values, t.linspace(0, 1, n_bins + 1, device=qcd_values.device))
+    elif binning == 'dynamic':
+        min_val = t.minimum(qcd_values.min(), non_qcd_values.min()).item()
+        max_val = t.maximum(qcd_values.max(), non_qcd_values.max()).item()
+        bins = find_dynamic_bin_edges(
+            values_A=qcd_values,
+            weights_A=qcd_weights,
+            values_B=non_qcd_values,
+            weights_B=non_qcd_weights,
+            delta=dynamic_delta,
+            delta_last=dynamic_delta_last,
+            min_A_yield=dynamic_min_qcd_yield,
+            min_val=min_val,
+            max_val=max_val,
+        )
+    else:
+        raise ValueError(f"Unknown qcd binning option: {binning}")
+
+    bins = t.unique(bins, sorted=True)
+    if bins.numel() < 2:
+        logger.warning("QCD bin builder returned <2 unique edges. Falling back to quantile binning.")
+        bins = t.quantile(qcd_values, t.linspace(0, 1, n_bins + 1, device=qcd_values.device))
+        bins = t.unique(bins, sorted=True)
+
+    if bins.numel() < 2:
+        raise RuntimeError("Could not construct valid QCD bin edges.")
+
+    return bins
+
 def get_class_weights(
     weights: t.Tensor,
     Y: t.Tensor,
@@ -273,6 +389,11 @@ def get_ff_dataset_with_qcd_weights_ss(
     njets_idx: int = -1,
     njets_groups: Tuple[Tuple[int, ...], ...] = ((0,), (1,), (2, 100)),
     subtract_njets_based: bool = False,
+    qcd_weight_binning: Literal['quantile', 'dynamic'] = 'quantile',
+    qcd_weight_n_bins: int = 20,
+    qcd_weight_dynamic_delta: float = 100.0,
+    qcd_weight_dynamic_delta_last: float = 100.0,
+    qcd_weight_dynamic_min_qcd_yield: float = 100.0,
 
 ) -> _component_collection:
     """
@@ -335,12 +456,29 @@ def get_ff_dataset_with_qcd_weights_ss(
             ):
                 continue
 
-            # Build histogram of non-QCD using quantile bins from QCD prediction
+            bins = build_qcd_weight_bins(
+                qcd_values=prediction_ss[qcd_mask_sr].squeeze(),
+                qcd_weights=_dataset.weights.ss[qcd_mask_sr].squeeze(),
+                non_qcd_values=prediction_ss[non_qcd_mask_sr].squeeze(),
+                non_qcd_weights=_dataset.weights.ss[non_qcd_mask_sr].squeeze(),
+                binning=qcd_weight_binning,
+                n_bins=qcd_weight_n_bins,
+                dynamic_delta=qcd_weight_dynamic_delta,
+                dynamic_delta_last=qcd_weight_dynamic_delta_last,
+                dynamic_min_qcd_yield=qcd_weight_dynamic_min_qcd_yield,
+            )
+
+            logger.info(
+                "QCD weight bins (%s, njets=%s, SR_like=%s): %d",
+                qcd_weight_binning,
+                njets_group,
+                sr_value,
+                max(int(bins.numel()) - 1, 0),
+            )
+
             non_qcd_hist, bins = t.histogram(
                 input=prediction_ss[non_qcd_mask_sr],
-                bins = t.quantile(
-                    prediction_ss[qcd_mask_sr],
-                    t.linspace(0, 1, 21)),
+                bins=bins,
                 weight=_dataset.weights.ss[non_qcd_mask_sr],
             )
 
@@ -519,6 +657,14 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     logger.info(f"Using device: {device}")
+    logger.info(
+        "QCD weight binning: %s (n_bins=%d, delta=%.1f, delta_last=%.1f, min_qcd_yield=%.1f)",
+        QCD_WEIGHT_BINNING,
+        QCD_WEIGHT_N_BINS,
+        QCD_WEIGHT_DYNAMIC_DELTA,
+        QCD_WEIGHT_DYNAMIC_DELTA_LAST,
+        QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD,
+    )
 
     if device.type == "cuda":
         logger.info(torch.cuda.get_device_name())
@@ -607,6 +753,11 @@ def main():
                         njets_idx = 11,
                         njets_groups = ((0,), (1,), (2,100)),
                         subtract_njets_based = True,
+                        qcd_weight_binning = QCD_WEIGHT_BINNING,
+                        qcd_weight_n_bins = QCD_WEIGHT_N_BINS,
+                        qcd_weight_dynamic_delta = QCD_WEIGHT_DYNAMIC_DELTA,
+                        qcd_weight_dynamic_delta_last = QCD_WEIGHT_DYNAMIC_DELTA_LAST,
+                        qcd_weight_dynamic_min_qcd_yield = QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD,
                     )
 
                     val_pt = get_ff_dataset_with_qcd_weights_ss(
@@ -616,6 +767,11 @@ def main():
                         device = device,
                         njets_groups = ((0,), (1,), (2,100)),
                         subtract_njets_based = True,
+                        qcd_weight_binning = QCD_WEIGHT_BINNING,
+                        qcd_weight_n_bins = QCD_WEIGHT_N_BINS,
+                        qcd_weight_dynamic_delta = QCD_WEIGHT_DYNAMIC_DELTA,
+                        qcd_weight_dynamic_delta_last = QCD_WEIGHT_DYNAMIC_DELTA_LAST,
+                        qcd_weight_dynamic_min_qcd_yield = QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD,
                     )
 
 
@@ -790,6 +946,11 @@ def main():
                 njets_idx = 11,
                 njets_groups = ((0,), (1,), (2,100)),
                 subtract_njets_based = True,
+                qcd_weight_binning = QCD_WEIGHT_BINNING,
+                qcd_weight_n_bins = QCD_WEIGHT_N_BINS,
+                qcd_weight_dynamic_delta = QCD_WEIGHT_DYNAMIC_DELTA,
+                qcd_weight_dynamic_delta_last = QCD_WEIGHT_DYNAMIC_DELTA_LAST,
+                qcd_weight_dynamic_min_qcd_yield = QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD,
             )
 
             val_pt = get_ff_dataset_with_qcd_weights_ss(
@@ -800,6 +961,11 @@ def main():
                 njets_idx = 11,
                 njets_groups = ((0,), (1,), (2,100)),
                 subtract_njets_based = True,
+                qcd_weight_binning = QCD_WEIGHT_BINNING,
+                qcd_weight_n_bins = QCD_WEIGHT_N_BINS,
+                qcd_weight_dynamic_delta = QCD_WEIGHT_DYNAMIC_DELTA,
+                qcd_weight_dynamic_delta_last = QCD_WEIGHT_DYNAMIC_DELTA_LAST,
+                qcd_weight_dynamic_min_qcd_yield = QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD,
             )
         
         if checkpoint is None:
