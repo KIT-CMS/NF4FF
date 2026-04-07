@@ -35,6 +35,8 @@ Classifier_all_in_one/Categorizer_results/
 Classifier_all_in_one/CODE/
 Classifier_all_in_one/plots/
 CustomLogging/
+!Classifier_all_in_one/CustomLogging/
+!Classifier_all_in_one/CustomLogging/**
 
 FakeFaktor/
 Helper/
