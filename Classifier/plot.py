@@ -2,7 +2,7 @@ import random
 import logging
 import os
 from dataclasses import KW_ONLY, dataclass
-import CODE.HELPER as helper
+import classes.helper as helper
 import math
 import numpy as np
 import pandas as pd
@@ -10,8 +10,8 @@ import torch
 import torch as t
 import torch.nn as nn
 import matplotlib.pyplot as plt
-
-
+import yaml
+from pathlib import Path
 import matplotlib
 from matplotlib.ticker import ScalarFormatter
 
@@ -19,7 +19,6 @@ from torch.utils.data import TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from CustomLogging import setup_logging
-#from CustomLogging import setup_logging
 from typing import (Any, Callable, Dict, Generator, Iterable, Iterator, List,
                     Optional, Tuple, Type, Union, get_args, get_origin)
 from training_wjets import BinaryClassifier
@@ -34,33 +33,35 @@ np.random.seed(SEED)
 random.seed(SEED)
 t.set_num_threads(8)
 
+
 # ----- tap ------
 
 class Args(Tap):
     bins: Literal['equi_populated' , 'uniform'] ='equi_populated'
     n_bins: int = 20
-    data_complete_path: str = '../data/data_complete.feather'
+    data_complete_path: str = 'data/data_complete.feather'
     output_dir: str = 'plots'
-    #ckpt_pth_fold1: str = 'Categorizer_results/inclusive/fold1/2026-02-19/0_19-25-17/'
-    #ckpt_pth_fold2: str = 'Categorizer_results/inclusive/fold2/2026-02-19/0_19-28-32/'
-    ckpt_pth_fold1: str = 'Categorizer_results/inclusive/fold1/2026-03-30/0_15-59-24/'
-    ckpt_pth_fold2: str = 'Categorizer_results/inclusive/fold2/2026-03-30/0_16-07-09/'
     write_back: bool = False
+
 
 # ----- Constants
 
-INPUT_DIM = 37
+config_path = Path(__file__).parent / "configs/config_settings.yaml"    
+with config_path.open('r') as f:
+    cfg = yaml.safe_load(f)
 
-MC_PATH   = "../data/MC_data/MC_data.pkl"
-DATA_PATH = "../data/MC_data/data.pkl" 
+in_dir = cfg['directories']['data_input_directory']
+out_dir = cfg['directories']['data_output_directory']
 
 
-# one hidden layer
+data_complete_path = out_dir + "/data_complete.feather"
 
-#ckpt_pth_fold1 = 'Categorizer_results/inclusive/fold1/2026-02-16/0_13-04-24/'
-#ckpt_pth_fold2 = 'Categorizer_results/inclusive/fold2/2026-02-16/0_13-18-44/'
+ckpt_pth_fold1: str = 'results/Wjets/inclusive/fold1/last/'
+ckpt_pth_fold2: str = 'results/Wjets/inclusive/fold2/last/'
 
-# two hidden layers
+# ----- Logging -----
+
+logger = setup_logging(logger=logging.getLogger(__name__))
 
 PROCESS_ORDER = [1, 10, 2, 3, 4, 5, 6, 7, 8, 9, 0]
 PROCESS_LABELS = {
@@ -92,7 +93,6 @@ PROCESS_COLORS = {
 }
 
 
-
 # ------- lists ----
 
 variables = [
@@ -105,22 +105,7 @@ variables = [
 ]
 
 dim = len(variables)
-
-
-CHECKPOINT_PATH = (
-    "../src/Categorizer_results/2026-01-29/0_16-32-09/model_checkpoint.pth"
-)
-
-LOG_PATH = (
-    "../src/Categorizer_results/2026-01-29/0_16-32-09/training_logs.pkl"
-)
-
-
-# ----- Logging -----
-
-logger = setup_logging(logger=logging.getLogger(__name__))
-
-
+INPUT_DIM = dim
 
 # ------ config -----
 
@@ -179,9 +164,6 @@ class _collection:
     @property
     def unrolled(self) -> tuple[Any, ...]:
         return (self.values, self.weights, self.histograms)
-
-
-# ----- model -----
 
 
 # ------ model utilities -----
@@ -307,6 +289,7 @@ def _calculate_scaled_event_weights_generalized(
     corrected_event_weights_flat[is_out_of_bounds] = flat.weights[is_out_of_bounds]
 
     return corrected_event_weights_flat.reshape(initial.weights.shape)  # reshape back to original shape
+
 
 
 def split_mc_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -600,10 +583,8 @@ def main() -> None:
     args = Args().parse_args()
 
 
-
-
-    model1 = load_model(INPUT_DIM, args.ckpt_pth_fold1 + 'model_checkpoint.pth', device)
-    model2 = load_model(INPUT_DIM, args.ckpt_pth_fold2 + 'model_checkpoint.pth', device)
+    model1 = load_model(INPUT_DIM, ckpt_pth_fold1 + 'model_checkpoint.pth', device)
+    model2 = load_model(INPUT_DIM, ckpt_pth_fold2 + 'model_checkpoint.pth', device)
 
     logger.info("Loading data")
 
@@ -622,14 +603,6 @@ def main() -> None:
     train2 = get_my_data(train2, variables).to_torch(device=None)
     val2   = get_my_data(val2, variables).to_torch(device=None)
 
-
-    '''
-    data_complete_pt = torch.concat([data_t2.X.os, 
-                                  data_v2.X.os, 
-                                  data_t1.X.os, 
-                                  data_v1.X.os], dim = 0).detach().cpu().numpy()
-
-    '''
     weights_qcd_train1 = torch.load(args.ckpt_pth_fold1 + 'qcd_weights_train.pt')
     weights_qcd_val1 = torch.load(args.ckpt_pth_fold1 + 'qcd_weights_val.pt')
     weights_qcd_train2 = torch.load(args.ckpt_pth_fold2 + 'qcd_weights_train.pt')

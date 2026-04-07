@@ -10,8 +10,8 @@ import torch
 import torch as t
 import torch.nn as nn
 import matplotlib.pyplot as plt
-
-
+import yaml
+from pathlib import Path
 import matplotlib
 from matplotlib.ticker import ScalarFormatter
 
@@ -19,7 +19,6 @@ from torch.utils.data import TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from CustomLogging import setup_logging
-#from CustomLogging import setup_logging
 from typing import (Any, Callable, Dict, Generator, Iterable, Iterator, List,
                     Optional, Tuple, Type, Union, get_args, get_origin)
 from training_wjets import BinaryClassifier
@@ -39,24 +38,67 @@ t.set_num_threads(8)
 class Args(Tap):
     bins: Literal['equi_populated' , 'uniform'] ='equi_populated'
     n_bins: int = 20
-    data_complete_path: str = '../data/data_complete.feather'
+    data_complete_path: str = 'data/data_complete.feather'
     output_dir: str = 'plots'
-    ckpt_pth_fold1: str = 'Categorizer_results/QCD/inclusive/fold1/2026-02-19/0_18-59-52/'
-    ckpt_pth_fold2: str = 'Categorizer_results/QCD/inclusive/fold2/2026-02-19/0_19-00-37/'
+    #ckpt_pth_fold1: str = 'Categorizer_results/inclusive/fold1/2026-02-19/0_19-25-17/'
+    #ckpt_pth_fold2: str = 'Categorizer_results/inclusive/fold2/2026-02-19/0_19-28-32/'
+    ckpt_pth_fold1: str = 'results/Wjets/inclusive/fold1/last/'
+    ckpt_pth_fold2: str = 'results/Wjets/inclusive/fold2/last/'
     write_back: bool = False
 
 # ----- Constants
 
-INPUT_DIM = 36
+INPUT_DIM = 37
 
 MC_PATH   = "../data/MC_data/MC_data.pkl"
 DATA_PATH = "../data/MC_data/data.pkl" 
 
+config_path = Path(__file__).parent / "configs/config_settings.yaml"    
+with config_path.open('r') as f:
+    cfg = yaml.safe_load(f)
 
-ckpt_pth_fold1 = 'Categorizer_results/QCD/inclusive/fold1/2026-02-19/0_18-59-52/'
-ckpt_pth_fold2 = 'Categorizer_results/QCD/inclusive/fold2/2026-02-19/0_19-00-37/'
+in_dir = cfg['directories']['data_input_directory']
+out_dir = cfg['directories']['data_output_directory']
 
-PROCESS_ORDER = [0, 1, 10, 2, 3, 4, 5, 6, 7, 8, 9]
+
+data_complete_path = out_dir + "/data_complete.feather"
+
+# one hidden layer
+
+#ckpt_pth_fold1 = 'Categorizer_results/inclusive/fold1/2026-02-16/0_13-04-24/'
+#ckpt_pth_fold2 = 'Categorizer_results/inclusive/fold2/2026-02-16/0_13-18-44/'
+
+# two hidden layers
+
+PROCESS_ORDER = [1, 10, 2, 3, 4, 5, 6, 7, 8, 9, 0]
+PROCESS_LABELS = {
+    0: 'QCD',
+    1: 'Wjets',
+    2: 'diboson_J',
+    3: 'diboson_L',
+    4: 'DYjets_J',
+    5: 'DYjets_L',
+    6: 'ST_J',
+    7: 'ST_L',
+    8: 'ttbar_J',
+    9: 'ttbar_L',
+    10: 'embedding',
+}
+
+PROCESS_COLORS = {
+    0: '#b9ac70',
+    1: '#e76300',
+    2: '#9f887e',
+    3: '#94a4a2',
+    4: '#b9ac70',
+    5: '#3f90da',
+    6: '#717581',
+    7: '#5882ae',
+    8: '#964c88',
+    9: '#615fc8',
+    10: '#ffa90e',
+}
+
 
 
 # ------- lists ----
@@ -67,11 +109,11 @@ variables = [
     "pt_tt","pt_vis","mjj","pt_dijet","pt_ttjj","deltaEta_jj","deltaR_jj",
     "deltaR_ditaupair","deltaR_1j1","deltaR_1j2",
     "deltaR_2j1","deltaR_2j2","deltaR_12j1","deltaR_12j2","deltaEta_1j1",
-    "deltaEta_1j2","deltaEta_2j1","deltaEta_2j2","deltaEta_12j1","deltaEta_12j2", 'tau_decaymode_1', 'tau_decaymode_2',
+    "deltaEta_1j2","deltaEta_2j1","deltaEta_2j2","deltaEta_12j1","deltaEta_12j2", 'tau_decaymode_1', 'tau_decaymode_2', 'nbtag',
 ]
 
 dim = len(variables)
-
+'''
 
 CHECKPOINT_PATH = (
     "../src/Categorizer_results/2026-01-29/0_16-32-09/model_checkpoint.pth"
@@ -81,7 +123,7 @@ LOG_PATH = (
     "../src/Categorizer_results/2026-01-29/0_16-32-09/training_logs.pkl"
 )
 
-
+'''
 # ----- Logging -----
 
 logger = setup_logging(logger=logging.getLogger(__name__))
@@ -328,14 +370,13 @@ def equi_populated_bins(data, n_bins):
 def mask_DR(df):
 
     mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
-    mask_a2 = (df.q_1 * df.q_2 > 0)
-    mask_a4 = ((df.iso_1 > 0.02) & (df.iso_1 < 0.15))
+    mask_a2 = (df.nbtag == 0)
+    mask_a4 = ((df.iso_1 > 0.0) & (df.iso_1 < 0.15))
     mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_a6 = (df.mt_1 < 50)
-    mask_DR = (mask_a1 & mask_a2 & mask_a4 & mask_a5 & mask_a6)
+    mask_a6 = (df.mt_1 > 70)
+    mask_DR = (mask_a1 & mask_a2  & mask_a4 & mask_a5 & mask_a6)
 
     return df[mask_DR].copy()
-
 
 
 def split_even_odd(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -355,7 +396,7 @@ def get_my_data(df, training_var):
     _df = df  # fold/fold_train/fold_val to load, should contain SS/OS columns
     ss_os_split = _same_sign_opposite_sign_split(
             ss=_df[(_df.SS)],
-            os = [],
+            os=_df[((_df.OS) & (_df.Label != 2)) | ((_df.SS) & (_df.Label == 2))],
         )
 
     return _component_collection(
@@ -390,7 +431,7 @@ def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
         r"$e\tau_h$",
         fontsize=20,
         loc="left",
-        fontproperties="Tex Gyre Heros"
+        fontproperties="Tex Gyre Heros",
     )
 
 def CMS_NJETS_TITLE(ax, *args, **kwargs):
@@ -527,7 +568,7 @@ def plot_nn_output(
     plt.close()
 
 
-def _collect_processwise_probs_weights_ss(
+def _collect_processwise_probs_weights(
     model1: nn.Module,
     model2: nn.Module,
     train1: _component_collection,
@@ -546,9 +587,9 @@ def _collect_processwise_probs_weights_ss(
         weight_parts = []
         for model, train_ds, val_ds in model_pairs:
             for ds in (train_ds, val_ds):
-                mask = ds.process.ss == process_id
-                prob_parts.append(predict_probabilities(model, ds.X.ss[mask], device))
-                weight_parts.append(ds.weights.ss[mask])
+                mask = ds.process.os == process_id
+                prob_parts.append(predict_probabilities(model, ds.X.os[mask], device))
+                weight_parts.append(ds.weights.os[mask])
 
         probs_by_process[process_id] = torch.concat(prob_parts, dim=0).detach().cpu().numpy()
         weights_by_process[process_id] = torch.concat(weight_parts, dim=0).detach().cpu().numpy()
@@ -578,17 +619,36 @@ def main() -> None:
     data_DR = mask_DR(data_complete)
     train1, val1, train2, val2 = split_even_odd(data_DR)
 
+    data_t1 = get_my_other_data(train1, variables).to_torch(device=None)
+    data_v1 = get_my_other_data(val1, variables).to_torch(device=None)
+    data_t2 = get_my_other_data(train2, variables).to_torch(device=None)
+    data_v2 = get_my_other_data(val2, variables).to_torch(device=None)
+
+
     train1 = get_my_data(train1, variables).to_torch(device=None)
     val1   = get_my_data(val1, variables).to_torch(device=None)
     train2 = get_my_data(train2, variables).to_torch(device=None)
     val2   = get_my_data(val2, variables).to_torch(device=None)
 
-    weights_qcd_train1 = torch.load(args.ckpt_pth_fold1 + 'qcd_weights_qcd_train.pt')
-    weights_qcd_val1 = torch.load(args.ckpt_pth_fold1 + 'qcd_weights_qcd_val.pt')
-    weights_qcd_train2 = torch.load(args.ckpt_pth_fold2 + 'qcd_weights_qcd_train.pt')
-    weights_qcd_val2 = torch.load(args.ckpt_pth_fold2 + 'qcd_weights_qcd_val.pt')
 
-    probs_by_process, weights_by_process = _collect_processwise_probs_weights_ss(
+    '''
+    data_complete_pt = torch.concat([data_t2.X.os, 
+                                  data_v2.X.os, 
+                                  data_t1.X.os, 
+                                  data_v1.X.os], dim = 0).detach().cpu().numpy()
+
+    '''
+    weights_qcd_train1 = torch.load(args.ckpt_pth_fold1 + 'qcd_weights_train.pt')
+    weights_qcd_val1 = torch.load(args.ckpt_pth_fold1 + 'qcd_weights_val.pt')
+    weights_qcd_train2 = torch.load(args.ckpt_pth_fold2 + 'qcd_weights_train.pt')
+    weights_qcd_val2 = torch.load(args.ckpt_pth_fold2 + 'qcd_weights_val.pt')
+    
+    probs_datat1 = predict_probabilities(model1, data_t1.X.os, device)
+    probs_datav1 = predict_probabilities(model1, data_v1.X.os, device)
+    probs_datat2 = predict_probabilities(model2, data_t2.X.os, device)
+    probs_datav2 = predict_probabilities(model2, data_v2.X.os, device)
+
+    probs_by_process, weights_by_process = _collect_processwise_probs_weights(
         model1=model1,
         model2=model2,
         train1=train1,
@@ -599,27 +659,37 @@ def main() -> None:
         device=device,
     )
 
-    probs_data = probs_by_process[0]
-    probs_qcd = probs_by_process[0]
     probs_Wjets = probs_by_process[1]
-    probs_embedding = probs_by_process[10]
+    probs_data = torch.concat([probs_datat1, probs_datav1, probs_datat2, probs_datav2], dim = 0).detach().cpu().numpy()
     probs_diboson_J = probs_by_process[2]
     probs_diboson_L = probs_by_process[3]
-    probs_DYjets_J = probs_by_process[4]
-    probs_DYjets_L = probs_by_process[5]
     probs_ST_J = probs_by_process[6]
     probs_ST_L = probs_by_process[7]
+    probs_DYjets_J = probs_by_process[4]
+    probs_DYjets_L = probs_by_process[5]
     probs_ttbar_J = probs_by_process[8]
     probs_ttbar_L = probs_by_process[9]
+    probs_embedding = probs_by_process[10]
+    probs_qcd = probs_by_process[0]
 
-    probs_nFF = np.concatenate([probs_by_process[pid] for pid in range(1, 11)], axis=0)
+    probs_nFF = torch.concat([
+        predict_probabilities(model1, train2.X.os[train2.process.os > 1], device),
+        predict_probabilities(model1, val2.X.os[val2.process.os > 1], device),
+        predict_probabilities(model2, train1.X.os[train1.process.os > 1], device),
+        predict_probabilities(model2, val1.X.os[val1.process.os > 1], device),
+    ], dim=0).detach().cpu().numpy()
 
-    probs_diboson = np.concatenate([probs_diboson_J, probs_diboson_L], axis=0)
-    probs_ST = np.concatenate([probs_ST_J, probs_ST_L], axis=0)
-    probs_DYjets = np.concatenate([probs_DYjets_J, probs_DYjets_L], axis=0)
-    probs_ttbar = np.concatenate([probs_ttbar_J, probs_ttbar_L], axis=0)
+    probs_diboson = np.concatenate([probs_diboson_J, probs_diboson_L], axis = 0)
+    probs_ST = np.concatenate([probs_ST_J, probs_ST_L], axis = 0)
+    probs_DYjets = np.concatenate([probs_DYjets_J, probs_DYjets_L], axis = 0)
+    probs_ttbar = np.concatenate([probs_ttbar_J, probs_ttbar_L], axis = 0)
+
 
     weights_Wjets = weights_by_process[1]
+    weights_data = torch.concat(
+        [train2.weights.os[train2.process.os == 0], val2.weights.os[val2.process.os == 0],
+         train1.weights.os[train1.process.os == 0], val1.weights.os[val1.process.os == 0]], 
+         dim = 0).detach().cpu().numpy()
     weights_diboson_J = weights_by_process[2]
     weights_diboson_L = weights_by_process[3]
     weights_DYjets_J = weights_by_process[4]
@@ -630,7 +700,12 @@ def main() -> None:
     weights_ttbar_L = weights_by_process[9]
     weights_embedding = weights_by_process[10]
 
-    weights_nFF = np.concatenate([weights_by_process[pid] for pid in range(1, 11)], axis=0)
+    weights_nFF = torch.concat(
+        [train2.weights.os[train2.process.os > 1], 
+             val2.weights.os[val2.process.os > 1],
+         train1.weights.os[train1.process.os > 1], 
+             val1.weights.os[val1.process.os > 1]], 
+         dim = 0).detach().cpu().numpy()
 
 
     weights_diboson = np.concatenate([weights_diboson_J, weights_diboson_L], axis = 0)
@@ -647,15 +722,15 @@ def main() -> None:
     logger.info(len(probs_qcd))
     logger.info(len(weights_qcd))
 
-    probs = [probs_qcd, probs_Wjets, probs_embedding, probs_diboson_J, probs_diboson_L, probs_DYjets_J, probs_DYjets_L, probs_ST_J, probs_ST_L, probs_ttbar_J, probs_ttbar_L]
-    weights = [weights_qcd, weights_Wjets, weights_embedding, weights_diboson_J, weights_diboson_L, weights_DYjets_J, weights_DYjets_L, weights_ST_J, weights_ST_L, weights_ttbar_J, weights_ttbar_L] 
-    labels = ['QCD','Wjets', 'embedding', 'diboson_J', 'diboson_L', 'DYjets_J', 'DYjets_L', 'ST_J', 'ST_L', 'ttbar_J', 'ttbar_L']
-    colors = ['#b9ac70', '#e76300', '#ffa90e', '#9f887e', '#94a4a2', '#b9ac70', '#3f90da', '#717581', '#5882ae', '#964c88' ,'#615fc8' ,  '#b9ac70']
+    probs = [probs_Wjets, probs_embedding, probs_diboson_J, probs_diboson_L, probs_DYjets_J, probs_DYjets_L, probs_ST_J, probs_ST_L, probs_ttbar_J, probs_ttbar_L, probs_qcd]
+    weights = [weights_Wjets, weights_embedding, weights_diboson_J, weights_diboson_L, weights_DYjets_J, weights_DYjets_L, weights_ST_J, weights_ST_L, weights_ttbar_J, weights_ttbar_L, weights_qcd] 
+    labels = ['Wjets', 'embedding', 'diboson_J', 'diboson_L', 'DYjets_J', 'DYjets_L', 'ST_J', 'ST_L', 'ttbar_J', 'ttbar_L', 'QCD']
+    colors = ['#e76300', '#ffa90e', '#9f887e', '#94a4a2', '#b9ac70', '#3f90da', '#717581', '#5882ae', '#964c88' ,'#615fc8' ,  '#b9ac70']
 
-    probs_compact = [probs_qcd, probs_Wjets, probs_embedding, probs_diboson, probs_DYjets, probs_ST, probs_ttbar]
-    weights_compact = [ weights_qcd, weights_Wjets, weights_embedding, weights_diboson, weights_DYjets, weights_ST, weights_ttbar]
-    labels_compact = [r"QCD multijet", r"W+jets", r"$\tau$ embedded", r"Diboson", r"Jet$\rightarrow \tau_{h}$", r"Single t", r'$t\bar{t}$']
-    colors_compact = [ '#b9ac70','#e76300', '#ffa90e', '#b9ac70', '#717581', '#717581', '#832db6']
+    probs_compact = [probs_Wjets, probs_embedding, probs_diboson, probs_DYjets, probs_ST, probs_ttbar, probs_qcd]
+    weights_compact = [weights_Wjets, weights_embedding, weights_diboson, weights_DYjets, weights_ST, weights_ttbar, weights_qcd]
+    labels_compact = [r"W+jets", r"$\tau$ embedded", r"Diboson", r"Jet$\rightarrow \tau_{h}$", r"Single t", r'$t\bar{t}$', r"QCD multijet"]
+    colors_compact = ['#e76300', '#ffa90e', '#b9ac70', '#717581', '#717581', '#832db6', '#b9ac70']
     # -------- calculate 
 
     if args.bins == 'equi_populated':
@@ -666,47 +741,35 @@ def main() -> None:
     bin_widths = np.diff(bins)
 
     hist_nFF, _ = np.histogram(probs_nFF,weights=weights_nFF, bins= bins)
-    QCD_weights = _calculate_scaled_event_weights_generalized(
+    hist_qcd, _ = np.histogram(probs_qcd, weights = weights_qcd, bins = bins)
+    Wjets_weights = _calculate_scaled_event_weights_generalized(
         event_values = probs_data,
         event_original_weights = np.ones_like(probs_data),
         bins = bins,
-        total_subtraction_per_bin=hist_nFF,
+        total_subtraction_per_bin=hist_nFF + hist_qcd,
     )
-
-
-    # Add QCD_weights back into data_DR
-
-    # Mask that corresponds exactly to the probs_data events
-    mask_qcd_data = (data_DR["SS"] == True) & (data_DR["process"] == 0)
-
-    # Extract row positions inside data_DR
-    indices_qcd_DR = data_DR.index[mask_qcd_data].to_numpy()
-
-    # Safety check
-    assert len(indices_qcd_DR) == len(QCD_weights), (
-        f"Error: DR mask gives {len(indices_qcd_DR)} rows but "
-        f"QCD_weights has {len(QCD_weights)} entries"
-    )
-
-    # Add new column (NaN everywhere initially)
-    data_DR["weight_qcd"] = np.nan
-    data_DR.loc[indices_qcd_DR, "weight_qcd"] = QCD_weights
 
 
     if args.write_back:
-        # Insert qcd_weights into the FULL data_complete
-        data_complete["weight_qcd"] = np.nan
+        mask_wjets_data = (data_DR["OS"] == True) & (data_DR["process"] == 0)
+        indices_wjets_DR = data_DR.index[mask_wjets_data].to_numpy()
 
-        # Copy values from data_DR into their original row positions
-        data_complete.loc[data_DR.index, "weight_qcd"] = data_DR["weight_qcd"]
+        assert len(indices_wjets_DR) == len(Wjets_weights), (
+            f"Error: DR mask gives {len(indices_wjets_DR)} rows but "
+            f"Wjets_weights has {len(Wjets_weights)} entries"
+        )
 
-        # Save updated file
+        data_DR["weight_wjets"] = np.nan
+        data_DR.loc[indices_wjets_DR, "weight_wjets"] = Wjets_weights
+
+        data_complete["weight_wjets"] = np.nan
+        data_complete.loc[data_DR.index, "weight_wjets"] = data_DR["weight_wjets"]
         data_complete.reset_index(drop=True).to_feather(args.data_complete_path)
-        logger.info("Successfully inserted weight_qcd into full data_complete.feather")
+        logger.info("Successfully inserted weight_wjets into %s", args.data_complete_path)
     else:
-        logger.info("Skipped writing weight_qcd back to file (write_back=False).")
+        logger.info("Skipping write-back to data frame/file (--write_back is False).")
 
-
+    
 
     matplotlib.rcParams.update({
         'font.size': 16,
@@ -735,8 +798,8 @@ def main() -> None:
 
     sim_counts, _  = np.histogram(np.concatenate(probs), weights = np.concatenate(weights), bins = bins)
 
-    QCD_counts, _ = np.histogram(probs_qcd, weights = weights_qcd, bins=bins)
     Wjets_counts, _ = np.histogram(probs_Wjets, weights = weights_Wjets, bins = bins)
+    QCD_counts, _ = np.histogram(probs_qcd, weights = weights_qcd, bins=bins)
     embedding_counts, _ = np.histogram(probs_embedding, weights = weights_embedding, bins = bins)
     dibosonJ_counts, _ = np.histogram(probs_diboson_J, weights = weights_diboson_J, bins = bins)
     dibosonL_counts, _ = np.histogram(probs_diboson_L, weights = weights_diboson_L, bins = bins)
@@ -753,10 +816,14 @@ def main() -> None:
     ttbar_counts = ttbarJ_counts + ttbarL_counts
 
 
+
+    QCD_counts, _ = np.histogram(probs_qcd, weights = weights_qcd, bins=bins)
+
+
     hist_nFF, _ = np.histogram(probs_nFF,weights=weights_nFF, bins= bins)
 
-
     QCD_counts_norm = np.divide(QCD_counts, sim_counts)
+
     Wjets_counts_norm = np.divide(Wjets_counts, sim_counts)
     embedding_counts_norm = np.divide(embedding_counts, sim_counts)
     diboson_counts_norm = np.divide(diboson_counts, sim_counts)
@@ -768,6 +835,7 @@ def main() -> None:
     ratio = np.divide(data_counts,
                       sim_counts)
 
+    Wjets_counts2, _ = np.histogram(probs_Wjets, weights = weights_Wjets**2, bins = bins)
 
     QCD_counts2, _ = np.histogram(probs_qcd, weights = weights_qcd**2, bins=bins)
 
@@ -775,10 +843,10 @@ def main() -> None:
 
     y_error = np.sqrt(data_counts)
     x_error = 0.5*bin_widths
-    y_error_stat = np.sqrt(QCD_counts2)
+    y_error_stat = np.sqrt(Wjets_counts2)
 
 
-    counts_data_reduced, _ = np.histogram(probs_data, weights = QCD_weights, bins = bins)
+    counts_data_reduced, _ = np.histogram(probs_data, weights = Wjets_weights, bins = bins)
 
     fig, ax = plt.subplots(2,1, figsize = (12,12), sharex=True,
         gridspec_kw={'height_ratios': [3,1], 'hspace': 0.05})
@@ -789,12 +857,12 @@ def main() -> None:
     CMS_LABEL(ax)
 
     ax[0].errorbar(bin_centers,counts_data_reduced, yerr = y_error, xerr = x_error, color = 'black', fmt = 'o' ,markersize = 5, label = 'data (reduced)')
-    ax[0].bar(bin_centers, QCD_counts, width = bin_widths, color ='#b9ac70', label = 'QCD')
-    ax[0].set_ylabel('events')
+    ax[0].bar(bin_centers, Wjets_counts, width = bin_widths, color ='#e76300', label = 'MC W+jets')
+    ax[0].set_ylabel('Events')
     ax[0].legend()
     adjust_ylim_for_legend(ax[0])
 
-    ax[1].errorbar(bin_centers, counts_data_reduced/QCD_counts, yerr = y_error/data_counts, xerr = x_error, label = 'ratio', color = 'black', fmt = 'o')
+    ax[1].errorbar(bin_centers, counts_data_reduced/Wjets_counts, yerr = y_error/data_counts, xerr = x_error, label = 'Ratio', color = 'black', fmt = 'o')
     ax[1].fill_between(
     bin_centers,
     1 - y_error_stat / (Wjets_counts + 1e-10),
@@ -802,19 +870,20 @@ def main() -> None:
     color="gray",
     alpha=0.3,
     step='mid',
-    label="stat. unc.")
+    label="Stat. Unc.")
     
     ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
-    ax[1].set_ylabel("data / model")
+    ax[1].set_ylabel("Data / Model")
     ax[1].set_ylim([0.5, 1.5])
-
+    ax[1].legend()
+    ax[1].set_xlabel('NN output')
     os.makedirs(args.output_dir, exist_ok=True)
-    fig.savefig(os.path.join(args.output_dir, 'results_data_reduced.png'))
-    fig.savefig(os.path.join(args.output_dir, 'results_data_reduced.pdf'))
+    fig.savefig(os.path.join(args.output_dir, 'results_data_reduced_wjets.png'))
+    fig.savefig(os.path.join(args.output_dir, 'results_data_reduced_wjets.pdf'))
 
     fig, ax = plt.subplots(
         3, 1,
-        figsize=(12, 12),
+        figsize=(12,12),
         sharex=True,
         gridspec_kw={'height_ratios': [3,1,1], 'hspace': 0.05}
     )
@@ -827,7 +896,7 @@ def main() -> None:
     # X and Y error
     y_error = np.sqrt(data_counts)
     x_error = 0.5*bin_widths
-    y_err_stat = np.sqrt(QCD_counts2 + hist_nFF2)
+    y_err_stat = np.sqrt(Wjets_counts2 + QCD_counts2 + hist_nFF2)
 
     # --- Upper panel: stacked histograms + data ---
     ax[0].hist(probs_compact, bins=bins, weights=weights_compact, histtype='barstacked',
@@ -839,8 +908,8 @@ def main() -> None:
     ax[0].set_ylabel("Events")
 
     ax[0].set_ylim([0, 1.4*np.max([np.max(data_counts), np.max(sim_counts)])])
-    ax[0].legend(loc='upper right', bbox_to_anchor=(0.8, 0.9), ncol=3, frameon=False)
-    ax[0].set_ylim([0, 8000])
+    ax[0].legend(loc='upper right',bbox_to_anchor=(0.8, 0.9), ncol=3, frameon=False)
+    ax[0].set_ylim([0, 20000])
     # Remove top ticks
     ax[0].tick_params(direction='in', top=True, right=True)
 
@@ -864,14 +933,13 @@ def main() -> None:
     ax[1].grid(True, linestyle=':', alpha=0.7)
     ax[1].tick_params(direction='in', top=True, right=True)
     ax[1].legend(loc = 'upper right', ncol = 2)
-    
-    ax[2].bar(bin_centers, QCD_counts_norm, color =  '#b9ac70', width = bin_widths )
-    ax[2].bar(bin_centers, Wjets_counts_norm, bottom = QCD_counts_norm, color ='#e76300', width = bin_widths)
-    ax[2].bar(bin_centers, embedding_counts_norm, bottom = QCD_counts_norm + Wjets_counts_norm, color = '#ffa90e', width = bin_widths)
-    ax[2].bar(bin_centers, diboson_counts_norm, bottom = QCD_counts_norm + Wjets_counts_norm + embedding_counts_norm, color = '#94a4a2', width = bin_widths)
-    ax[2].bar(bin_centers, DYjets_counts_norm, bottom = QCD_counts_norm + Wjets_counts_norm + embedding_counts_norm + diboson_counts_norm, color = '#b9ac70', width = bin_widths)
-    ax[2].bar(bin_centers, ST_counts_norm, bottom = QCD_counts_norm + Wjets_counts_norm + embedding_counts_norm + diboson_counts_norm + DYjets_counts_norm, color = '#717581', width = bin_widths)
-    ax[2].bar(bin_centers, ttbar_counts_norm, bottom = QCD_counts_norm + Wjets_counts_norm + embedding_counts_norm + diboson_counts_norm + DYjets_counts_norm + ST_counts_norm, color = '#832db6', width = bin_widths)
+    ax[2].bar(bin_centers, Wjets_counts_norm, color ='#e76300', width = bin_widths)
+    ax[2].bar(bin_centers, embedding_counts_norm, bottom = Wjets_counts_norm, color = '#ffa90e', width = bin_widths)
+    ax[2].bar(bin_centers, diboson_counts_norm, bottom = Wjets_counts_norm + embedding_counts_norm, color = '#94a4a2', width = bin_widths)
+    ax[2].bar(bin_centers, DYjets_counts_norm, bottom = Wjets_counts_norm + embedding_counts_norm + diboson_counts_norm, color = '#b9ac70', width = bin_widths)
+    ax[2].bar(bin_centers, ST_counts_norm, bottom = Wjets_counts_norm + embedding_counts_norm + diboson_counts_norm + DYjets_counts_norm, color = '#717581', width = bin_widths)
+    ax[2].bar(bin_centers, ttbar_counts_norm, bottom = Wjets_counts_norm + embedding_counts_norm + diboson_counts_norm + DYjets_counts_norm + ST_counts_norm, color = '#832db6', width = bin_widths)
+    ax[2].bar(bin_centers, QCD_counts_norm, bottom = Wjets_counts_norm + embedding_counts_norm + diboson_counts_norm + DYjets_counts_norm + ST_counts_norm + ttbar_counts_norm, color =  '#b9ac70', width = bin_widths )
     ax[2].set_xlabel("NN output")
     ax[2].set_ylabel('Proc. frac.')
     #ax[2].set_ylim([0,1])
@@ -881,11 +949,11 @@ def main() -> None:
     fig.subplots_adjust(hspace=0.05)
 
     if args.bins == 'equi_populated':
-        fig.savefig(os.path.join(args.output_dir, 'results_training_equi_QCD.png'))
-        fig.savefig(os.path.join(args.output_dir, 'results_training_equi_QCD.pdf'))
+        fig.savefig(os.path.join(args.output_dir, 'results_training_equi_wjets.png'))
+        fig.savefig(os.path.join(args.output_dir, 'results_training_equi_wjets.pdf'))
     elif args.bins == 'uniform':
-        fig.savefig(os.path.join(args.output_dir, 'results_training_uniform_QCD.png'))
-        fig.savefig(os.path.join(args.output_dir, 'results_training_uniform_QCD.pdf'))
+        fig.savefig(os.path.join(args.output_dir, 'results_training_uniform.png'))
+        fig.savefig(os.path.join(args.output_dir, 'results_training_uniform.pdf'))
 
 
 

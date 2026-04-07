@@ -28,7 +28,7 @@ from functools import reduce
 from pathlib import Path
 from typing import (Any, Callable, Dict, Generator, Iterable, Iterator, List,
                     Optional, Tuple, Type, Union, get_args, get_origin)
-
+from dataclasses import dataclass, KW_ONLY
 import dill
 import fsspec
 import GPUtil
@@ -39,7 +39,7 @@ import torch
 import torch as t
 from tap import Tap
 from tqdm import tqdm
-from Logging import setup_logging, LogContext
+from CustomLogging import setup_logging, LogContext
 
 logger = setup_logging(logger=logging.getLogger(__name__))
 
@@ -1327,3 +1327,68 @@ class CollectionMeta(type):
         safe_inject('load_chunked', load_chunked)
 
         return super().__new__(mcs, name, bases, namespace)
+
+@dataclass
+class _collection:
+    values: Any
+    weights: Any
+    histograms: Any
+    
+    @property
+    def unrolled(self) -> tuple[Any, ...]:
+        return (self.values, self.weights, self.histograms)
+
+@dataclass
+class _same_sign_opposite_sign_split(metaclass=CollectionMeta):
+    ss: Union[t.Tensor, pd.DataFrame, np.ndarray]
+    os: Union[t.Tensor, pd.DataFrame, np.ndarray]
+
+@dataclass
+class _component_collection(metaclass=CollectionMeta):
+    _: KW_ONLY
+    X: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
+    Y: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
+    weights: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
+    class_weights: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
+    process: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
+    qcd_weights_os: Union[t.Tensor, None] = None
+    SR_like: Union[t.Tensor, pd.DataFrame, np.ndarray, int, None] = None
+
+def get_my_data(df, training_var):
+    _df = df  # fold/fold_train/fold_val to load, should contain SS/OS columns
+    ss_os_split = _same_sign_opposite_sign_split(
+            ss=_df[(_df.SS)],
+            os=_df[((_df.OS) & (_df.Label != 2)) | ((_df.SS) & (_df.Label == 2))],
+        )
+
+    return _component_collection(
+            X=ss_os_split.apply_func(lambda x: x[training_var].to_numpy(dtype = np.float32)),
+            Y=ss_os_split.apply_func(lambda x: x["Label"].to_numpy(dtype = np.float32)),  # or ss_os_split.apply_func(extract_label)
+            # instead of _same_sign_opposite_sign_split.apply(lambda x: x["Label"].to_numpy()).to_collection(ss_os_split)
+            weights=ss_os_split.apply_func(lambda __df: __df["weight"].to_numpy(dtype = np.float32)),
+            class_weights=ss_os_split.apply_func(lambda x: x["class_weights"].to_numpy()),
+            process=ss_os_split.apply_func(lambda x: x['process'].to_numpy(dtype = np.float32))
+        )
+
+def get_plotting_data(df, training_var):
+    _df = df  # fold/fold_train/fold_val to load, should contain SS/OS columns
+    ss_os_split = _same_sign_opposite_sign_split(
+            ss=_df[((_df.SS) & (_df.Label == 2))],
+            os=_df[((_df.OS) & (_df.Label == 2))]
+        )
+
+    return _component_collection(
+            X=ss_os_split.apply_func(lambda x: x[training_var].to_numpy(dtype = np.float32)),
+            weights=ss_os_split.apply_func(lambda __df: __df["weight"].to_numpy(dtype = np.float32)),
+        )
+
+def get_class_weights(
+    weights: Union[pd.Series, np.ndarray, t.Tensor],
+    Y: Union[pd.Series, np.ndarray, t.Tensor],
+    classes: tuple = (0, 1),
+    class_weighted: bool = True,
+) -> Union[pd.Series, np.ndarray, t.Tensor]:
+    _weights = np.zeros_like(weights)
+    for _class in classes:
+        _weights[Y == _class] = weights.sum() / weights[Y == _class].sum()
+    return _weights * (weights if class_weighted else 1.0)
