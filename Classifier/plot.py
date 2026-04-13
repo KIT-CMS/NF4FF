@@ -13,8 +13,6 @@ import matplotlib.pyplot as plt
 import yaml
 from pathlib import Path
 import matplotlib
-from matplotlib.ticker import ScalarFormatter
-
 from torch.utils.data import TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -24,6 +22,9 @@ from typing import (Any, Callable, Dict, Generator, Iterable, Iterator, List,
 from training_wjets import BinaryClassifier
 from tap import Tap
 from typing import Literal, Generator
+from classes.Collection import (load_model, predict_probabilities, _calculate_scaled_event_weights_generalized,
+                                equi_populated_bins, split_even_odd, load_config, CMS_CHANNEL_TITLE, CMS_LABEL,
+                                CMS_LUMI_TITLE, CMS_NJETS_TITLE, adjust_ylim_for_legend)
 
 # ----- seeds -----
 
@@ -53,7 +54,6 @@ with config_path.open('r') as f:
 in_dir = cfg['directories']['data_input_directory']
 out_dir = cfg['directories']['data_output_directory']
 
-
 data_complete_path = out_dir + "/data_complete.feather"
 
 ckpt_pth_fold1: str = 'results/Wjets/inclusive/fold1/last/'
@@ -64,6 +64,7 @@ ckpt_pth_fold2: str = 'results/Wjets/inclusive/fold2/last/'
 logger = setup_logging(logger=logging.getLogger(__name__))
 
 PROCESS_ORDER = [1, 10, 2, 3, 4, 5, 6, 7, 8, 9, 0]
+
 PROCESS_LABELS = {
     0: 'QCD',
     1: 'Wjets',
@@ -105,44 +106,10 @@ variables = [
 ]
 
 dim = len(variables)
+
 INPUT_DIM = dim
 
-# ------ config -----
-
-
-@dataclass
-class Config:
-    bsize_train: int
-    bsize_val: int
-    bsize_test: int
-    grad_clip: float
-    n_epochs: int
-    use_amp: bool
-    s_scale_max: float
-    lr: float
-
-    @staticmethod
-    def from_dict(cfg: Dict[str, Any]) -> "Config":
-        training  = cfg["training"]
-        optimizer = cfg["optimizer"]
-
-        return Config(
-            bsize_train=training["bsize_train"],
-            bsize_val=training["bsize_val"],
-            bsize_test=training["bsize_test"],
-            grad_clip=training["grad_clip"],
-            n_epochs=training["n_epochs"],
-            use_amp=training["use_amp"],
-            s_scale_max=training["s_scale_max"],
-            lr=optimizer["lr"],
-        )
-
-
-@dataclass
-class _same_sign_opposite_sign_split(metaclass=helper.CollectionMeta):
-    ss: Union[torch.Tensor, pd.DataFrame, np.ndarray]
-    os: Union[torch.Tensor, pd.DataFrame, np.ndarray]
-
+# ------ data handling -----
 
 @dataclass
 class _component_collection(metaclass=helper.CollectionMeta):
@@ -153,223 +120,11 @@ class _component_collection(metaclass=helper.CollectionMeta):
     weights: Union[torch.Tensor, pd.DataFrame, np.ndarray, None] = None
     class_weights: Union[torch.Tensor, pd.DataFrame, np.ndarray, None] = None
     process: Union[torch.Tensor, pd.DataFrame, np.ndarray, None] = None
-
-
-@dataclass
-class _collection:
-    values: Any
-    weights: Any
-    histograms: Any
-    
-    @property
-    def unrolled(self) -> tuple[Any, ...]:
-        return (self.values, self.weights, self.histograms)
-
-
-# ------ model utilities -----
-
-def load_model(
-    input_dim: int,
-    checkpoint_path: str,
-    device: torch.device,
-) -> BinaryClassifier:
-    model = BinaryClassifier(input_dim).to(device)
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint["model_state_dict"])
-    model.eval()
-    return model
-
-
-@torch.no_grad()
-def predict_probabilities(
-    model: nn.Module,
-    X: torch.Tensor,
-    device: torch.device,
-) -> torch.Tensor:
-    X = X.to(device, non_blocking=True)
-    logits = model(X)
-    return logits.squeeze(1).cpu()
-
-
-# ----- Data utilities -----
-
-
-def _get_backend_and_device(tensor_or_array: Union[np.ndarray, t.Tensor]) -> tuple[Any, Any]:
-    if isinstance(tensor_or_array, t.Tensor):
-        return t, tensor_or_array.device
-    elif isinstance(tensor_or_array, np.ndarray):
-        return np, None
-    else:
-        raise TypeError(f"Input must be a NumPy array or PyTorch tensor, got {type(tensor_or_array)}")
-
-
-def _calculate_scaled_event_weights_generalized(
-    event_values: Union[np.ndarray, t.Tensor],
-    event_original_weights: Union[np.ndarray, t.Tensor],
-    bins: np.ndarray,
-    total_subtraction_per_bin: Union[np.ndarray, t.Tensor],
-) -> Union[np.ndarray, t.Tensor]:
-    lib, device = _get_backend_and_device(event_values)
-    is_torch = (lib == t)
-    device_kwargs = {'device': device} if is_torch else {}
-
-    raw = _collection(event_values, event_original_weights, total_subtraction_per_bin)
-    
-    initial = _collection(
-        values=lib.asarray(raw.values, **device_kwargs),
-        weights=lib.asarray(raw.weights, **device_kwargs),
-        histograms=lib.asarray(raw.histograms, **device_kwargs)
-    )
-    
-    shape_prefix = _collection(
-        values=initial.values.shape[:-1],
-        weights=initial.weights.shape[:-1],
-        histograms=initial.histograms.shape[:-1]
-    )
-
-    bins = lib.asarray(bins, dtype=event_values.dtype, **device_kwargs)
-    n_bins, n_events = len(bins) - 1, initial.values.shape[-1]
-
-    flat = _collection(
-        initial.values.reshape(-1, n_events).contiguous() if is_torch else initial.values.reshape(-1, n_events),
-        initial.weights.reshape(-1, n_events),
-        initial.histograms.reshape(-1, n_bins)
-    )
-    batch_size = _collection(
-        values=flat.values.shape[0],
-        weights=flat.weights.shape[0],
-        histograms=flat.histograms.shape[0]
-    )
-
-    try:
-        common_prefix_dim = np.broadcast_shapes(*shape_prefix.unrolled)
-        max_batch_size = int(np.prod(common_prefix_dim)) if common_prefix_dim else 1
-    except ValueError as e:
-        raise ValueError(f"Prefix shapes {shape_prefix.unrolled} are not broadcastable. Error: {e}")
-
-    if batch_size.values == 1 and max_batch_size > 1:
-        flat.values = lib.broadcast_to(flat.values, (max_batch_size, n_events))
-    if batch_size.weights == 1 and max_batch_size > 1:
-        flat.weights = lib.broadcast_to(flat.weights, (max_batch_size, n_events))
-    if batch_size.histograms == 1 and max_batch_size > 1:
-        flat.histograms = lib.broadcast_to(flat.histograms, (max_batch_size, n_bins))
-
-    _digitize, digitize_kwargs = (lib.bucketize, {'right': False}) if is_torch else (lib.digitize, {})
-    raw_indices = _digitize(flat.values, bins, **digitize_kwargs) - 1
-
-    is_out_of_bounds = (raw_indices < 0) | (raw_indices >= n_bins)
-    event_bin_indices = lib.clip(raw_indices, 0, n_bins - 1)
-
-    event_weights_for_summation = flat.weights.clone() if is_torch else flat.weights.copy()
-    event_weights_for_summation[is_out_of_bounds] = 0.0  # Zero out weights for out-of-bounds events for sum calculation
-
-    sum_original_weights_per_bin = lib.zeros((max_batch_size, n_bins), dtype=flat.weights.dtype, **device_kwargs)
-    if is_torch:
-        sum_original_weights_per_bin.scatter_add_(1, event_bin_indices.long(), event_weights_for_summation)
-    else:
-        for i in range(max_batch_size):
-            sum_original_weights_per_bin[i] = lib.bincount(event_bin_indices[i], event_weights_for_summation[i], n_bins)
-
-    scale_factor_per_bin = lib.ones_like(sum_original_weights_per_bin)
-    non_zero_sum_mask = sum_original_weights_per_bin != 0
-
-    scale_factor_per_bin[non_zero_sum_mask] = 1.0 - flat.histograms[non_zero_sum_mask] / sum_original_weights_per_bin[non_zero_sum_mask]
-
-    zero_sum_non_zero_subtraction_mask = (sum_original_weights_per_bin == 0) & (flat.histograms != 0)
-    scale_factor_per_bin[zero_sum_non_zero_subtraction_mask] = 0.0  # lib.nan
-
-    # Gather Scale Factors for each Event
-    if is_torch:
-        scale_factors_for_events = lib.gather(scale_factor_per_bin, dim=1, index=event_bin_indices.long())
-    else:
-        row_idx_gather = lib.arange(max_batch_size)[:, None]
-        scale_factors_for_events = scale_factor_per_bin[row_idx_gather, event_bin_indices]
-
-    corrected_event_weights_flat = flat.weights * scale_factors_for_events
-    corrected_event_weights_flat[is_out_of_bounds] = flat.weights[is_out_of_bounds]
-
-    return corrected_event_weights_flat.reshape(initial.weights.shape)  # reshape back to original shape
-
-
-
-def split_mc_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    trainval, test = train_test_split(
-        df,
-        test_size=0.5,
-        random_state=SEED,
-        stratify=df["is_Wjets"]
-        
-    )
-    train, val = train_test_split(
-        trainval,
-        test_size=0.5,
-        random_state=SEED,
-        stratify=trainval["is_Wjets"]
-    )
-    return train.reset_index(drop=True), val.reset_index(drop=True), test.reset_index(drop=True)
-
-
-def split_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    trainval, test = train_test_split(
-        df, test_size=0.5, random_state=SEED
-    )
-    train, val = train_test_split(
-        trainval, test_size=0.5, random_state=SEED
-    )
-    return train.reset_index(drop=True), val.reset_index(drop=True), test.reset_index(drop=True)
-
-
-def make_tensor_dataset(
-    df: pd.DataFrame,
-    variables: List[str],
-    scaler: StandardScaler,
-) -> TensorDataset:
-    X = scaler.transform(df[variables].to_numpy(np.float32))
-    y = df['is_Wjets'].to_numpy(np.float32)
-    w = df['weight'].to_numpy(np.float32)
-
-    return TensorDataset(
-        torch.from_numpy(X),
-        torch.from_numpy(y).view(-1, 1),
-        torch.from_numpy(w),
-    )
-
-def equi_populated_bins(data, n_bins):
-
-    data = np.asarray(data)
-    quantiles = np.linspace(0, 1, n_bins + 1)
-    bin_edges = np.quantile(data, quantiles)
-    return bin_edges
-
-
-def mask_DR(df):
-
-    mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
-    mask_a2 = (df.nbtag == 0)
-    mask_a4 = ((df.iso_1 > 0.0) & (df.iso_1 < 0.15))
-    mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_a6 = (df.mt_1 > 70)
-    mask_DR = (mask_a1 & mask_a2  & mask_a4 & mask_a5 & mask_a6)
-
-    return df[mask_DR].copy()
-
-
-def split_even_odd(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    fold1 = df[df.event_var  == 0].reset_index(drop=True)
-    fold2 = df[df.event_var == 1].reset_index(drop=True)
-
-    train1, val1 = train_test_split(
-        fold1, test_size=0.5, random_state=SEED
-    )
-    train2, val2 = train_test_split(
-        fold2, test_size=0.5, random_state=SEED
-    )
-
-    return train1.reset_index(drop=True), val1.reset_index(drop=True), train2.reset_index(drop=True), val2.reset_index(drop=True)
+    Label: Union[torch.Tensor, pd.DataFrame, np.ndarray, None] = None
 
 def get_my_data(df, training_var):
     _df = df  # fold/fold_train/fold_val to load, should contain SS/OS columns
-    ss_os_split = _same_sign_opposite_sign_split(
+    ss_os_split = helper._same_sign_opposite_sign_split(
             ss=_df[(_df.SS)],
             os=_df[((_df.OS) & (_df.Label != 2)) | ((_df.SS) & (_df.Label == 2))],
         )
@@ -383,9 +138,10 @@ def get_my_data(df, training_var):
             process=ss_os_split.apply_func(lambda x: x['process'].to_numpy(dtype = np.float32)),
             Label=ss_os_split.apply_func(lambda x: x["Label"].to_numpy(dtype = np.float32))
         )
+
 def get_my_other_data(df, training_var):
     _df = df  # fold/fold_train/fold_val to load, should contain SS/OS columns
-    ss_os_split = _same_sign_opposite_sign_split(
+    ss_os_split = helper._same_sign_opposite_sign_split(
             ss=_df[(_df.SS)],
             os=_df[((_df.OS) & (_df.process == 0))],
         )
@@ -399,101 +155,86 @@ def get_my_other_data(df, training_var):
             process=ss_os_split.apply_func(lambda x: x['process'].to_numpy(dtype = np.float32)),
             Label=ss_os_split.apply_func(lambda x: x["Label"].to_numpy(dtype = np.float32))
         )
+
+# ------ masks -----
+
+def mask_DR(df):
+
+    mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
+    mask_a2 = (df.nbtag == 0)
+    mask_a4 = ((df.iso_1 > 0.0) & (df.iso_1 < 0.15))
+    mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
+    mask_a6 = (df.mt_1 > 70)
+    mask_DR = (mask_a1 & mask_a2  & mask_a4 & mask_a5 & mask_a6)
+
+    return df[mask_DR].copy()
+
 # ----- plotting -----
 
-def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
-    ax[0].set_title(
-        r"$e\tau_h$",
-        fontsize=20,
-        loc="left",
-        fontproperties="Tex Gyre Heros",
-    )
+def _calculate_probs_weights(
+        model1: nn.Module,
+        model2: nn.Module,
+        train1: _component_collection,
+        train2: _component_collection,
+        val1: _component_collection,
+        val2: _component_collection,
+        process_id: int,
+        device: torch.device,
+) -> np.ndarray:
+    probs: np.ndarray = {}
+    model_pairs = ((model1, train2, val2), (model2, train1, val1))
+    probs_part = []
+    for model, train_ds, val_ds in model_pairs:
+        for ds in (train_ds, val_ds):
+            mask = ds.process.os == process_id
+            probs_part.append(predict_probabilities(model, ds.X.os[mask], device).detach().cpu().numpy())
+    probs = np.concatenate([probs, probs_part], axis=0) if len(probs) > 0 else probs_part
+    return probs
 
-def CMS_NJETS_TITLE(ax, *args, **kwargs):
-    ax[0].set_title(
-        r"$N_{jets}$ inclusive",
-        fontsize=20,
-        loc="center",
-        fontproperties="Tex Gyre Heros"
-    )
-
-
-def CMS_LUMI_TITLE(ax, *args, **kwargs):
-    ax[0].set_title(
-        "59.8 $fb^{-1}$ (2018, 13 TeV)",
-        fontsize=20,
-        loc="right",
-        fontproperties="Tex Gyre Heros"
-    )
-
-
-def CMS_LABEL(ax, *args, **kwargs):
-    ax[0].text(
-        0.025, 0.95,
-        "Private work (CMS data/simulation)",
-        fontsize=20,
-        verticalalignment='top',
-        fontproperties="Tex Gyre Heros:italic",
-        bbox=dict(facecolor="white", alpha=0, edgecolor="white", boxstyle="round,pad=0.5"),
-        transform=ax[0].transAxes
-    )
+def _calculate_weights(
+        train1: _component_collection,
+        train2: _component_collection,
+        val1: _component_collection,
+        val2: _component_collection,
+        process_id: int,
+) -> np.ndarray:
+    weights = np.concatenate([
+        train2.weights.os[train2.process.os == process_id].detach().cpu().numpy(),
+        val2.weights.os[val2.process.os == process_id].detach().cpu().numpy(),
+        train1.weights.os[train1.process.os == process_id].detach().cpu().numpy(),
+        val1.weights.os[val1.process.os == process_id].detach().cpu().numpy(),
+    ], axis=0)
+    return weights
 
 
-def reorder_for_rowwise_legend(handles, labels, ncol):
-    n = len(handles)
-    nrows = math.ceil(n / ncol)
 
-    new_handles, new_labels = [], []
+def _collect_processwise_probs_weights(
+    model1: nn.Module,
+    model2: nn.Module,
+    train1: _component_collection,
+    val1: _component_collection,
+    train2: _component_collection,
+    val2: _component_collection,
+    process_ids: List[int],
+    device: torch.device,
+) -> Tuple[Dict[int, np.ndarray], Dict[int, np.ndarray]]:
+    probs_by_process: Dict[int, np.ndarray] = {}
+    weights_by_process: Dict[int, np.ndarray] = {}
 
-    for col in range(ncol):
-        for row in range(nrows):
-            idx = row * ncol + col
-            if idx < n:
-                new_handles.append(handles[idx])
-                new_labels.append(labels[idx])
+    model_pairs = ((model1, train2, val2), (model2, train1, val1))
+    for process_id in process_ids:
+        prob_parts = []
+        weight_parts = []
+        for model, train_ds, val_ds in model_pairs:
+            for ds in (train_ds, val_ds):
+                mask = ds.process.os == process_id
+                prob_parts.append(predict_probabilities(model, ds.X.os[mask], device))
+                weight_parts.append(ds.weights.os[mask])
 
-    return new_handles, new_labels
+        probs_by_process[process_id] = torch.concat(prob_parts, dim=0).detach().cpu().numpy()
+        weights_by_process[process_id] = torch.concat(weight_parts, dim=0).detach().cpu().numpy()
 
-
-def adjust_ylim_for_legend(ax=None, spacing=0.05):
-    if ax is None:
-        ax = plt.gca()
-
-    fig = ax.figure
-    fig.canvas.draw()
-
-    if (leg := ax.get_legend()) is None:
-        return
-
-    bbox_leg, bbox_ax = leg.get_window_extent(), ax.get_window_extent()
-
-    legend_height_ratio = bbox_leg.height / bbox_ax.height
-
-    ymin, ymax = ax.get_ylim()
-    scale = ax.get_yscale()
-
-    if (available_fraction := 1.0 - legend_height_ratio - spacing) <= 0.1:
-        available_fraction = 0.1
-
-    if scale == "linear":
-        data_max_y = ax.dataLim.y1
-        data_range = data_max_y - ymin
-        new_range = data_range / available_fraction
-        new_ymax = ymin + new_range
-        ax.set_ylim(ymin, new_ymax)
-
-    elif scale == "log":
-        log_ymin = np.log10(ymin)
-        log_data_max = np.log10(ax.dataLim.y1)
-        log_range = log_data_max - log_ymin
-        new_log_range = log_range / available_fraction
-        new_log_ymax = log_ymin + new_log_range
-
-        new_log_ymax = np.ceil(new_log_ymax)
-
-        new_ymax = 10 ** new_log_ymax
-        ax.set_ylim(ymin, new_ymax)
-
+    return probs_by_process, weights_by_process
 
 def plot_nn_output(
     outputs_ff: np.ndarray,
@@ -542,34 +283,18 @@ def plot_nn_output(
     plt.savefig(filename)
     plt.close()
 
+# ------ masks -----
 
-def _collect_processwise_probs_weights(
-    model1: nn.Module,
-    model2: nn.Module,
-    train1: _component_collection,
-    val1: _component_collection,
-    train2: _component_collection,
-    val2: _component_collection,
-    process_ids: List[int],
-    device: torch.device,
-) -> Tuple[Dict[int, np.ndarray], Dict[int, np.ndarray]]:
-    probs_by_process: Dict[int, np.ndarray] = {}
-    weights_by_process: Dict[int, np.ndarray] = {}
+def mask_DR(df):
 
-    model_pairs = ((model1, train2, val2), (model2, train1, val1))
-    for process_id in process_ids:
-        prob_parts = []
-        weight_parts = []
-        for model, train_ds, val_ds in model_pairs:
-            for ds in (train_ds, val_ds):
-                mask = ds.process.os == process_id
-                prob_parts.append(predict_probabilities(model, ds.X.os[mask], device))
-                weight_parts.append(ds.weights.os[mask])
+    mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
+    mask_a2 = (df.nbtag == 0)
+    mask_a4 = ((df.iso_1 > 0.0) & (df.iso_1 < 0.15))
+    mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
+    mask_a6 = (df.mt_1 > 70)
+    mask_DR = (mask_a1 & mask_a2  & mask_a4 & mask_a5 & mask_a6)
 
-        probs_by_process[process_id] = torch.concat(prob_parts, dim=0).detach().cpu().numpy()
-        weights_by_process[process_id] = torch.concat(weight_parts, dim=0).detach().cpu().numpy()
-
-    return probs_by_process, weights_by_process
+    return df[mask_DR].copy()
 
 
 # ----- main -----
@@ -582,7 +307,6 @@ def main() -> None:
 
     args = Args().parse_args()
 
-
     model1 = load_model(INPUT_DIM, ckpt_pth_fold1 + 'model_checkpoint.pth', device)
     model2 = load_model(INPUT_DIM, ckpt_pth_fold2 + 'model_checkpoint.pth', device)
 
@@ -591,6 +315,22 @@ def main() -> None:
     data_complete = pd.read_feather(args.data_complete_path)
     data_DR = mask_DR(data_complete)
     train1, val1, train2, val2 = split_even_odd(data_DR)
+
+
+    datasets = {
+        "train1": train1,
+        "val1": val1,
+        "train2": train2,
+        "val2": val2,
+    }
+
+    data = {
+        name: get_my_other_data(ds, variables).to_torch(device=None) for name, ds in datasets.items()
+    }
+
+    data_model = {
+        name: get_my_data(ds, variables).to_torch(device=None) for name, ds in datasets.items()
+        }
 
     data_t1 = get_my_other_data(train1, variables).to_torch(device=None)
     data_v1 = get_my_other_data(val1, variables).to_torch(device=None)
@@ -603,15 +343,31 @@ def main() -> None:
     train2 = get_my_data(train2, variables).to_torch(device=None)
     val2   = get_my_data(val2, variables).to_torch(device=None)
 
+    weights_qcd = {
+        "train1": torch.load(ckpt_pth_fold1 + 'qcd_weights_train.pt'),
+        "val1": torch.load(ckpt_pth_fold1 + 'qcd_weights_val.pt'),
+        "train2": torch.load(ckpt_pth_fold2 + 'qcd_weights_train.pt'),
+        "val2": torch.load(ckpt_pth_fold2 + 'qcd_weights_val.pt'),
+    }
+
     weights_qcd_train1 = torch.load(args.ckpt_pth_fold1 + 'qcd_weights_train.pt')
     weights_qcd_val1 = torch.load(args.ckpt_pth_fold1 + 'qcd_weights_val.pt')
     weights_qcd_train2 = torch.load(args.ckpt_pth_fold2 + 'qcd_weights_train.pt')
     weights_qcd_val2 = torch.load(args.ckpt_pth_fold2 + 'qcd_weights_val.pt')
     
+    probs_data = {
+        "train1": predict_probabilities(model1, data["train1"].X.os, device),
+        "val1": predict_probabilities(model1, data["val1"].X.os, device),
+        "train2": predict_probabilities(model2, data["train2"].X.os, device),
+        "val2": predict_probabilities(model2, data["val2"].X.os, device)
+    }
+
     probs_datat1 = predict_probabilities(model1, data_t1.X.os, device)
     probs_datav1 = predict_probabilities(model1, data_v1.X.os, device)
     probs_datat2 = predict_probabilities(model2, data_t2.X.os, device)
     probs_datav2 = predict_probabilities(model2, data_v2.X.os, device)
+
+    probs
 
     probs_by_process, weights_by_process = _collect_processwise_probs_weights(
         model1=model1,
@@ -623,9 +379,8 @@ def main() -> None:
         process_ids=PROCESS_ORDER,
         device=device,
     )
-
+    probs_data = torch.concat([probs_data["train1"], probs_data["val1"], probs_data["train2"], probs_data["val2"]], dim = 0).detach().cpu().numpy()
     probs_Wjets = probs_by_process[1]
-    probs_data = torch.concat([probs_datat1, probs_datav1, probs_datat2, probs_datav2], dim = 0).detach().cpu().numpy()
     probs_diboson_J = probs_by_process[2]
     probs_diboson_L = probs_by_process[3]
     probs_ST_J = probs_by_process[6]

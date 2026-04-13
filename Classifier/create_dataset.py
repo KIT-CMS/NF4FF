@@ -28,6 +28,7 @@ in_dir = cfg['directories']['data_input_directory']
 out_dir = cfg['directories']['data_output_directory']
 
 # --------------
+
 def get_class_weights(
     weights: Union[pd.Series, np.ndarray, t.Tensor],
     Y: Union[pd.Series, np.ndarray, t.Tensor],
@@ -113,7 +114,6 @@ df['class_weights'] = get_class_weights(
     classes = (0, 1, 2),
     class_weighted=False
 )
-
 
 df.to_feather(str(Path(out_dir) / "data_complete.feather"))
 logger.info(f"Saved complete dataset to {str(Path(out_dir) / 'data_complete.feather')}.")

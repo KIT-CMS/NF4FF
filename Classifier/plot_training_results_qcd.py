@@ -2,7 +2,7 @@ import random
 import logging
 import os
 from dataclasses import KW_ONLY, dataclass
-import CODE.HELPER as helper
+import classes.helper as helper
 import math
 import numpy as np
 import pandas as pd
@@ -19,12 +19,13 @@ from torch.utils.data import TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from CustomLogging import setup_logging
-#from CustomLogging import setup_logging
 from typing import (Any, Callable, Dict, Generator, Iterable, Iterator, List,
                     Optional, Tuple, Type, Union, get_args, get_origin)
 from training_wjets import BinaryClassifier
 from tap import Tap
 from typing import Literal, Generator
+
+from classes.helper import _same_sign_opposite_sign_split, _collection
 
 # ----- seeds -----
 
@@ -113,13 +114,13 @@ class Config:
             lr=optimizer["lr"],
         )
 
-
+'''
 @dataclass
 class _same_sign_opposite_sign_split(metaclass=helper.CollectionMeta):
     ss: Union[torch.Tensor, pd.DataFrame, np.ndarray]
     os: Union[torch.Tensor, pd.DataFrame, np.ndarray]
 
-
+'''
 @dataclass
 class _component_collection(metaclass=helper.CollectionMeta):
     _: KW_ONLY
@@ -130,7 +131,7 @@ class _component_collection(metaclass=helper.CollectionMeta):
     class_weights: Union[torch.Tensor, pd.DataFrame, np.ndarray, None] = None
     process: Union[torch.Tensor, pd.DataFrame, np.ndarray, None] = None
 
-
+'''
 @dataclass
 class _collection:
     values: Any
@@ -141,7 +142,7 @@ class _collection:
     def unrolled(self) -> tuple[Any, ...]:
         return (self.values, self.weights, self.histograms)
 
-
+'''
 # ----- model -----
 
 
