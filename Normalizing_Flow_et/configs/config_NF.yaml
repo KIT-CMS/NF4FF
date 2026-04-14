@@ -5,7 +5,7 @@ training:
  bsize_val: 1000
  bsize_test: 1000
  grad_clip: 5.0
- n_epochs: 400
+ n_epochs: 100
  use_amp: False
  s_scale_max: 3.5
 model:
@@ -13,8 +13,8 @@ model:
  hidden_dims: 128
  s_scale: 1.5
  use_cut_preprocessing: True
- cut_preprocessing_index: [0, 1]
- cut_preprocessing_thresholds: [33.0, 30.0]
+ cut_preprocessing_index: [0]
+ cut_preprocessing_thresholds: [30.0]
  cut_preprocessing_epsilon: 0.000001
  use_tail_preprocessing: False
  tail_preprocessing_index: [4]
@@ -33,7 +33,7 @@ scheduler:
  eps: 0.00000001
 
 optimizer:
- lr: 0.001
+ lr: 0.0001
  eps: 0.000000011
  weight_decay: 0.00001
 
