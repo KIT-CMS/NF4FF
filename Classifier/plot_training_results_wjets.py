@@ -10,8 +10,8 @@ import torch
 import torch as t
 import torch.nn as nn
 import matplotlib.pyplot as plt
-
-
+import yaml
+from pathlib import Path
 import matplotlib
 from matplotlib.ticker import ScalarFormatter
 
@@ -19,7 +19,6 @@ from torch.utils.data import TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from CustomLogging import setup_logging
-#from CustomLogging import setup_logging
 from typing import (Any, Callable, Dict, Generator, Iterable, Iterator, List,
                     Optional, Tuple, Type, Union, get_args, get_origin)
 from training_wjets import BinaryClassifier
@@ -39,12 +38,12 @@ t.set_num_threads(8)
 class Args(Tap):
     bins: Literal['equi_populated' , 'uniform'] ='equi_populated'
     n_bins: int = 20
-    data_complete_path: str = '../data/data_complete.feather'
+    data_complete_path: str = 'data/data_complete.feather'
     output_dir: str = 'plots'
     #ckpt_pth_fold1: str = 'Categorizer_results/inclusive/fold1/2026-02-19/0_19-25-17/'
     #ckpt_pth_fold2: str = 'Categorizer_results/inclusive/fold2/2026-02-19/0_19-28-32/'
-    ckpt_pth_fold1: str = 'Categorizer_results/inclusive/fold1/2026-03-30/0_15-59-24/'
-    ckpt_pth_fold2: str = 'Categorizer_results/inclusive/fold2/2026-03-30/0_16-07-09/'
+    ckpt_pth_fold1: str = 'results/Wjets/inclusive/fold1/last/'
+    ckpt_pth_fold2: str = 'results/Wjets/inclusive/fold2/last/'
     write_back: bool = False
 
 # ----- Constants
@@ -54,6 +53,15 @@ INPUT_DIM = 37
 MC_PATH   = "../data/MC_data/MC_data.pkl"
 DATA_PATH = "../data/MC_data/data.pkl" 
 
+config_path = Path(__file__).parent / "configs/config_settings.yaml"    
+with config_path.open('r') as f:
+    cfg = yaml.safe_load(f)
+
+in_dir = cfg['directories']['data_input_directory']
+out_dir = cfg['directories']['data_output_directory']
+
+
+data_complete_path = out_dir + "/data_complete.feather"
 
 # one hidden layer
 
@@ -105,7 +113,7 @@ variables = [
 ]
 
 dim = len(variables)
-
+'''
 
 CHECKPOINT_PATH = (
     "../src/Categorizer_results/2026-01-29/0_16-32-09/model_checkpoint.pth"
@@ -115,7 +123,7 @@ LOG_PATH = (
     "../src/Categorizer_results/2026-01-29/0_16-32-09/training_logs.pkl"
 )
 
-
+'''
 # ----- Logging -----
 
 logger = setup_logging(logger=logging.getLogger(__name__))

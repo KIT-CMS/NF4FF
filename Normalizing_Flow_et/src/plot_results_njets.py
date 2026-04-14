@@ -43,7 +43,7 @@ matplotlib.rcParams.update({
 logger = setup_logging(logger=logging.getLogger(__name__))
 
 class Args(Tap):
-    model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'single_nf'  # Training mode to load: grouped NF split by njets, single inclusive NF, or conditional NF with njets as input.
+    model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'conditional_nf'  # Training mode to load: grouped NF split by njets, single inclusive NF, or conditional NF with njets as input.
     ff_estimator: Literal['nf', 'binary_classifier'] = 'nf'  # FF backend: use NF models or SR/AR binary-classifier models.
     classifier_training_tag: str = ''  # Optional classifier training folder suffix after 'training_'. Empty -> pick most recent.
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
@@ -102,6 +102,8 @@ list_bins = []
 main_plot_bins_by_variable = {}
 sampling_plot_bins_by_variable = {}
 plot_root_dir = Path('plots')
+MASKS_CONFIG_PATH = Path('../configs/masks.yaml')
+MASKS_CONFIG: dict[str, list[str]] = {}
 
 # ------------ functions ----------
 
@@ -259,6 +261,39 @@ def _normalize_learning_rate(value) -> float:
 
 def _slugify_plot_label(label: str) -> str:
     return re.sub(r'[^A-Za-z0-9]+', '_', label).strip('_').lower()
+
+
+def evaluate_compound_ff_correction(correction_set, compound_name: str, df: pd.DataFrame) -> np.ndarray:
+    compound_correction = correction_set.compound[compound_name]
+    expected_inputs = [input_spec.name for input_spec in compound_correction.inputs]
+
+    input_values = {
+        'tau_decaymode_2': df.tau_decaymode_2,
+        'eta_1': df.eta_1,
+        'eta_2': df.eta_2,
+        'jeta_1': df.jeta_1,
+        'jeta_2': df.jeta_2,
+        'jpt_1': df.jpt_1,
+        'jpt_2': df.jpt_2,
+        'met': df.met,
+        'deltaR_ditaupair': df.deltaR_ditaupair,
+        'deltaR_1j1': df.deltaR_1j1,
+        'deltaR_12j1': df.deltaR_12j1,
+        'pt_ttjj': df.pt_ttjj,
+        'mass_2': df.mass_2,
+        'mt_tot': df.mt_tot,
+        'm_vis': df.m_vis,
+        'iso_1': df.iso_1,
+        'njets': df.njets,
+        'syst': 'nominal',
+    }
+
+    missing_inputs = [name for name in expected_inputs if name not in input_values]
+    if missing_inputs:
+        raise KeyError(f'Missing input mapping for correction {compound_name}: {missing_inputs}')
+
+    ordered_inputs = [input_values[name] for name in expected_inputs]
+    return compound_correction.evaluate(*ordered_inputs)
 
 
 def load_saved_model_config(checkpoint_dir: str | Path, fallback_path: str | Path) -> ModelConfig:
@@ -709,6 +744,8 @@ def plot_ff_clipping_histogram(
         va='top',
         fontsize=10,
     )
+    ymin, ymax = ax[0].get_ylim()
+    ax[0].set_ylim(ymin, ymax * 1.2)  # add 20% headroom
     CMS_CHANNEL_TITLE([ax[0]])
     CMS_LUMI_TITLE([ax[0]])
     CMS_LABEL([ax[0]])
@@ -731,6 +768,8 @@ def plot_ff_clipping_histogram(
         va='top',
         fontsize=10,
     )
+    ymin, ymax = ax[1].get_ylim()
+    ax[1].set_ylim(ymin, ymax * 1.2)  # add 20% headroom
 
     handles0, labels0 = ax[0].get_legend_handles_labels()
     handles1, labels1 = ax[1].get_legend_handles_labels()
@@ -779,54 +818,30 @@ def total_ff_corrected(df):
         "nominal",
     )
 
-    df["wjets_corrected_classic_ff"] = df["wjets_classic_ff"] * corr.compound["Wjets_compound_correction"].evaluate(
-        df.tau_decaymode_2,
-        df.eta_2,
-        df.met,
-        df.deltaR_ditaupair,
-        df.pt_ttjj,
-        df.mass_2,
-        df.mt_tot,
-        df.iso_1,
-        df.m_vis,
-        df.njets,
-        "nominal",
+    df["wjets_corrected_classic_ff"] = df["wjets_classic_ff"] * evaluate_compound_ff_correction(
+        corr,
+        "Wjets_compound_correction",
+        df,
     ) * corr["Wjets_DR_SR_correction"].evaluate(
         df.pt_tt,
         df.njets,
         "nominal",
     )
 
-    df["qcd_corrected_classic_ff"] = df["qcd_classic_ff"] * corr.compound["QCD_compound_correction"].evaluate(
-        df.tau_decaymode_2,
-        df.eta_2,
-        df.met,
-        df.deltaR_ditaupair,
-        df.pt_ttjj,
-        df.mass_2,
-        df.mt_tot,
-        df.iso_1,
-        df.m_vis,
-        df.njets,
-        "nominal",
+    df["qcd_corrected_classic_ff"] = df["qcd_classic_ff"] * evaluate_compound_ff_correction(
+        corr,
+        "QCD_compound_correction",
+        df,
     ) * corr["QCD_DR_SR_correction"].evaluate(
         df.pt_tt,
         df.njets,
         "nominal",
     )
 
-    df["ttbar_corrected_classic_ff"] = df["ttbar_classic_ff"] * corr.compound["ttbar_compound_correction"].evaluate(
-        df.tau_decaymode_2,
-        df.eta_2,
-        df.met,
-        df.deltaR_ditaupair,
-        df.pt_ttjj,
-        df.mass_2,
-        df.mt_tot,
-        df.iso_1,
-        df.m_vis,
-        df.njets,
-        "nominal",
+    df["ttbar_corrected_classic_ff"] = df["ttbar_classic_ff"] * evaluate_compound_ff_correction(
+        corr,
+        "ttbar_compound_correction",
+        df,
     )
 
     df['process_fraction_wjets'] = frac.evaluate(
@@ -1076,18 +1091,10 @@ def normalizing_flow_ff(
         df.njets.values,
         "nominal",
     )
-    df['ttbar_corrected_classic_ff'] = df['ttbar_classic_ff'] * _corr_file.compound["ttbar_compound_correction"].evaluate(
-        df.tau_decaymode_2,
-        df.eta_2,
-        df.met,
-        df.deltaR_ditaupair,
-        df.pt_ttjj,
-        df.mass_2,
-        df.mt_tot,
-        df.iso_1,
-        df.m_vis,
-        df.njets,
-        "nominal",
+    df['ttbar_corrected_classic_ff'] = df['ttbar_classic_ff'] * evaluate_compound_ff_correction(
+        _corr_file,
+        'ttbar_compound_correction',
+        df,
     )
 
     df['process_fraction_wjets'] = _frac.evaluate('Wjets', df.mt_1.values, df.njets.values, 'nominal')
@@ -1131,84 +1138,72 @@ def temporary_extract_scaler(
 
 # ------- masks ----------
 
+def load_masks_config(path: str | Path = MASKS_CONFIG_PATH) -> dict[str, list[str]]:
+    config_path = Path(path)
+    if not config_path.exists():
+        raise FileNotFoundError(f'Masks config not found: {config_path}')
+
+    with open(config_path, 'r') as handle:
+        raw = yaml.safe_load(handle) or {}
+
+    masks = raw.get('masks', raw)
+    if not isinstance(masks, dict):
+        raise ValueError(f'Invalid masks config format in {config_path}: expected a mapping at root or under "masks"')
+
+    normalized: dict[str, list[str]] = {}
+    for name, expressions in masks.items():
+        if isinstance(expressions, str):
+            normalized[name] = [expressions]
+            continue
+        if isinstance(expressions, list) and all(isinstance(expr, str) for expr in expressions):
+            normalized[name] = expressions
+            continue
+        raise ValueError(f'Invalid expression list for mask "{name}" in {config_path}')
+
+    logger.info('Loaded %d masks from %s', len(normalized), config_path)
+    return normalized
+
+
+def _build_mask_from_config(df: pd.DataFrame, mask_name: str) -> pd.Series:
+    global MASKS_CONFIG
+
+    if not MASKS_CONFIG:
+        MASKS_CONFIG = load_masks_config()
+
+    expressions = MASKS_CONFIG.get(mask_name)
+    if not expressions:
+        raise KeyError(f'Mask "{mask_name}" not found in {MASKS_CONFIG_PATH}')
+
+    combined_expression = ' & '.join(f'({expr})' for expr in expressions)
+    mask = df.eval(combined_expression, engine='python')
+    return mask.fillna(False).astype(bool)
+
+
+def _apply_config_mask(df: pd.DataFrame, mask_name: str) -> pd.DataFrame:
+    return df[_build_mask_from_config(df, mask_name)].copy()
+
 def mask_DR_wjets(df):                  # without SS/OS conditions !!!!!!!!!!!!11
-
-    mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
-    mask_a2 = (df.nbtag == 0)
-    mask_a4 = ((df.iso_1 > 0.0) & (df.iso_1 < 0.15))
-    mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_a6 = (df.mt_1 > 70)
-    mask_DR = (mask_a1 & mask_a2  & mask_a4 & mask_a5 & mask_a6)
-
-    return df[mask_DR].copy()
+    return _apply_config_mask(df, 'mask_DR_wjets')
 
 
 def mask_antiDR_wjets(df):              # without SS/OS conditions !!!!!!!!!!!!11
-
-    mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
-    mask_a2 = (df.nbtag == 0)
-    mask_a4 = ((df.iso_1 > 0.0) & (df.iso_1 < 0.15))
-    mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_a6 = (df.mt_1 <= 70)
-    mask_anti_dr = (mask_a1 & mask_a2 & mask_a4 & mask_a5 & mask_a6)
-
-    return df[mask_anti_dr].copy()
+    return _apply_config_mask(df, 'mask_antiDR_wjets')
 
 def mask_DR_qcd(df):
-
-    mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
-    mask_a2 = (df.q_1 * df.q_2 > 0)
-    mask_a4 = ((df.iso_1 > 0.02) & (df.iso_1 < 0.15))
-    mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_a6 = (df.mt_1 < 50)
-    mask_DR = (mask_a1 & mask_a2 & mask_a4 & mask_a5 & mask_a6)
-
-    return df[mask_DR].copy()
+    return _apply_config_mask(df, 'mask_DR_qcd')
 
 def AR_like_qcd(df):
-
-    mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5) & (df.id_tau_vsJet_Tight_2 < 0.5))
-    mask_a2 = (df.q_1 * df.q_2 > 0)
-    mask_a4 = ((df.iso_1 > 0.02) & (df.iso_1 < 0.15))
-    mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_a6 = (df.mt_1 < 50)
-    mask_a7 = (df.process == 0)
-    mask_DR = (mask_a1 & mask_a2 & mask_a4 & mask_a5 & mask_a6 & mask_a7)
-
-    return df[mask_DR].copy()
+    return _apply_config_mask(df, 'AR_like_qcd')
 
 def SR_like_qcd(df):
-
-    mask_a1 = (df.id_tau_vsJet_Tight_2 > 0.5)
-    mask_a2 = (df.q_1 * df.q_2 > 0)
-    mask_a4 = ((df.iso_1 > 0.02) & (df.iso_1 < 0.15))
-    mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_a6 = (df.mt_1 < 50)
-    mask_a7 = (df.process == 0)
-    mask_DR = (mask_a1 & mask_a2 & mask_a4 & mask_a5 & mask_a6 & mask_a7)
-
-    return df[mask_DR].copy()
+    return _apply_config_mask(df, 'SR_like_qcd')
 
 def mask_preselection_tight(df):
-    mask_eta = (df.eta_1 <= 2.1) & (df.eta_2 <= 2.3)
-    mask_pt = (df.pt_1 >= 40) & (df.pt_2 >= 35)
-    #mask_m_vis = (df.m_vis >= 35)
-    mask_tau_decay_mode = (df.tau_decaymode_2 == 0) | (df.tau_decaymode_2 == 1) | (df.tau_decaymode_2 == 10) | (df.tau_decaymode_2 == 11)
-    return df[mask_eta & mask_pt &  mask_tau_decay_mode]
-
-def mask_preselection_tight(df):
-    mask_eta = (df.eta_1 <= 2.1) & (df.eta_2 <= 2.3)
-    mask_pt = (df.pt_1 >= 35) & (df.pt_2 >= 32)
-    #mask_m_vis = (df.m_vis >= 35)
-    mask_tau_decay_mode = (df.tau_decaymode_2 == 0) | (df.tau_decaymode_2 == 1) | (df.tau_decaymode_2 == 10) | (df.tau_decaymode_2 == 11)
-    return df[mask_eta & mask_pt &  mask_tau_decay_mode]
+    return _apply_config_mask(df, 'mask_preselection_tight')
 
 
 def mask_preselection_tight_binary_classifier(df):
-    mask_eta = (df.eta_1 <= 2.1) & (df.eta_2 <= 2.3)
-    mask_pt = (df.pt_1 >= 33) & (df.pt_2 >= 30)
-    mask_tau_decay_mode = (df.tau_decaymode_2 == 0) | (df.tau_decaymode_2 == 1) | (df.tau_decaymode_2 == 10) | (df.tau_decaymode_2 == 11)
-    return df[mask_eta & mask_pt & mask_tau_decay_mode]
+    return _apply_config_mask(df, 'mask_preselection_tight_binary_classifier')
 
 
 def mask_preselection_for_estimator(df):
@@ -1217,50 +1212,18 @@ def mask_preselection_for_estimator(df):
     return mask_preselection_tight(df)
 
 def SR(df):                 # without SS/OS conditions !!!!!!!!!!!!11
-    mask_s1 = (df.id_tau_vsJet_Tight_2 > 0.5)
-    mask_s2 = (df.nbtag == 0)
-    mask_s3 = (df.q_1 * df.q_2 < 0)
-    mask_s4 = ((df.iso_1 > 0.0) & (df.iso_1 < 0.15))
-    mask_s5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_s6 = (df.mt_1 < 70)
-
-    mask_SR_like = (mask_s1 & mask_s4 & mask_s5 & mask_s6)
-
-    return(df[mask_SR_like])
+    return _apply_config_mask(df, 'SR')
 
 def AR(df):                 # without SS/OS conditions !!!!!!!!!!!!11
-    mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5) & (df.id_tau_vsJet_Tight_2 < 0.5))
-    mask_a2 = (df.nbtag == 0)
-    mask_a4 = ((df.iso_1 > 0.0) & (df.iso_1 < 0.15))
-    mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_a6 = (df.mt_1 < 70)
-
-    mask_AR_like = (mask_a1 &  mask_a4 & mask_a5 & mask_a6)
-
-    return(df[mask_AR_like])
+    return _apply_config_mask(df, 'AR')
 
 def SR_like_wjets(df):
-    mask_s1 = (df.id_tau_vsJet_Tight_2 > 0.5)
-    mask_s2 = (df.nbtag == 0)
-    mask_s4 = ((df.iso_1 > 0.0) & (df.iso_1 < 0.15))
-    mask_s5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_s6 = (df.mt_1 > 70)
-    mask_s7 = (df.process == 0)
-
-    mask_SR_like = (mask_s1 & mask_s2 & mask_s4 & mask_s5 & mask_s6 & mask_s7)
-
-    return(df[mask_SR_like])
+    return _apply_config_mask(df, 'SR_like_wjets')
 
 def AR_like_wjets(df):
-    mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5) & (df.id_tau_vsJet_Tight_2 < 0.5))
-    mask_a2 = (df.nbtag == 0)
-    mask_a4 = ((df.iso_1 > 0.0) & (df.iso_1 < 0.15))
-    mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_a6 = (df.mt_1 > 70)
-    mask_a7 = (df.process == 0)
-    mask_AR_like = (mask_a1 & mask_a2 & mask_a4 & mask_a5 & mask_a6 & mask_a7)
+    return _apply_config_mask(df, 'AR_like_wjets')
 
-    return(df[mask_AR_like])
+# ----------- other utils -----------
 
 def select_njets_category(df, category_name):
     if category_name == 'njets_0':
@@ -1355,6 +1318,7 @@ def initialize_runtime_context() -> None:
     """Load args, models, data and plotting metadata into module-level runtime context."""
     global args, variables, dim, training_variables_tag, variables_with_njets, device
     global mode_dir, include_njets_feature, resolved_tag
+    global MASKS_CONFIG
     global classifier_features_wjets, classifier_features_qcd
     global prior_ar_over_sr_wjets, prior_ar_over_sr_qcd
     global correction_model_wjets_dr, correction_model_wjets_antidr
@@ -1375,6 +1339,7 @@ def initialize_runtime_context() -> None:
     training_variables_tag = build_training_variables_tag(variables)
     variables_with_njets = ['njets'] + variables
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    MASKS_CONFIG = load_masks_config(MASKS_CONFIG_PATH)
 
     # Step 2: resolve model mode and load model checkpoints
     _MODE_DIR = {
