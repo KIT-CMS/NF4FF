@@ -51,8 +51,8 @@ masks:
   mask_preselection_tight:
     - eta_1 <= 2.1
     - eta_2 <= 2.3
-    - pt_1 >= 33
-    - pt_2 >= 30
+    - pt_1 >= 35
+    - pt_2 >= 32
     - (tau_decaymode_2 == 0) | (tau_decaymode_2 == 1) | (tau_decaymode_2 == 10) | (tau_decaymode_2 == 11)
 
   mask_preselection_tight_binary_classifier:
