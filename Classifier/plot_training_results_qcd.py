@@ -2,7 +2,7 @@ import random
 import logging
 import os
 from dataclasses import KW_ONLY, dataclass
-import CODE.HELPER as helper
+import classes.helper as helper
 import math
 import numpy as np
 import pandas as pd
@@ -19,12 +19,13 @@ from torch.utils.data import TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from CustomLogging import setup_logging
-#from CustomLogging import setup_logging
 from typing import (Any, Callable, Dict, Generator, Iterable, Iterator, List,
                     Optional, Tuple, Type, Union, get_args, get_origin)
 from training_wjets import BinaryClassifier
 from tap import Tap
 from typing import Literal, Generator
+
+from classes.helper import _same_sign_opposite_sign_split, _collection
 
 # ----- seeds -----
 
@@ -39,22 +40,17 @@ t.set_num_threads(8)
 class Args(Tap):
     bins: Literal['equi_populated' , 'uniform'] ='equi_populated'
     n_bins: int = 20
-    data_complete_path: str = '../data/data_complete.feather'
+    data_complete_path: str = 'data/data_complete.feather'
     output_dir: str = 'plots'
-    ckpt_pth_fold1: str = 'Categorizer_results/QCD/inclusive/fold1/2026-02-19/0_18-59-52/'
-    ckpt_pth_fold2: str = 'Categorizer_results/QCD/inclusive/fold2/2026-02-19/0_19-00-37/'
+    ckpt_pth_fold1: str = 'results/QCD/inclusive/fold1/last/'
+    ckpt_pth_fold2: str = 'results/QCD/inclusive/fold2/last/'
+    #ckpt_pth_fold1: str = 'Categorizer_results/QCD/inclusive/fold1/2026-02-19/0_18-59-52/'
+    #ckpt_pth_fold2: str = 'Categorizer_results/QCD/inclusive/fold2/2026-02-19/0_19-00-37/'
     write_back: bool = False
 
 # ----- Constants
 
 INPUT_DIM = 36
-
-MC_PATH   = "../data/MC_data/MC_data.pkl"
-DATA_PATH = "../data/MC_data/data.pkl" 
-
-
-ckpt_pth_fold1 = 'Categorizer_results/QCD/inclusive/fold1/2026-02-19/0_18-59-52/'
-ckpt_pth_fold2 = 'Categorizer_results/QCD/inclusive/fold2/2026-02-19/0_19-00-37/'
 
 PROCESS_ORDER = [0, 1, 10, 2, 3, 4, 5, 6, 7, 8, 9]
 
@@ -118,13 +114,13 @@ class Config:
             lr=optimizer["lr"],
         )
 
-
+'''
 @dataclass
 class _same_sign_opposite_sign_split(metaclass=helper.CollectionMeta):
     ss: Union[torch.Tensor, pd.DataFrame, np.ndarray]
     os: Union[torch.Tensor, pd.DataFrame, np.ndarray]
 
-
+'''
 @dataclass
 class _component_collection(metaclass=helper.CollectionMeta):
     _: KW_ONLY
@@ -135,7 +131,7 @@ class _component_collection(metaclass=helper.CollectionMeta):
     class_weights: Union[torch.Tensor, pd.DataFrame, np.ndarray, None] = None
     process: Union[torch.Tensor, pd.DataFrame, np.ndarray, None] = None
 
-
+'''
 @dataclass
 class _collection:
     values: Any
@@ -146,7 +142,7 @@ class _collection:
     def unrolled(self) -> tuple[Any, ...]:
         return (self.values, self.weights, self.histograms)
 
-
+'''
 # ----- model -----
 
 
@@ -556,7 +552,7 @@ def _collect_processwise_probs_weights_ss(
     return probs_by_process, weights_by_process
 
 
-# ----- main -----
+# ------- main -------
 
 def main() -> None:
 
@@ -666,6 +662,7 @@ def main() -> None:
     bin_widths = np.diff(bins)
 
     hist_nFF, _ = np.histogram(probs_nFF,weights=weights_nFF, bins= bins)
+
     QCD_weights = _calculate_scaled_event_weights_generalized(
         event_values = probs_data,
         event_original_weights = np.ones_like(probs_data),
