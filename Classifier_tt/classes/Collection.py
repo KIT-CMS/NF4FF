@@ -6,7 +6,7 @@ import torch.nn as nn
 import yaml
 import math
 import matplotlib.pyplot as plt
-from typing import Any, Union, Tuple
+from typing import Any, Literal, Union, Tuple
 from sklearn.model_selection import train_test_split
 from classes.models import BinaryClassifier
 import classes.helper as helper

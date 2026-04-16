@@ -5,7 +5,7 @@ import datetime
 import os
 import pickle
 import logging
-from CustomLogging import setup_logging
+from classes.Logging import setup_logging
 logger = setup_logging(logger=logging.getLogger(__name__))
 import numpy as np
 from dataclasses import dataclass

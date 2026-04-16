@@ -30,7 +30,7 @@ import torch
 import torch as t
 from tap import Tap
 from tqdm import tqdm
-from CustomLogging import setup_logging, LogContext
+from classes.Logging import setup_logging, LogContext
 
 logger = setup_logging(logger=logging.getLogger(__name__))
 
