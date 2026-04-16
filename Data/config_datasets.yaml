@@ -1,0 +1,34 @@
+data: data.root
+no_embedding:
+  - diboson_J.root
+  - diboson_L.root
+  - diboson_T.root
+  - DYjets_J.root
+  - DYjets_L.root
+  - DYjets_T.root
+  - ST_J.root
+  - ST_L.root
+  - ST_T.root
+  - ttbar_J.root
+  - ttbar_L.root
+  - ttbar_T.root
+  - Wjets.root
+embedding:
+  - diboson_J.root
+  - diboson_L.root
+  - DYjets_J.root
+  - DYjets_L.root
+  - embedding.root
+  - ST_J.root
+  - ST_L.root
+  - ttbar_J.root
+  - ttbar_L.root
+  - Wjets.root
+
+input_dir:
+  present: /ceph/tapp/TauFF/smhtt_ul/2018/2026_04_14/preselection/2018/tt/
+  remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/ceph/tapp/TauFF/smhtt_ul/2018/2026_04_14/preselection/2018/tt/
+
+output_dir:
+  present: /work/tapp/TauFF/NF4FF/Data/datasets/
+  remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/work/tapp/TauFF/NF4FF/Data/datasets/
