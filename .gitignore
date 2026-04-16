@@ -7,7 +7,7 @@ __pycache__/
 *.pkl
 *.pt
 *.pth
-*.feather
+#*.feather
 *.png
 *.pdf
 *.spm
@@ -27,6 +27,7 @@ data/
 Classifier/data/
 Classifier/plots/
 Classifier/Categorizer_results/
+Data/test_data/
 
 
 
@@ -104,3 +105,6 @@ results*/
 **/Training_results_to_remember/
 **/.cache/
 **/closure_plots/
+
+# Tests
+**/test.py
