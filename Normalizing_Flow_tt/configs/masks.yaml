@@ -1,0 +1,102 @@
+masks:
+  mask_DR_wjets:
+    - id_tau_vsJet_VLoose_2 > 0.5
+    - nbtag == 0
+    - iso_1 > 0.0
+    - iso_1 < 0.15
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+    - mt_1 > 70
+
+  mask_antiDR_wjets:
+    - id_tau_vsJet_VLoose_2 > 0.5
+    - nbtag == 0
+    - iso_1 > 0.0
+    - iso_1 < 0.15
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+    - mt_1 <= 70
+
+  mask_DR_qcd:
+    - id_tau_vsJet_VLoose_2 > 0.5
+    - q_1 * q_2 > 0
+    - iso_1 > 0.02
+    - iso_1 < 0.15
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+    - mt_1 < 50
+
+  AR_like_qcd:
+    - id_tau_vsJet_VLoose_2 > 0.5
+    - id_tau_vsJet_Tight_2 < 0.5
+    - q_1 * q_2 > 0
+    - iso_1 > 0.02
+    - iso_1 < 0.15
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+    - mt_1 < 50
+    - process == 0
+
+  SR_like_qcd:
+    - id_tau_vsJet_Tight_2 > 0.5
+    - q_1 * q_2 > 0
+    - iso_1 > 0.02
+    - iso_1 < 0.15
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+    - mt_1 < 50
+    - process == 0
+
+  # Effective definition used in code (the second duplicate in the old implementation).
+  mask_preselection_tight:
+    - eta_1 <= 2.1
+    - eta_2 <= 2.3
+    - pt_1 >= 35
+    - pt_2 >= 32
+    - (tau_decaymode_2 == 0) | (tau_decaymode_2 == 1) | (tau_decaymode_2 == 10) | (tau_decaymode_2 == 11)
+
+  mask_preselection_tight_binary_classifier:
+    - eta_1 <= 2.1
+    - eta_2 <= 2.3
+    - pt_1 >= 33
+    - pt_2 >= 30
+    - (tau_decaymode_2 == 0) | (tau_decaymode_2 == 1) | (tau_decaymode_2 == 10) | (tau_decaymode_2 == 11)
+
+  # Keep behavior identical to previous code: nbtag and charge-sign were defined but not used.
+  SR:
+    - id_tau_vsJet_Tight_2 > 0.5
+    - iso_1 > 0.0
+    - iso_1 < 0.15
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+    - mt_1 < 70
+
+  AR:
+    - id_tau_vsJet_VLoose_2 > 0.5
+    - id_tau_vsJet_Tight_2 < 0.5
+    - iso_1 > 0.0
+    - iso_1 < 0.15
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+    - mt_1 < 70
+
+  SR_like_wjets:
+    - id_tau_vsJet_Tight_2 > 0.5
+    - nbtag == 0
+    - iso_1 > 0.0
+    - iso_1 < 0.15
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+    - mt_1 > 70
+    - process == 0
+
+  AR_like_wjets:
+    - id_tau_vsJet_VLoose_2 > 0.5
+    - id_tau_vsJet_Tight_2 < 0.5
+    - nbtag == 0
+    - iso_1 > 0.0
+    - iso_1 < 0.15
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+    - mt_1 > 70
+    - process == 0

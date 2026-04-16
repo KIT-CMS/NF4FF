@@ -1,0 +1,91 @@
+colors:
+# default palette from official CMS style
+#     "#3f90da",  # ZL
+#     "#ffa90e",  # ZTT
+#     "#bd1f01",  # Signals 1
+#     "#94a4a2",  # Diboson, HWW
+#     "#832db6",  # TTbar, TTH
+#     "#a96b59",  # jetfakes
+#     "#e76300",  # VH, W
+#     "#b9ac70",  # EWK, rest
+#     "#717581",  # ST
+#     "#92dadd",  # Signals 2
+# ]
+  # ZTT
+  EMB: '#ffa90e'
+  ZTT: '#ffa90e'
+  ZTT_NLO: '#ffa90e'
+
+  # jetfakes
+  jetFakes: '#b9ac70'
+  jetFakesCMB: '#b9ac70'
+  jetFakesEMB: '#b9ac70'
+  jetFakesQCD: '#717581'
+  jetFakesTT: '#832db6'
+  jetFakesW: '#e76300'
+  ZJ: '#b9ac70'
+  ZJ_NLO: '#b9ac70'
+
+  # ZL
+  ZL: '#3f90da'
+  ZLL: '#3f90da'
+  ZLL_NLO: '#3f90da'
+  ZL_NLO: '#3f90da'
+  MUEMB: '#3f90da'
+
+  # QCD
+  QCD: '#b9ac70'
+  QCDEMB: '#b9ac70'
+  QCDEMB_NLO: '#b9ac70'
+  QCD_NLO: '#b9ac70'
+
+  # Single top
+  ST: '#717581'
+  STL: '#5882ae' # mix of ZL and ST, not in the official palette
+  STT: '#717581'
+
+  # TTbar
+  TT: '#832db6'
+  TTL: '#615fc8' # mix of ZL and TT, not in the official palette
+  TTT: '#832db6'
+  TTJ: '#964c88' # mix of jetfakes and TT, not in the official palette
+
+  # Diboson
+  VV: '#94a4a2'
+  VVL: '#6a9abe' # mix of ZL and VV, not in the official palette
+  VVT: '#94a4a2'
+  VVJ: '#9f887e' # mix of jetfakes and VV, not in the official palette
+
+  # W
+  W: '#e76300'
+  WL: '#e79d00' # mix of ZL and W, not in the official palette
+  WT: '#e76300'
+  W_NLO: '#e76300'
+
+  # EWK
+  EWK: '#a96b59'
+  EWKL: '#7c9ea5' # mix of ZL and EWK, not in the official palette
+  EWKT: '#a96b59'
+  EWKZ: '#a96b59'
+  EWKJ: '#b18c64' # mix of jetfakes and EWK, not in the official palette
+
+
+# Signals
+  ggH: '#92dadd'
+  qqH: '#bd1f01'
+  ggH_hww: '#93bfbf' # mix of VV and ggH, not in the official palette
+  qqH_hww: '#a96151' # mix of VV and qqH, not in the official palette
+  HWW: '#94a4a2'
+  ttH: '#832db6'
+  ZH: '#3f90da'
+  WH: '#e76300'
+  VH: '#e76300'
+
+# combined stuff
+  dummy: '#bd1f01'
+  TotalBkg: '#ffa90e'
+  unc: '#0C0C0C'
+  inclusive: '#000000'
+  REST: '#b9ac70'
+
+# main Procs
