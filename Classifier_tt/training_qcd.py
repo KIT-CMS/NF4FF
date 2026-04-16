@@ -526,7 +526,6 @@ def get_my_data(df, training_var):
     return _component_collection(
             X=ss_os_split.apply_func(lambda x: x[training_var].to_numpy(dtype = np.float32)),
             Y=ss_os_split.apply_func(lambda x: x["Label"].to_numpy(dtype = np.float32)),  # or ss_os_split.apply_func(extract_label)
-            # instead of _same_sign_opposite_sign_split.apply(lambda x: x["Label"].to_numpy()).to_collection(ss_os_split)
             weights=ss_os_split.apply_func(lambda __df: __df["weight"].to_numpy(dtype = np.float32)),
             class_weights=ss_os_split.apply_func(lambda x: x["class_weights"].to_numpy()),
             process=ss_os_split.apply_func(lambda x: x['process'].to_numpy(dtype = np.float32)),
@@ -570,13 +569,10 @@ def main():
     cfg = load_config(CONFIG_SETTINGS_PATH)
 
 
-    # -----load variables from settings config -----
+    # -----load variables from settings config
+
     variables = cfg["variables"]
     dim = len(variables)
-    print(variables)
-    print(dim)
-    exit()
-
 
 
     # --- load device
@@ -595,10 +591,11 @@ def main():
 
     if device.type == "cuda":
         logger.info(torch.cuda.get_device_name())
+    
 
     # --- load data 
 
-    data_complete = pd.read_feather('../data/data_complete.feather')
+    data_complete = pd.read_feather(cfg["paths"]["input_dir"][args.loc] + args.embedding + "/combined_data.feather")
     data_DR = mask_DR(data_complete)
 
 
@@ -608,23 +605,13 @@ def main():
 
     train1, val1, train2, val2 = split_even_odd(data_DR)
 
-
-
     train_pt1 = get_my_data(train1, variables).to_torch(device=None)
     val_pt1   = get_my_data(val1, variables).to_torch(device=None)
     train_pt2 = get_my_data(train2, variables).to_torch(device=None)
     val_pt2   = get_my_data(val2, variables).to_torch(device=None)
 
 
-
-
-
-
-
     for fold, train_pt, val_pt  in zip(['fold1', 'fold2'], [train_pt1, train_pt2], [val_pt1, val_pt2]):
-
-
-
 
         X_train = train_pt.X.ss
 
@@ -677,7 +664,7 @@ def main():
                         model = model,
                         qcd_process_mask_ss_loaded= qcd_mask_ss_train,
                         device = device,
-                        njets_idx = 11,
+                        njets_idx = variables.index("njets"),
                         njets_groups = ((0,), (1,), (2,100)),
                         subtract_njets_based = True,
                         qcd_weight_binning = QCD_WEIGHT_BINNING,
@@ -692,6 +679,7 @@ def main():
                         model = model,
                         qcd_process_mask_ss_loaded=qcd_mask_ss_val,
                         device = device,
+                        njets_idx = variables.index("njets"),
                         njets_groups = ((0,), (1,), (2,100)),
                         subtract_njets_based = True,
                         qcd_weight_binning = QCD_WEIGHT_BINNING,
@@ -870,7 +858,7 @@ def main():
                 model = model,
                 qcd_process_mask_ss_loaded=qcd_mask_ss_train,
                 device = device,
-                njets_idx = 11,
+                njets_idx = variables.index("njets"),
                 njets_groups = ((0,), (1,), (2,100)),
                 subtract_njets_based = True,
                 qcd_weight_binning = QCD_WEIGHT_BINNING,
@@ -885,7 +873,7 @@ def main():
                 model = model,
                 qcd_process_mask_ss_loaded=qcd_mask_ss_val,
                 device = device,
-                njets_idx = 11,
+                njets_idx = variables.index("njets"),
                 njets_groups = ((0,), (1,), (2,100)),
                 subtract_njets_based = True,
                 qcd_weight_binning = QCD_WEIGHT_BINNING,

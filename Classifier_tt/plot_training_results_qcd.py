@@ -21,6 +21,7 @@ import classes.helper as helper
 from classes.helper import _same_sign_opposite_sign_split, _collection
 from classes.Logging import setup_logging
 from classes.models import BinaryClassifier
+from classes.Collection import load_config
 
 # ----- seeds -----
 
@@ -33,35 +34,24 @@ t.set_num_threads(8)
 # ----- tap ------
 
 class Args(Tap):
+    loc: Literal['present', 'remote'] = 'present'
+    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
     bins: Literal['equi_populated' , 'uniform'] ='equi_populated'
     n_bins: int = 20
     data_complete_path: str = 'data/data_complete.feather'
     output_dir: str = 'plots'
-    ckpt_pth_fold1: str = 'results/QCD/inclusive/fold1/last/'
-    ckpt_pth_fold2: str = 'results/QCD/inclusive/fold2/last/'
-    #ckpt_pth_fold1: str = 'Categorizer_results/QCD/inclusive/fold1/2026-02-19/0_18-59-52/'
-    #ckpt_pth_fold2: str = 'Categorizer_results/QCD/inclusive/fold2/2026-02-19/0_19-00-37/'
+    ckpt_pth_fold1: str = 'fold1/last/'
+    ckpt_pth_fold2: str = 'fold2/last/'
     write_back: bool = False
 
 # ----- Constants
-
-INPUT_DIM = 36
 
 PROCESS_ORDER = [0, 1, 10, 2, 3, 4, 5, 6, 7, 8, 9]
 
 
 # ------- lists ----
 
-variables = [
-    "pt_1","pt_2","eta_1","eta_2","jpt_1","jpt_2","jeta_1","jeta_2",
-    "m_fastmtt","pt_fastmtt","met","njets","mt_tot","m_vis",
-    "pt_tt","pt_vis","mjj","pt_dijet","pt_ttjj","deltaEta_jj","deltaR_jj",
-    "deltaR_ditaupair","deltaR_1j1","deltaR_1j2",
-    "deltaR_2j1","deltaR_2j2","deltaR_12j1","deltaR_12j2","deltaEta_1j1",
-    "deltaEta_1j2","deltaEta_2j1","deltaEta_2j2","deltaEta_12j1","deltaEta_12j2", 'tau_decaymode_1', 'tau_decaymode_2',
-]
 
-dim = len(variables)
 
 
 CHECKPOINT_PATH = (
@@ -318,12 +308,11 @@ def equi_populated_bins(data, n_bins):
 
 def mask_DR(df):
 
-    mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
-    mask_a2 = (df.q_1 * df.q_2 > 0)
-    mask_a4 = ((df.iso_1 > 0.02) & (df.iso_1 < 0.15))
-    mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_a6 = (df.mt_1 < 50)
-    mask_DR = (mask_a1 & mask_a2 & mask_a4 & mask_a5 & mask_a6)
+    mask_a1 = (df.q_1 * df.q_2 > 0)
+    mask_a2 = ((df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
+    mask_a3 = ((df.id_tau_vsJet_VLoose_1 > 0.5))
+    mask_a4 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
+    mask_DR = (mask_a1 & mask_a2 & mask_a3 & mask_a4)
 
     return df[mask_DR].copy()
 
@@ -557,16 +546,32 @@ def main() -> None:
 
     args = Args().parse_args()
 
+    if args.loc == "remote":
+        CONFIG_SETTINGS_PATH = '/run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/work/tapp/TauFF/NF4FF/Classifier_tt/configs/config_settings.yaml'
+    elif args.loc == "present":
+        CONFIG_SETTINGS_PATH = '/work/tapp/TauFF/NF4FF/Classifier_tt/configs/config_settings.yaml'
+    else:
+        logger.error("Invalid location argument: %s", args.loc)
+        exit()
+
+    cfg = load_config(CONFIG_SETTINGS_PATH)
+
+    variables = cfg["variables"]
+    dim = len(variables)
 
 
 
-    model1 = load_model(INPUT_DIM, args.ckpt_pth_fold1 + 'model_checkpoint.pth', device)
-    model2 = load_model(INPUT_DIM, args.ckpt_pth_fold2 + 'model_checkpoint.pth', device)
+
+
+
+    model1 = load_model(dim, cfg['ckpt_dir'][args.loc] + args.ckpt_pth_fold1 + 'model_checkpoint.pth', device)
+    model2 = load_model(dim, cfg['ckpt_dir'][args.loc] + args.ckpt_pth_fold2 + 'model_checkpoint.pth', device)
 
     logger.info("Loading data")
 
-    data_complete = pd.read_feather(args.data_complete_path)
+    data_complete = pd.read_feather(cfg["paths"]["input_dir"][args.loc] + args.embedding + "/combined_data.feather")
     data_DR = mask_DR(data_complete)
+
     train1, val1, train2, val2 = split_even_odd(data_DR)
 
     train1 = get_my_data(train1, variables).to_torch(device=None)
@@ -574,10 +579,10 @@ def main() -> None:
     train2 = get_my_data(train2, variables).to_torch(device=None)
     val2   = get_my_data(val2, variables).to_torch(device=None)
 
-    weights_qcd_train1 = torch.load(args.ckpt_pth_fold1 + 'qcd_weights_qcd_train.pt')
-    weights_qcd_val1 = torch.load(args.ckpt_pth_fold1 + 'qcd_weights_qcd_val.pt')
-    weights_qcd_train2 = torch.load(args.ckpt_pth_fold2 + 'qcd_weights_qcd_train.pt')
-    weights_qcd_val2 = torch.load(args.ckpt_pth_fold2 + 'qcd_weights_qcd_val.pt')
+    weights_qcd_train1 = torch.load(cfg['ckpt_dir'][args.loc] + args.ckpt_pth_fold1 + 'qcd_weights_qcd_train.pt')
+    weights_qcd_val1 = torch.load(cfg['ckpt_dir'][args.loc] + args.ckpt_pth_fold1 + 'qcd_weights_qcd_val.pt')
+    weights_qcd_train2 = torch.load(cfg['ckpt_dir'][args.loc] + args.ckpt_pth_fold2 + 'qcd_weights_qcd_train.pt')
+    weights_qcd_val2 = torch.load(cfg['ckpt_dir'][args.loc] + args.ckpt_pth_fold2 + 'qcd_weights_qcd_val.pt')
 
     probs_by_process, weights_by_process = _collect_processwise_probs_weights_ss(
         model1=model1,
@@ -693,8 +698,8 @@ def main() -> None:
         data_complete.loc[data_DR.index, "weight_qcd"] = data_DR["weight_qcd"]
 
         # Save updated file
-        data_complete.reset_index(drop=True).to_feather(args.data_complete_path)
-        logger.info("Successfully inserted weight_qcd into full data_complete.feather")
+        data_complete.reset_index(drop=True).to_feather(cfg["paths"]["output_dir"][args.loc] + "combined_data_updated.feather")
+        logger.info("Successfully inserted weight_qcd into full data_complete_updated.feather")
     else:
         logger.info("Skipped writing weight_qcd back to file (write_back=False).")
 
