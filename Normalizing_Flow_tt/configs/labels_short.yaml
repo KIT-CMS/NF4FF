@@ -1,0 +1,11 @@
+et:
+   pt_1: '$\mathrm{p}_T^e$'
+   pt_2: '$\mathrm{p}_T^{\tau_h}$'
+   m_vis: '$\mathrm{m}_{vis} $'
+   deltaR_ditaupair: '$\Delta R$'
+   pt_vis: '$\mathrm{p}_T^{\text{vis}}$'
+   met: 'met'
+   m_fastmtt: '$\mathrm{m}_{\text{fastMTT}}$'
+   pt_fastmtt: '$\mathrm{p}_T^{\text{fastMTT}}$' 
+   pt_tt: '$\mathrm{p}_T^{\tau\tau}$'
+
