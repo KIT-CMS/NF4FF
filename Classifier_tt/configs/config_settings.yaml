@@ -5,7 +5,12 @@ paths:
   output_dir:
     present: /work/tapp/TauFF/NF4FF/Data/datasets/
     remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/work/tapp/TauFF/NF4FF/Data/datasets/
-  
+
+ckpt_dir:
+  present: /work/tapp/TauFF/NF4FF/results/QCD/inclusive/
+  remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/work/tapp/TauFF/NF4FF/results/QCD/inclusive/
+
+
 variables:
   - pt_vis
   - q_2
