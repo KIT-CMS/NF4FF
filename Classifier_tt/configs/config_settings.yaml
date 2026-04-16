@@ -1,3 +1,31 @@
-directories:
-  data_input_directory: "/ceph/mmoser/FFmethod/smhtt_ul/2018_et_2026-02-11/preselection/2018/et/"
-  data_output_directory: "/work/mmoser/NF4FF/Classifier/data/"
+paths:
+  input_dir: 
+    present: /work/tapp/TauFF/NF4FF/Data/datasets/
+    remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/work/tapp/TauFF/NF4FF/Data/datasets/
+  output_dir:
+    present: /work/tapp/TauFF/NF4FF/Data/datasets/
+    remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/work/tapp/TauFF/NF4FF/Data/datasets/
+  
+variables:
+  - pt_vis
+  - q_2
+  - tau_decaymode_2
+  - deltaEta_2j2
+  - eta_2
+  - q_1
+  - deltaEta_2j1
+  - deltaEta_1j2
+  - mt_1
+  - pt_2
+  - tau_decaymode_1
+  - metphi
+  - eta_1
+  - deltaEta_12j2
+  - m_vis
+  - mass_1
+  - njets
+  - mass_2
+  - deltaR_ditaupair
+  - deltaEta_12j1
+  - event
+  - pt_1

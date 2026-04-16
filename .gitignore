@@ -7,7 +7,7 @@ __pycache__/
 *.pkl
 *.pt
 *.pth
-#*.feather
+*.feather
 *.png
 *.pdf
 *.spm
@@ -28,6 +28,7 @@ Classifier/data/
 Classifier/plots/
 Classifier/Categorizer_results/
 Data/test_data/
+Data/datasets/
 
 
 

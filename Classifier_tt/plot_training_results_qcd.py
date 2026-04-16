@@ -2,30 +2,25 @@ import random
 import logging
 import os
 from dataclasses import KW_ONLY, dataclass
-import classes.helper as helper
+
 import math
+import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from tap import Tap
 import torch
 import torch as t
 import torch.nn as nn
-import matplotlib.pyplot as plt
-
-
-import matplotlib
-from matplotlib.ticker import ScalarFormatter
-
 from torch.utils.data import TensorDataset
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from CustomLogging import setup_logging
-from typing import (Any, Callable, Dict, Generator, Iterable, Iterator, List,
-                    Optional, Tuple, Type, Union, get_args, get_origin)
-from training_wjets import BinaryClassifier
-from tap import Tap
-from typing import Literal, Generator
+from typing import Any, Dict, List, Literal, Tuple, Union
 
+import classes.helper as helper
 from classes.helper import _same_sign_opposite_sign_split, _collection
+from classes.Logging import setup_logging
+from classes.models import BinaryClassifier
 
 # ----- seeds -----
 

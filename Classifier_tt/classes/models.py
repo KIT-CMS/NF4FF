@@ -4,7 +4,7 @@ import torch.nn as nn
 import numpy as np
 import logging
 from typing import Union
-from CustomLogging import setup_logging
+from classes.Logging import setup_logging
 
 # ------ logger -----
 

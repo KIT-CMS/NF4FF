@@ -1,30 +1,29 @@
-import os
-import shutil
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
-import pandas as pd
+from copy import deepcopy
 import logging
-import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Union
+import random
+import shutil
+import time
+from typing import Any, Dict, List, Literal, Tuple, Union
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from torch.utils.data import TensorDataset, DataLoader
-from CustomLogging import setup_logging
-from classes.path_managment import StorePathHelper
-from classes.config_loader import load_config
-import CODE.HELPER as helper
-import torch as t
 from tap import Tap
-from typing import Any, Callable, Dict, Generator, List, Literal, Tuple, Union
-from copy import deepcopy
-from frozendict import frozendict
-import time
-from itertools import product, zip_longest
-import matplotlib.pyplot as plt
+import torch
+import torch as t
+import torch.nn as nn
+from torch.utils.data import TensorDataset, DataLoader
+
+import classes.helper as helper
+from classes.Logging import setup_logging
+from classes.models import BinaryClassifier
+from classes.path_managment import StorePathHelper
+from classes.Collection import load_config
+
 
 # ----- seed -----
 
@@ -39,11 +38,11 @@ SEED = 42
 logger = setup_logging(logger=logging.getLogger(__name__))
 
 # ----- TAP Arguments -----
+class Args(Tap):
+    loc: Literal["remote", "present"] = "present"
+    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
 
 # ----- constants ------
-
-INPUT_DIM = 20
-CONFIG_MODEL_PATH = 'configs/config_NN.yaml'
 PATIENCE = 20
 QCD_WEIGHT_BINNING = 'dynamic'
 QCD_WEIGHT_N_BINS = 20
@@ -130,91 +129,19 @@ class _collection:
         return (self.values, self.weights, self.histograms)
 
 
-# ------ lists -----
-
-
-variables = [
-    "pt_1","pt_2","eta_1","eta_2","jpt_1","jpt_2","jeta_1","jeta_2",
-    "m_fastmtt","pt_fastmtt","met","njets","mt_tot","m_vis",
-    "pt_tt","pt_vis","mjj","pt_dijet","pt_ttjj","deltaEta_jj","deltaR_jj",
-    "deltaR_ditaupair","deltaR_1j1","deltaR_1j2",
-    "deltaR_2j1","deltaR_2j2","deltaR_12j1","deltaR_12j2","deltaEta_1j1",
-    "deltaEta_1j2","deltaEta_2j1","deltaEta_2j2","deltaEta_12j1","deltaEta_12j2", 'tau_decaymode_1', 'tau_decaymode_2'
-]
-
-dim = len(variables)
-
-# ----- model -----
-class BinaryClassifier(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int = 200, p: float = 0.1):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(p=p),
-
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(p=p),
-
-            nn.Linear(hidden_dim, 1),
-            nn.Sigmoid()
-        )
-
-        # registered buffers (no-op because we pre-scale; left for compatibility)
-        self.register_buffer("_scaler_shift", torch.full((input_dim,), 0.0, dtype=torch.float32))
-        self.register_buffer("_scaler_scale", torch.full((input_dim,), 1.0, dtype=torch.float32))
-
-    @property
-    def _is_initialized(self):
-        initialized = (torch.isnan(self._scaler_shift) | torch.isnan(self._scaler_scale)).sum() == 0
-        initialized &= (self._scaler_scale != 1).all() & (self._scaler_shift != 0).all()
-        return initialized
-
-    def initialize_scaler(
-        self,
-        shift: Union[np.ndarray, torch.Tensor, None] = None,
-        scale: Union[np.ndarray, torch.Tensor, None] = None,
-    ):
-        if self._is_initialized:
-            logger.warning("Scaler already initialized. Overwriting the current values.")
-        elif shift is not None and scale is not None:
-            shift = torch.from_numpy(shift) if isinstance(shift, np.ndarray) else shift
-            scale = torch.from_numpy(scale) if isinstance(scale, np.ndarray) else scale
-        else:
-            msg = """
-                shift and scale must be both None
-                (falling to default of shift=0.0, scale=1.0)
-                or both not None raise ValueError
-            """
-            logger.error(msg)
-            raise ValueError(msg)
-
-        self._scaler_shift.data[:] = shift
-        self._scaler_scale.data[:] = scale
-
-    def apply_scaler(self, x):
-        return (x - self._scaler_shift.to(x.device)) / self._scaler_scale.to(x.device)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.apply_scaler(x)
-        return self.net(x)
-
-
 # ----- functions -----
 
 @torch.no_grad()
-def predict_probabilities(
-    model: nn.Module,
-    X: torch.Tensor,
-    device: torch.device,
-) -> torch.Tensor:
+def predict_probabilities(model: nn.Module, X: torch.Tensor, device: torch.device) -> torch.Tensor:
+    '''
+    Returns NN outputs
+    '''
+
     X = X.to(device, non_blocking=True)
     logits = model(X)
     return logits.squeeze(1).cpu()
 
 def set_negatives_to_one(tensor):
-    # Using torch.where
     return torch.where(tensor < 0, torch.zeros_like(tensor), tensor)
 
 def equal_frequency_bins(x, n_bins):
@@ -313,6 +240,7 @@ def build_qcd_weight_bins(
     dynamic_delta_last: float = 100.0,
     dynamic_min_qcd_yield: float = 100.0,
 ) -> t.Tensor:
+    
     if binning == 'quantile':
         bins = t.quantile(qcd_values, t.linspace(0, 1, n_bins + 1, device=qcd_values.device))
     elif binning == 'dynamic':
@@ -343,67 +271,13 @@ def build_qcd_weight_bins(
 
     return bins
 
-def get_class_weights(
-    weights: t.Tensor,
-    Y: t.Tensor,
-    classes: tuple = (0, 1),
-    class_weighted: bool = True,
-) -> t.Tensor:
-
-    weights = weights.float()
-    Y = Y.long()
-
-    _weights = torch.zeros_like(weights)
-
-    total_weight = weights.sum()
-
-    for _class in classes:
-        mask = (Y == _class)
-        class_sum = weights[mask].sum()
-
-        if class_sum > 0:
-            _weights[mask] = total_weight / class_sum
-        else:
-            _weights[mask] = 0.0
-
-    return _weights * (weights if class_weighted else 1.0)
-# inside training.py
-
-def _predict_in_batches(x: torch.Tensor, model: torch.nn.Module, batch_size: int = 65536) -> torch.Tensor:
-    """Run model(x) in batches to keep memory stable. Returns output on x.device."""
-    device_model = next(model.parameters()).device
-    n = x.shape[0]
-    outs = []
-    with torch.no_grad():
-        for i in range(0, n, batch_size):
-            xb = x[i:i+batch_size].to(device_model, non_blocking=True)
-            ob = model(xb)
-            outs.append(ob.to(x.device, non_blocking=True))
-    return torch.cat(outs, dim=0)
-
-def _get_group_based_classes(
-    dataset: _component_collection,
-    all_group_combinations: List[Tuple[int, ...]],
-    features_idxs: List[int],
-) -> t.Tensor:
-    group_classes = t.zeros_like(dataset.Y, device=dataset.device)
-    for class_idx, sub_groups in enumerate(all_group_combinations):
-        group_mask = t.ones_like(dataset.Y, dtype=t.bool, device=dataset.device)
-        for feature_idx, group in zip(features_idxs, sub_groups):
-            if len(group) == 1:
-                group_mask &= dataset.X[:, feature_idx] == group[0]
-            else:
-                group_mask &= (dataset.X[:, feature_idx] >= group[0]) & (dataset.X[:, feature_idx] <= group[1])
-        group_classes[group_mask] = class_idx
-    return group_classes
-
 
 def get_ff_dataset_with_qcd_weights_ss(
     dataset: _component_collection,
     model: t.nn.Module,
     qcd_process_mask_ss_loaded: torch.Tensor,
     device,
-    njets_idx: int = -1,
+    njets_idx: int,
     njets_groups: Tuple[Tuple[int, ...], ...] = ((0,), (1,), (2, 100)),
     subtract_njets_based: bool = False,
     qcd_weight_binning: Literal['quantile', 'dynamic'] = 'quantile',
@@ -620,12 +494,11 @@ def _calculate_scaled_event_weights_generalized(
 
 def mask_DR(df):
 
-    mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
-    mask_a2 = (df.q_1 * df.q_2 > 0)
-    mask_a4 = ((df.iso_1 > 0.02) & (df.iso_1 < 0.15))
-    mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_a6 = (df.mt_1 < 50)
-    mask_DR = (mask_a1 & mask_a2 & mask_a4 & mask_a5 & mask_a6)
+    mask_a1 = (df.q_1 * df.q_2 > 0)
+    mask_a2 = ((df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
+    mask_a3 = ((df.id_tau_vsJet_VLoose_1 > 0.5))
+    mask_a4 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
+    mask_DR = (mask_a1 & mask_a2 & mask_a3 & mask_a4)
 
     return df[mask_DR].copy()
 
@@ -680,9 +553,29 @@ def update_last_training_folder(run_dir: Union[str, Path], last_dir: Union[str, 
 
 def main():
        # --- load config
+    args = Args().parse_args()
+    
+    if args.loc == "remote":
+        CONFIG_MODEL_PATH = '/run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/work/tapp/TauFF/NF4FF/Classifier_tt/configs/config_NN.yaml'
+        CONFIG_SETTINGS_PATH = '/run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/work/tapp/TauFF/NF4FF/Classifier_tt/configs/config_settings.yaml'
+    elif args.loc == "present":
+        CONFIG_MODEL_PATH = '/work/tapp/TauFF/NF4FF/Classifier_tt/configs/config_NN.yaml'
+        CONFIG_SETTINGS_PATH = '/work/tapp/TauFF/NF4FF/Classifier_tt/configs/config_settings.yaml'
+    else:
+        logger.error("Invalid location argument: %s", args.loc)
+        exit()
 
     raw = load_config(CONFIG_MODEL_PATH)
     config = Config.from_dict(raw)
+    cfg = load_config(CONFIG_SETTINGS_PATH)
+
+
+    # -----load variables from settings config -----
+    variables = cfg["variables"]
+    dim = len(variables)
+    print(variables)
+    print(dim)
+    exit()
 
 
 
