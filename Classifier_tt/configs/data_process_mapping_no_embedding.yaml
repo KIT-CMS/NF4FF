@@ -1,0 +1,14 @@
+data: 0
+diboson_J: 1
+diboson_L: 2
+diboson_T: 3
+DYjets_J: 4
+DYjets_L: 5
+DYjets_T: 6
+ST_J: 7
+ST_L: 8
+ST_T: 9
+ttbar_J: 10
+ttbar_L: 11
+ttbar_T: 12
+Wjets: 13

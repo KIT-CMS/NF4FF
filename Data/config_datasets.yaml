@@ -32,3 +32,7 @@ input_dir:
 output_dir:
   present: /work/tapp/TauFF/NF4FF/Data/datasets/
   remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/work/tapp/TauFF/NF4FF/Data/datasets/
+
+process_dir:
+  present: /work/tapp/TauFF/NF4FF/Classifier_tt/configs/
+  remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/work/tapp/TauFF/NF4FF/Classifier_tt/configs/

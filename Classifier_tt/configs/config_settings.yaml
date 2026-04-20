@@ -10,6 +10,10 @@ ckpt_dir:
   present: /work/tapp/TauFF/NF4FF/results/QCD/inclusive/
   remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/work/tapp/TauFF/NF4FF/results/QCD/inclusive/
 
+process_map:
+  present: /work/tapp/TauFF/NF4FF/Classifier_tt/configs/data_process_mapping_no_embedding.yaml
+  remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/work/tapp/TauFF/NF4FF/Classifier_tt/configs/data_process_mapping_no_embedding.yaml
+
 
 variables:
   - pt_vis

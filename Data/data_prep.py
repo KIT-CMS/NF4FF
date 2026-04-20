@@ -14,7 +14,7 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 
 class Args(Tap):
-    loc: Literal["remote", "present"] = "present"
+    loc: Literal["remote", "present"] = "remote"
     embedding: Literal["embedding", "no_embedding"] = "no_embedding"
 
 
@@ -28,6 +28,11 @@ def load_root_file_as_pd(file_path):
 def load_config(path: str = "config.yaml") -> Dict[str, Any]:
     with open(path, "r") as f:
         return yaml.safe_load(f)
+    
+def write_yaml_to_file(py_obj, filename):
+    with open(f'{filename}.yaml', 'w',) as f :
+        yaml.dump(py_obj, f, sort_keys=False) 
+    logger.info(f"Y{py_obj} written to {filename}.yaml")
 
 # ----- calculate class weights -----
 def get_class_weights(
@@ -41,6 +46,8 @@ def get_class_weights(
     for _class in classes:
         _weights[Y == _class] = weights.sum() / weights[Y == _class].sum()
     return _weights * (weights if class_weighted else 1.0)
+
+
 
 
 def main():
@@ -62,6 +69,20 @@ def main():
     dataset_names = [cfg['data']]
     dataset_names.extend(cfg[args.embedding])
     datasets = [0] * len(dataset_names)
+    process_num = list(range(len(dataset_names)))
+
+    names = []
+    for x in dataset_names:
+        #names.append(x.strip(".root"))
+        names.append(x.removesuffix(".root"))
+    print(names)
+    print(dataset_names)
+
+    data_process = dict(zip(names, process_num))
+
+    write_yaml_to_file(data_process, cfg["process_dir"][args.loc] + "/data_process_mapping_" + args.embedding)
+    exit()
+
     
 
     for i in range(len(datasets)):
@@ -72,8 +93,8 @@ def main():
         datasets[i] = load_root_file_as_pd(file)
 
         if datasets[i].empty:
-            logger.error(f"{dataset_names[i]} is empty.")
-            exit()
+            logger.warning(f"{dataset_names[i]} is empty.")
+            continue
 
         
         # ----- Add additional columns to the DataFrame -----
@@ -98,8 +119,13 @@ def main():
 
     combined_data = pd.concat(datasets, ignore_index=True)
 
-    # set class weights
-    combined_data['class_weights'] = get_class_weights(weights = combined_data.weight, Y = combined_data.njets, classes = (0, 1, 2), class_weighted=True)
+    # set class weights for njets
+    # combined_data['class_weights'] = get_class_weights(weights = combined_data.weight, Y = combined_data.njets, classes = (0, 1, 2), class_weighted=True)
+
+    # set class weights for process
+    num_process = tuple(range(len(dataset_names)))
+    combined_data['class_weights'] = get_class_weights(weights = combined_data.weight, Y = combined_data.process, classes = num_process, class_weighted=True)
+    print(combined_data['class_weights'].value_counts())
 
     combined_data.to_feather(cfg['output_dir'][args.loc] + args.embedding + "/combined_data.feather")
 

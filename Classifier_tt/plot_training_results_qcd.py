@@ -34,7 +34,7 @@ t.set_num_threads(8)
 # ----- tap ------
 
 class Args(Tap):
-    loc: Literal['present', 'remote'] = 'present'
+    loc: Literal['present', 'remote'] = 'remote'
     embedding: Literal["embedding", "no_embedding"] = "no_embedding"
     bins: Literal['equi_populated' , 'uniform'] ='equi_populated'
     n_bins: int = 20
@@ -44,9 +44,7 @@ class Args(Tap):
     ckpt_pth_fold2: str = 'fold2/last/'
     write_back: bool = False
 
-# ----- Constants
 
-PROCESS_ORDER = [0, 1, 10, 2, 3, 4, 5, 6, 7, 8, 9]
 
 
 # ------- lists ----
@@ -560,9 +558,18 @@ def main() -> None:
     dim = len(variables)
 
 
+    # ----- Constants
+
+    if args.embedding == "embedding":
+        PROCESS_ORDER = [0, 1, 10, 2, 3, 4, 5, 6, 7, 8, 9]  # Example process IDs, adjust as needed
+    elif args.embedding == "no_embedding":
+        PROCESS_ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]  # Example process IDs without embedding, adjust as needed
+    else:
+        logger.error(f"Invalid embedding argument: {args.embedding}")
+        exit()
 
 
-
+    process_map = load_config(cfg["process_map"][args.loc])
 
     model1 = load_model(dim, cfg['ckpt_dir'][args.loc] + args.ckpt_pth_fold1 + 'model_checkpoint.pth', device)
     model2 = load_model(dim, cfg['ckpt_dir'][args.loc] + args.ckpt_pth_fold2 + 'model_checkpoint.pth', device)
@@ -583,7 +590,7 @@ def main() -> None:
     weights_qcd_val1 = torch.load(cfg['ckpt_dir'][args.loc] + args.ckpt_pth_fold1 + 'qcd_weights_qcd_val.pt')
     weights_qcd_train2 = torch.load(cfg['ckpt_dir'][args.loc] + args.ckpt_pth_fold2 + 'qcd_weights_qcd_train.pt')
     weights_qcd_val2 = torch.load(cfg['ckpt_dir'][args.loc] + args.ckpt_pth_fold2 + 'qcd_weights_qcd_val.pt')
-
+    
     probs_by_process, weights_by_process = _collect_processwise_probs_weights_ss(
         model1=model1,
         model2=model2,
@@ -595,44 +602,52 @@ def main() -> None:
         device=device,
     )
 
-    probs_data = probs_by_process[0]
+    #todo: load config data process mapping for the index numbers
+    
+    probs_data = probs_by_process[process_map['data']]
     probs_qcd = probs_by_process[0]
-    probs_Wjets = probs_by_process[1]
-    probs_embedding = probs_by_process[10]
-    probs_diboson_J = probs_by_process[2]
-    probs_diboson_L = probs_by_process[3]
-    probs_DYjets_J = probs_by_process[4]
-    probs_DYjets_L = probs_by_process[5]
-    probs_ST_J = probs_by_process[6]
-    probs_ST_L = probs_by_process[7]
-    probs_ttbar_J = probs_by_process[8]
-    probs_ttbar_L = probs_by_process[9]
+    probs_diboson_T = probs_by_process[process_map['diboson_T']]  
+    probs_diboson_J = probs_by_process[process_map['diboson_J']]
+    probs_diboson_L = probs_by_process[process_map['diboson_L']]
+    probs_DYjets_T = probs_by_process[process_map['DYjets_T']]
+    probs_DYjets_J = probs_by_process[process_map['DYjets_J']]
+    probs_DYjets_L = probs_by_process[process_map['DYjets_L']]
+    probs_ST_T = probs_by_process[process_map['ST_T']]
+    probs_ST_J = probs_by_process[process_map['ST_J']]
+    probs_ST_L = probs_by_process[process_map['ST_L']]
+    probs_ttbar_T = probs_by_process[process_map['ttbar_T']]
+    probs_ttbar_J = probs_by_process[process_map['ttbar_J']]
+    probs_ttbar_L = probs_by_process[process_map['ttbar_L']]
+    probs_Wjets = probs_by_process[process_map['Wjets']]
 
-    probs_nFF = np.concatenate([probs_by_process[pid] for pid in range(1, 11)], axis=0)
+    probs_nFF = np.concatenate([probs_by_process[pid] for pid in range(1, len(PROCESS_ORDER))], axis=0)
 
-    probs_diboson = np.concatenate([probs_diboson_J, probs_diboson_L], axis=0)
-    probs_ST = np.concatenate([probs_ST_J, probs_ST_L], axis=0)
-    probs_DYjets = np.concatenate([probs_DYjets_J, probs_DYjets_L], axis=0)
-    probs_ttbar = np.concatenate([probs_ttbar_J, probs_ttbar_L], axis=0)
+    probs_diboson = np.concatenate([probs_diboson_T, probs_diboson_J, probs_diboson_L], axis=0)
+    probs_ST = np.concatenate([probs_ST_T, probs_ST_J, probs_ST_L], axis=0)
+    probs_DYjets = np.concatenate([probs_DYjets_T, probs_DYjets_J, probs_DYjets_L], axis=0)
+    probs_ttbar = np.concatenate([probs_ttbar_T, probs_ttbar_J, probs_ttbar_L], axis=0)
 
-    weights_Wjets = weights_by_process[1]
-    weights_diboson_J = weights_by_process[2]
-    weights_diboson_L = weights_by_process[3]
-    weights_DYjets_J = weights_by_process[4]
-    weights_DYjets_L = weights_by_process[5]
-    weights_ST_J = weights_by_process[6]
-    weights_ST_L = weights_by_process[7]
-    weights_ttbar_J = weights_by_process[8]
-    weights_ttbar_L = weights_by_process[9]
-    weights_embedding = weights_by_process[10]
+    weights_diboson_T = weights_by_process[process_map['diboson_T']]
+    weights_diboson_J = weights_by_process[process_map['diboson_J']]
+    weights_diboson_L = weights_by_process[process_map['diboson_L']]
+    weights_DYjets_T = weights_by_process[process_map['DYjets_T']]
+    weights_DYjets_J = weights_by_process[process_map['DYjets_J']]
+    weights_DYjets_L = weights_by_process[process_map['DYjets_L']]
+    weights_ST_T = weights_by_process[process_map['ST_T']]
+    weights_ST_J = weights_by_process[process_map['ST_J']]
+    weights_ST_L = weights_by_process[process_map['ST_L']]
+    weights_ttbar_T = weights_by_process[process_map['ttbar_T']]
+    weights_ttbar_J = weights_by_process[process_map['ttbar_J']]
+    weights_ttbar_L = weights_by_process[process_map['ttbar_L']]
+    weights_Wjets = weights_by_process[process_map['Wjets']]
 
-    weights_nFF = np.concatenate([weights_by_process[pid] for pid in range(1, 11)], axis=0)
+    weights_nFF = np.concatenate([weights_by_process[pid] for pid in range(1, len(PROCESS_ORDER))], axis=0)
 
 
-    weights_diboson = np.concatenate([weights_diboson_J, weights_diboson_L], axis = 0)
-    weights_DYjets = np.concatenate([weights_DYjets_J, weights_DYjets_L], axis = 0)
-    weights_ST = np.concatenate([weights_ST_J, weights_ST_L], axis = 0)
-    weights_ttbar = np.concatenate([weights_ttbar_J, weights_ttbar_L], axis = 0)
+    weights_diboson = np.concatenate([weights_diboson_T, weights_diboson_J, weights_diboson_L], axis = 0)
+    weights_DYjets = np.concatenate([weights_DYjets_T, weights_DYjets_J, weights_DYjets_L], axis = 0)
+    weights_ST = np.concatenate([weights_ST_T, weights_ST_J, weights_ST_L], axis = 0)
+    weights_ttbar = np.concatenate([weights_ttbar_T, weights_ttbar_J, weights_ttbar_L], axis = 0)
     
     weights_qcd = torch.concat([weights_qcd_train2, weights_qcd_val2, weights_qcd_train1, weights_qcd_val1], dim = 0).detach().cpu().numpy()
 
@@ -643,15 +658,15 @@ def main() -> None:
     logger.info(len(probs_qcd))
     logger.info(len(weights_qcd))
 
-    probs = [probs_qcd, probs_Wjets, probs_embedding, probs_diboson_J, probs_diboson_L, probs_DYjets_J, probs_DYjets_L, probs_ST_J, probs_ST_L, probs_ttbar_J, probs_ttbar_L]
-    weights = [weights_qcd, weights_Wjets, weights_embedding, weights_diboson_J, weights_diboson_L, weights_DYjets_J, weights_DYjets_L, weights_ST_J, weights_ST_L, weights_ttbar_J, weights_ttbar_L] 
-    labels = ['QCD','Wjets', 'embedding', 'diboson_J', 'diboson_L', 'DYjets_J', 'DYjets_L', 'ST_J', 'ST_L', 'ttbar_J', 'ttbar_L']
-    colors = ['#b9ac70', '#e76300', '#ffa90e', '#9f887e', '#94a4a2', '#b9ac70', '#3f90da', '#717581', '#5882ae', '#964c88' ,'#615fc8' ,  '#b9ac70']
+    probs = [probs_qcd, probs_diboson_T, probs_diboson_J, probs_diboson_L, probs_DYjets_T, probs_DYjets_J, probs_DYjets_L, probs_ST_T, probs_ST_J, probs_ST_L, probs_ttbar_T, probs_ttbar_J, probs_ttbar_L, probs_Wjets]
+    weights = [weights_qcd, weights_diboson_T, weights_diboson_J, weights_diboson_L, weights_DYjets_T, weights_DYjets_J, weights_DYjets_L, weights_ST_T, weights_ST_J, weights_ST_L, weights_ttbar_T, weights_ttbar_J, weights_ttbar_L, weights_Wjets] 
+    #labels = ['QCD','Wjets', 'embedding', 'diboson_J', 'diboson_L', 'DYjets_J', 'DYjets_L', 'ST_J', 'ST_L', 'ttbar_J', 'ttbar_L']
+    #colors = ['#b9ac70', '#e76300', '#ffa90e', '#9f887e', '#94a4a2', '#b9ac70', '#3f90da', '#717581', '#5882ae', '#964c88' ,'#615fc8' ,  '#b9ac70']
 
-    probs_compact = [probs_qcd, probs_Wjets, probs_embedding, probs_diboson, probs_DYjets, probs_ST, probs_ttbar]
-    weights_compact = [ weights_qcd, weights_Wjets, weights_embedding, weights_diboson, weights_DYjets, weights_ST, weights_ttbar]
-    labels_compact = [r"QCD multijet", r"W+jets", r"$\tau$ embedded", r"Diboson", r"Jet$\rightarrow \tau_{h}$", r"Single t", r'$t\bar{t}$']
-    colors_compact = [ '#b9ac70','#e76300', '#ffa90e', '#b9ac70', '#717581', '#717581', '#832db6']
+    probs_compact = [probs_qcd, probs_diboson, probs_DYjets, probs_ST, probs_ttbar, probs_Wjets]
+    weights_compact = [ weights_qcd, weights_diboson, weights_DYjets, weights_ST, weights_ttbar, weights_Wjets]
+    labels_compact = [r"QCD multijet", r"Diboson", r"Jet$\rightarrow \tau_{h}$", r"Single t", r'$t\bar{t}$', r"W+jets"]
+    colors_compact = [ '#b9ac70', '#b9ac70', '#717581', '#717581', '#832db6', '#e76300']
     # -------- calculate 
 
     if args.bins == 'equi_populated':
@@ -733,37 +748,38 @@ def main() -> None:
     sim_counts, _  = np.histogram(np.concatenate(probs), weights = np.concatenate(weights), bins = bins)
 
     QCD_counts, _ = np.histogram(probs_qcd, weights = weights_qcd, bins=bins)
-    Wjets_counts, _ = np.histogram(probs_Wjets, weights = weights_Wjets, bins = bins)
-    embedding_counts, _ = np.histogram(probs_embedding, weights = weights_embedding, bins = bins)
+    dibosonT_counts, _ = np.histogram(probs_diboson_T, weights = weights_diboson_T, bins = bins)
     dibosonJ_counts, _ = np.histogram(probs_diboson_J, weights = weights_diboson_J, bins = bins)
     dibosonL_counts, _ = np.histogram(probs_diboson_L, weights = weights_diboson_L, bins = bins)
+    DYjetsT_counts, _ = np.histogram(probs_DYjets_T, weights = weights_DYjets_T, bins = bins)
     DYjetsJ_counts, _ = np.histogram(probs_DYjets_J, weights = weights_DYjets_J, bins = bins)
     DYjetsL_counts, _ = np.histogram(probs_DYjets_L, weights = weights_DYjets_L, bins = bins)
+    STT_counts, _ = np.histogram(probs_ST_T, weights = weights_ST_T, bins = bins)
     STJ_counts, _ = np.histogram(probs_ST_J, weights = weights_ST_J, bins = bins)
     STL_counts, _ = np.histogram(probs_ST_L, weights = weights_ST_L, bins = bins)
+    ttbarT_counts, _ = np.histogram(probs_ttbar_T, weights = weights_ttbar_T, bins = bins)
     ttbarJ_counts, _ = np.histogram(probs_ttbar_J, weights = weights_ttbar_J, bins = bins)
     ttbarL_counts, _ = np.histogram(probs_ttbar_L, weights = weights_ttbar_L, bins = bins)
+    Wjets_counts, _ = np.histogram(probs_Wjets, weights = weights_Wjets, bins = bins)
 
-    diboson_counts = dibosonJ_counts + dibosonL_counts
-    DYjets_counts = DYjetsJ_counts + DYjetsL_counts
-    ST_counts = STJ_counts + STL_counts
-    ttbar_counts = ttbarJ_counts + ttbarL_counts
+    diboson_counts = dibosonT_counts + dibosonJ_counts + dibosonL_counts
+    DYjets_counts = DYjetsT_counts + DYjetsJ_counts + DYjetsL_counts
+    ST_counts = STT_counts + STJ_counts + STL_counts
+    ttbar_counts = ttbarT_counts + ttbarJ_counts + ttbarL_counts
 
 
     hist_nFF, _ = np.histogram(probs_nFF,weights=weights_nFF, bins= bins)
 
 
     QCD_counts_norm = np.divide(QCD_counts, sim_counts)
-    Wjets_counts_norm = np.divide(Wjets_counts, sim_counts)
-    embedding_counts_norm = np.divide(embedding_counts, sim_counts)
     diboson_counts_norm = np.divide(diboson_counts, sim_counts)
     DYjets_counts_norm = np.divide(DYjets_counts, sim_counts)
     ST_counts_norm = np.divide(ST_counts, sim_counts)
     ttbar_counts_norm = np.divide(ttbar_counts, sim_counts)
+    Wjets_counts_norm = np.divide(Wjets_counts, sim_counts)
 
 
-    ratio = np.divide(data_counts,
-                      sim_counts)
+    ratio = np.divide(data_counts, sim_counts)
 
 
     QCD_counts2, _ = np.histogram(probs_qcd, weights = weights_qcd**2, bins=bins)
@@ -788,6 +804,7 @@ def main() -> None:
     ax[0].errorbar(bin_centers,counts_data_reduced, yerr = y_error, xerr = x_error, color = 'black', fmt = 'o' ,markersize = 5, label = 'data (reduced)')
     ax[0].bar(bin_centers, QCD_counts, width = bin_widths, color ='#b9ac70', label = 'QCD')
     ax[0].set_ylabel('events')
+    ax[0].set_yscale('log')
     ax[0].legend()
     adjust_ylim_for_legend(ax[0])
 
@@ -834,10 +851,11 @@ def main() -> None:
                 fmt='o', color='black', label='data', markersize=5)
 
     ax[0].set_ylabel("Events")
+    ax[0].set_yscale('log')
 
-    ax[0].set_ylim([0, 1.4*np.max([np.max(data_counts), np.max(sim_counts)])])
+    #ax[0].set_ylim([0, 1.4*np.max([np.max(data_counts), np.max(sim_counts)])])
     ax[0].legend(loc='upper right', bbox_to_anchor=(0.8, 0.9), ncol=3, frameon=False)
-    ax[0].set_ylim([0, 8000])
+    #ax[0].set_ylim([0, 8000])
     # Remove top ticks
     ax[0].tick_params(direction='in', top=True, right=True)
 
@@ -864,11 +882,10 @@ def main() -> None:
     
     ax[2].bar(bin_centers, QCD_counts_norm, color =  '#b9ac70', width = bin_widths )
     ax[2].bar(bin_centers, Wjets_counts_norm, bottom = QCD_counts_norm, color ='#e76300', width = bin_widths)
-    ax[2].bar(bin_centers, embedding_counts_norm, bottom = QCD_counts_norm + Wjets_counts_norm, color = '#ffa90e', width = bin_widths)
-    ax[2].bar(bin_centers, diboson_counts_norm, bottom = QCD_counts_norm + Wjets_counts_norm + embedding_counts_norm, color = '#94a4a2', width = bin_widths)
-    ax[2].bar(bin_centers, DYjets_counts_norm, bottom = QCD_counts_norm + Wjets_counts_norm + embedding_counts_norm + diboson_counts_norm, color = '#b9ac70', width = bin_widths)
-    ax[2].bar(bin_centers, ST_counts_norm, bottom = QCD_counts_norm + Wjets_counts_norm + embedding_counts_norm + diboson_counts_norm + DYjets_counts_norm, color = '#717581', width = bin_widths)
-    ax[2].bar(bin_centers, ttbar_counts_norm, bottom = QCD_counts_norm + Wjets_counts_norm + embedding_counts_norm + diboson_counts_norm + DYjets_counts_norm + ST_counts_norm, color = '#832db6', width = bin_widths)
+    ax[2].bar(bin_centers, diboson_counts_norm, bottom = QCD_counts_norm + Wjets_counts_norm, color = '#94a4a2', width = bin_widths)
+    ax[2].bar(bin_centers, DYjets_counts_norm, bottom = QCD_counts_norm + Wjets_counts_norm + diboson_counts_norm, color = '#b9ac70', width = bin_widths)
+    ax[2].bar(bin_centers, ST_counts_norm, bottom = QCD_counts_norm + Wjets_counts_norm + diboson_counts_norm + DYjets_counts_norm, color = '#717581', width = bin_widths)
+    ax[2].bar(bin_centers, ttbar_counts_norm, bottom = QCD_counts_norm + Wjets_counts_norm + diboson_counts_norm + DYjets_counts_norm + ST_counts_norm, color = '#832db6', width = bin_widths)
     ax[2].set_xlabel("NN output")
     ax[2].set_ylabel('Proc. frac.')
     #ax[2].set_ylim([0,1])

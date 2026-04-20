@@ -39,7 +39,7 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 # ----- TAP Arguments -----
 class Args(Tap):
-    loc: Literal["remote", "present"] = "present"
+    loc: Literal["remote", "present"] = "remote"
     embedding: Literal["embedding", "no_embedding"] = "no_embedding"
 
 # ----- constants ------
@@ -280,7 +280,7 @@ def get_ff_dataset_with_qcd_weights_ss(
     njets_idx: int,
     njets_groups: Tuple[Tuple[int, ...], ...] = ((0,), (1,), (2, 100)),
     subtract_njets_based: bool = False,
-    qcd_weight_binning: Literal['quantile', 'dynamic'] = 'quantile',
+    qcd_weight_binning: Literal['quantile', 'dynamic'] = 'dynamic',
     qcd_weight_n_bins: int = 20,
     qcd_weight_dynamic_delta: float = 100.0,
     qcd_weight_dynamic_delta_last: float = 100.0,
@@ -408,6 +408,7 @@ def _calculate_scaled_event_weights_generalized(
     bins: np.ndarray,
     total_subtraction_per_bin: Union[np.ndarray, t.Tensor],
 ) -> Union[np.ndarray, t.Tensor]:
+
     lib, device = _get_backend_and_device(event_values)
     is_torch = (lib == t)
     device_kwargs = {'device': device} if is_torch else {}
