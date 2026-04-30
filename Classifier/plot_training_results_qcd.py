@@ -46,7 +46,7 @@ class Args(Tap):
     ckpt_pth_fold2: str = 'results/QCD/inclusive/fold2/last/'
     #ckpt_pth_fold1: str = 'Categorizer_results/QCD/inclusive/fold1/2026-02-19/0_18-59-52/'
     #ckpt_pth_fold2: str = 'Categorizer_results/QCD/inclusive/fold2/2026-02-19/0_19-00-37/'
-    write_back: bool = False
+    write_back: bool = True
 
 # ----- Constants
 

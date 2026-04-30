@@ -1,0 +1,43 @@
+device:
+
+training:
+  bsize_train: 10000
+  bsize_val: 10000
+  bsize_test: 10000
+  grad_clip: 5.0
+  n_epochs: 500
+  use_amp: false
+  s_scale_max: 3.5
+
+model:
+  n_layers: 12
+  hidden_dims: 32
+  s_scale: 1.5
+  use_cut_preprocessing: false
+  cut_preprocessing_index: [0, 1]
+  cut_preprocessing_thresholds: [33.0, 30.0]
+  cut_preprocessing_epsilon: 0.000001
+  use_tail_preprocessing: false
+  tail_preprocessing_index: [4]
+  tail_preprocessing_type: asinh
+  tail_preprocessing_center: [0.0]
+  tail_preprocessing_scale: [10]
+  tail_preprocessing_epsilon: 0.000001
+
+scheduler:
+  step_size: 10
+  gamma: 0.1
+  factor: 0.1
+  patience: 10
+  threshold: 0.0001
+  cooldown: 0
+  min_lr: 0.000001
+  eps: 0.00000001
+
+optimizer:
+  lr: 0.0001
+  eps: 0.000000011
+  weight_decay: 0.00001
+
+save:
+  save_directory:

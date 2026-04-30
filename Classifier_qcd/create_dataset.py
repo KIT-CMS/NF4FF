@@ -8,8 +8,7 @@ import logging
 import yaml
 from CustomLogging import setup_logging, LogContext
 from pathlib import Path
-from classes.helper import get_class_weights
-# --------------------
+
 
 SEED = 42
 RANDOM_STATE = 42
@@ -84,12 +83,10 @@ for name, df in processes.items():
     elif name == 'embedding':
         df['process'] = 10
 
-    if name == 'Wjets':
-        df["Label"] = 1
-    elif name == 'data':
-        df['Label'] = 2
-    else:
+    if name == 'data':
         df['Label'] = 0
+    else:
+        df['Label'] = 1
     
     dfs.append(df)
 
@@ -106,11 +103,9 @@ df['OS']= mask_OS
 
 df['event_var'] = df['event']%2
 
-njets = df.njets.copy()
-njets[njets >= 2] = 2
 df['class_weights'] = get_class_weights(
     weights = df.weight,
-    Y = njets,
+    Y = df.Label,
     classes = (0, 1),
     class_weighted=False
 )

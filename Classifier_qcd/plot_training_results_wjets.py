@@ -44,7 +44,7 @@ class Args(Tap):
     #ckpt_pth_fold2: str = 'Categorizer_results/inclusive/fold2/2026-02-19/0_19-28-32/'
     ckpt_pth_fold1: str = 'results/Wjets/inclusive/fold1/last/'
     ckpt_pth_fold2: str = 'results/Wjets/inclusive/fold2/last/'
-    write_back: bool = True
+    write_back: bool = False
 
 # ----- Constants
 
@@ -371,7 +371,7 @@ def mask_DR(df):
 
     mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
     mask_a2 = (df.nbtag == 0)
-    mask_a4 = ((df.iso_1 > 0.0) & (df.iso_1 < 0.15))
+    mask_a4 = ((df.iso_1 >= 0.0) & (df.iso_1 < 0.15))
     mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
     mask_a6 = (df.mt_1 > 70)
     mask_DR = (mask_a1 & mask_a2  & mask_a4 & mask_a5 & mask_a6)

@@ -100,6 +100,8 @@ def build_training_variables_tag(variables: list[str]) -> str:
 
 # ----- shared helpers -----
 
+
+
 def mask_preselection_loose(df):
     mask_eta = (df.eta_1 <= 2.1) & (df.eta_2 <= 2.3)
     mask_pt = (df.pt_1 >= 33) & (df.pt_2 >= 30)
@@ -125,7 +127,7 @@ def mask_DR_wjets(df):
     mask = (
         (df.id_tau_vsJet_VLoose_2 > 0.5)
         & (df.nbtag == 0)
-        & (df.iso_1 > 0.0)
+        & (df.iso_1 >= 0.0)
         & (df.iso_1 < 0.15)
         & (df.extramuon_veto < 0.5)
         & (df.extraelec_veto < 0.5)
@@ -151,13 +153,14 @@ def evaluate_loader(model, loader, device):
     model.eval()
     loss_sum = 0.0
     weight_sum = 0.0
+    use_amp = (device.type == 'cuda')
 
     with t.no_grad():
         for Xb, Wb in loader:
             Xb = Xb.to(device, non_blocking=True)
             Wb = Wb.to(device, non_blocking=True)
 
-            with t.amp.autocast('cuda', enabled=False):
+            with t.amp.autocast('cuda', enabled=use_amp):
                 log_px = model(Xb).reshape(-1)
                 loss = (-(log_px) * Wb).sum()
 
@@ -434,7 +437,12 @@ def train_region(spec: ProcessTrainingSpec, region: str, train_df, val_df, weigh
         valid_fraction,
     )
 
-    optimizer = t.optim.AdamW(model.parameters(), lr=config.lr)
+    optimizer = t.optim.AdamW(
+        model.parameters(),
+        lr=config.lr,
+        weight_decay=config.weight_decay,
+        eps=config.eps,
+    )
     scheduler = t.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
         mode='min',
@@ -446,7 +454,8 @@ def train_region(spec: ProcessTrainingSpec, region: str, train_df, val_df, weigh
         min_lr=config.scheduler_min_lr,
         eps=config.scheduler_eps,
     )
-    scaler = t.amp.GradScaler('cuda', enabled=config.use_amp)
+    use_amp = (device.type == 'cuda') and bool(config.use_amp)
+    scaler = t.amp.GradScaler('cuda', enabled=use_amp)
 
     best_val_nll = float('inf')
     counter = 0
@@ -465,7 +474,7 @@ def train_region(spec: ProcessTrainingSpec, region: str, train_df, val_df, weigh
                 wb = wb.to(device, non_blocking=True)
 
                 optimizer.zero_grad(set_to_none=True)
-                with t.amp.autocast('cuda', enabled=False):
+                with t.amp.autocast('cuda', enabled=use_amp):
                     log_px = model(xb).reshape(-1)
                     loss = (-(log_px) * wb).sum()
 
