@@ -16,7 +16,7 @@ import matplotlib
 import yaml
 from tap import Tap
 from CustomLogging import setup_logging
-from classes.NeuralNetworks import RealNVP, RealNVP_NN, AffineCoupling, MLP, ConditionalRealNVP, BinaryClassifier
+from classes.NeuralNetworks import RealNVP, RealNVP_NN, AffineCoupling, MLP, ConditionalRealNVP, BinaryClassifier, ConditionalFlow1D
 import correctionlib as cr
 from classes.Dataclasses import ModelConfig
 from classes.Collection import load_model_config, load_flow, load_conditional_flow, evaluate_pdf, compute_eventwise_fake_factors, get_my_data_qcd, get_my_data_wjets
@@ -58,6 +58,7 @@ class Args(Tap):
     plot_complete_variables: bool = False
     ratio_ylim_min: float = 0.75  # Lower y-limit for ratio panels.
     ratio_ylim_max: float = 1.25  # Upper y-limit for ratio panels.
+    apply_dr_sr_correction: bool = False  # Apply the trained DR-SR correction flow (FF_correction_flow.py) to Wjets FFs only. Not applied by default.
 
 
 # Runtime context (initialized in `initialize_runtime_context()` and consumed by plotting functions)
@@ -83,6 +84,9 @@ correction_features_wjets_antidr = None
 correction_prior_ar_over_sr_wjets_dr = None
 correction_prior_ar_over_sr_wjets_antidr = None
 
+dr_sr_flow_model = None
+dr_sr_flow_meta = None
+
 chk_pth_model_AR_like_wjets = ''
 chk_pth_model_SR_like_wjets = ''
 chk_pth_model_AR_like_qcd = ''
@@ -105,6 +109,77 @@ plot_root_dir = Path('plots')
 MASKS_CONFIG_PATH = Path('../configs/masks.yaml')
 
 # ------------ functions ----------
+
+
+def _resolve_training_name(variables: list[str]) -> str:
+    """Build a DR_SR_correction-style training tag (no hash) from a variable list."""
+    tail = variables[4:]
+    tag = '_'.join(tail) if tail else 'none'
+    return f'training_vars{len(variables)}_{tag}'
+
+
+def _load_dr_sr_flow_model(
+    checkpoint_dir: Path,
+    device: torch.device,
+) -> tuple['ConditionalFlow1D', dict]:
+    """Load a trained ConditionalFlow1D from a checkpoint directory."""
+    scaler_meta_path = checkpoint_dir.parent / 'scaler_meta.yaml'
+    if not scaler_meta_path.exists():
+        raise FileNotFoundError(f'scaler_meta.yaml not found at {scaler_meta_path}')
+    with open(scaler_meta_path, 'r') as f:
+        meta = yaml.safe_load(f)
+    cond_dim = meta['cond_dim']
+    model = ConditionalFlow1D(cond_dim).to(device)
+    model.initialize_scaler(
+        torch.tensor(meta['shift_training'], dtype=torch.float32),
+        torch.tensor(meta['scale_training'], dtype=torch.float32),
+    )
+    model.initialize_cond_scaler(
+        torch.tensor(meta['shift_cond'], dtype=torch.float32),
+        torch.tensor(meta['scale_cond'], dtype=torch.float32),
+    )
+    checkpoint = torch.load(checkpoint_dir / 'model_checkpoint.pth', map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+    return model, meta
+
+
+@torch.no_grad()
+def _apply_dr_sr_flow(
+    flow_model: 'ConditionalFlow1D',
+    df: pd.DataFrame,
+    ff_dr: np.ndarray,
+    flow_meta: dict,
+    device: torch.device,
+) -> np.ndarray:
+    """Apply the DR-SR correction flow to convert FF_DR values → FF_SR.
+    Events with non-positive or non-finite FF_DR receive NaN.
+    """
+    use_log = flow_meta.get('use_log_transform', False)
+    ff_clip_max = flow_meta.get('ff_clip_max', None)
+    flow_variables = flow_meta['variables']
+
+    valid = np.isfinite(ff_dr) & (ff_dr > 0)
+    result = np.full(len(ff_dr), np.nan, dtype='float32')
+    if not valid.any():
+        return result
+
+    df_valid = df.iloc[np.where(valid)[0]]
+    ff_dr_valid = ff_dr[valid].astype('float32')
+    if ff_clip_max is not None:
+        ff_dr_valid = np.clip(ff_dr_valid, None, ff_clip_max)
+
+    cond_ff_dr = np.log(ff_dr_valid) if use_log else ff_dr_valid
+    cond_np = np.column_stack([
+        cond_ff_dr,
+        df_valid[flow_variables].to_numpy(dtype='float32'),
+    ])
+    cond = torch.tensor(cond_np).to(device)
+    samples = flow_model.sample(cond, n_samples=1).squeeze(0).cpu().numpy()
+    if use_log:
+        samples = np.exp(samples)
+    result[valid] = samples
+    return result
 
 
 def reserve_cms_label_space(ax, factor=5.0):
@@ -1082,6 +1157,26 @@ def normalizing_flow_ff(
     df['ff_nf_wjets'] = ff_full_wjets[combined_mask]
     df['ff_nf_qcd'] = ff_full_qcd[combined_mask]
 
+    # --- optional DR-SR correction flow ---
+    if args is not None and args.apply_dr_sr_correction and dr_sr_flow_model is not None:
+        ff_sr_wjets = _apply_dr_sr_flow(
+            dr_sr_flow_model,
+            df.reset_index(drop=True),
+            df['ff_nf_wjets'].to_numpy(dtype='float32'),
+            dr_sr_flow_meta,
+            device,
+        )
+        ff_sr_qcd = _apply_dr_sr_flow(
+            dr_sr_flow_model,
+            df.reset_index(drop=True),
+            df['ff_nf_qcd'].to_numpy(dtype='float32'),
+            dr_sr_flow_meta,
+            device,
+        )
+        df['ff_nf_wjets'] = ff_sr_wjets
+        df['ff_nf_qcd'] = ff_sr_qcd
+        logger.info('Applied DR-SR correction flow to ff_nf_wjets and ff_nf_qcd.')
+
     # --- plotting ---
     if plotting:
         plot_ff_clipping_histogram(
@@ -1359,6 +1454,7 @@ def initialize_runtime_context() -> None:
     global correction_model_wjets_dr, correction_model_wjets_antidr
     global correction_features_wjets_dr, correction_features_wjets_antidr
     global correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr
+    global dr_sr_flow_model, dr_sr_flow_meta
     global chk_pth_model_AR_like_wjets, chk_pth_model_SR_like_wjets
     global chk_pth_model_AR_like_qcd, chk_pth_model_SR_like_qcd
     global model_AR_like_wjets, model_SR_like_wjets, model_AR_like_qcd, model_SR_like_qcd
@@ -1367,7 +1463,9 @@ def initialize_runtime_context() -> None:
 
     # Step 1: parse runtime arguments and core variable list
     with open('../configs/training_variables.yaml', 'r') as f:
-        variables = yaml.safe_load(f)['variables']
+        _tv_cfg = yaml.safe_load(f)
+        variables = _tv_cfg['variables']
+        _variables_correction = _tv_cfg.get('variables_correction', [])
 
     args = Args(explicit_bool=True).parse_args()
     dim = len(variables)
@@ -1491,6 +1589,24 @@ def initialize_runtime_context() -> None:
             model_SR_like_wjets = load_flow(dim=dim, cfg=config_SR_like_wjets, checkpoint_path=f'{chk_pth_model_SR_like_wjets}/model_checkpoint.pth', device=device)
             model_AR_like_qcd = load_flow(dim=dim, cfg=config_AR_like_qcd, checkpoint_path=f'{chk_pth_model_AR_like_qcd}/model_checkpoint.pth', device=device)
             model_SR_like_qcd = load_flow(dim=dim, cfg=config_SR_like_qcd, checkpoint_path=f'{chk_pth_model_SR_like_qcd}/model_checkpoint.pth', device=device)
+
+    # Step 2b: optionally load the DR-SR correction flow
+    dr_sr_flow_model = None
+    dr_sr_flow_meta = None
+    if args.apply_dr_sr_correction:
+        _flow_resolved_tag = _resolve_training_name(variables)
+        _correction_tag = _resolve_training_name(_variables_correction)
+        _flow_checkpoint_dir = (
+            Path('DR_SR_correction')
+            / 'FF_flow_results'
+            / _flow_resolved_tag
+            / _correction_tag
+            / 'FF_SR'
+            / 'latest'
+        )
+        logger.info('Loading DR-SR correction flow from %s', _flow_checkpoint_dir)
+        dr_sr_flow_model, dr_sr_flow_meta = _load_dr_sr_flow_model(_flow_checkpoint_dir, device)
+        logger.info('DR-SR correction flow loaded. flow_variables=%s', dr_sr_flow_meta.get('variables'))
 
     # Step 3: load data and plotting labels/binning
     data_complete = pd.read_feather('../../data/data_complete.feather')

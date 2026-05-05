@@ -14,7 +14,6 @@ import yaml
 from pathlib import Path
 import matplotlib
 from matplotlib.ticker import ScalarFormatter
-
 from torch.utils.data import TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -24,7 +23,7 @@ from typing import (Any, Callable, Dict, Generator, Iterable, Iterator, List,
 from training_wjets import BinaryClassifier
 from tap import Tap
 from typing import Literal, Generator
-
+from classes.Collection import MaskManager
 # ----- seeds -----
 
 SEED = 42
@@ -103,14 +102,11 @@ PROCESS_COLORS = {
 
 # ------- lists ----
 
-variables = [
-    "pt_1","pt_2","eta_1","eta_2","jpt_1","jpt_2","jeta_1","jeta_2",
-    "m_fastmtt","pt_fastmtt","met","njets","mt_tot","m_vis",
-    "pt_tt","pt_vis","mjj","pt_dijet","pt_ttjj","deltaEta_jj","deltaR_jj",
-    "deltaR_ditaupair","deltaR_1j1","deltaR_1j2",
-    "deltaR_2j1","deltaR_2j2","deltaR_12j1","deltaR_12j2","deltaEta_1j1",
-    "deltaEta_1j2","deltaEta_2j1","deltaEta_2j2","deltaEta_12j1","deltaEta_12j2", 'tau_decaymode_1', 'tau_decaymode_2', 'nbtag',
-]
+with open("configs/training_variables.yaml", "r") as f:
+    raw = yaml.safe_load(f)
+
+variables = raw["variables"]
+
 
 dim = len(variables)
 '''
@@ -616,7 +612,11 @@ def main() -> None:
     logger.info("Loading data")
 
     data_complete = pd.read_feather(args.data_complete_path)
-    data_DR = mask_DR(data_complete)
+    
+    masks = MaskManager('configs/masks.yaml')
+    
+    data_DR = masks.apply(data_complete, 'preselection_loose','DR_wjets')
+
     train1, val1, train2, val2 = split_even_odd(data_DR)
 
     data_t1 = get_my_other_data(train1, variables).to_torch(device=None)

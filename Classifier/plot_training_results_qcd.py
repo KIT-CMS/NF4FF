@@ -26,7 +26,7 @@ from tap import Tap
 from typing import Literal, Generator
 
 from classes.helper import _same_sign_opposite_sign_split, _collection
-
+from classes.Collection import MaskManager
 # ----- seeds -----
 
 SEED = 42
@@ -570,8 +570,12 @@ def main() -> None:
 
     logger.info("Loading data")
 
+    # --- data loading
+
+    masks = MaskManager('configs/masks.yaml')
+
     data_complete = pd.read_feather(args.data_complete_path)
-    data_DR = mask_DR(data_complete)
+    data_DR = masks.apply(data_complete, 'preselection_loose','DR_qcd')
     train1, val1, train2, val2 = split_even_odd(data_DR)
 
     train1 = get_my_data(train1, variables).to_torch(device=None)
@@ -837,7 +841,6 @@ def main() -> None:
 
     ax[0].set_ylim([0, 1.4*np.max([np.max(data_counts), np.max(sim_counts)])])
     ax[0].legend(loc='upper right', bbox_to_anchor=(0.8, 0.9), ncol=3, frameon=False)
-    ax[0].set_ylim([0, 8000])
     # Remove top ticks
     ax[0].tick_params(direction='in', top=True, right=True)
 

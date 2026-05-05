@@ -27,7 +27,6 @@ masks:
     - extraelec_veto < 0.5
     - mt_1 < 50
 
-
   preselection_loose:
     - eta_1 <= 2.1
     - eta_2 <= 2.3

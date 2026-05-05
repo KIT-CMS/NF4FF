@@ -21,6 +21,7 @@ import torch as t
 from tap import Tap
 from typing import Any, Callable, Dict, Generator, List, Literal, Tuple, Union
 from copy import deepcopy
+from classes.Collection import MaskManager
 import time
 # ----- seed -----
 
@@ -43,9 +44,9 @@ CONFIG_MODEL_PATH = 'configs/config_NN.yaml'
 PATIENCE = 20
 QCD_WEIGHT_BINNING = 'dynamic'
 QCD_WEIGHT_N_BINS = 20
-QCD_WEIGHT_DYNAMIC_DELTA = 10.0
-QCD_WEIGHT_DYNAMIC_DELTA_LAST = 10.0
-QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD = 10.0
+QCD_WEIGHT_DYNAMIC_DELTA = 4.0
+QCD_WEIGHT_DYNAMIC_DELTA_LAST = 4.0
+QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD = 4.0
 
 # ----- data classes -----
 @dataclass
@@ -701,8 +702,10 @@ def main():
 
     # --- load data 
 
+    masks = MaskManager('configs/masks.yaml')
+
     data_complete = pd.read_feather('../data/data_complete.feather')
-    data_DR = mask_DR(data_complete)
+    data_DR = masks.apply(data_complete, 'preselection_loose','DR_qcd')
 
 
     data_DR.loc[data_DR['process'] != 0, 'Label'] = 0

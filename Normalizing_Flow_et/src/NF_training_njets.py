@@ -20,7 +20,7 @@ from classes.Collection import get_my_data_qcd, get_my_data_wjets
 from classes.Dataclasses import RealNVP_config
 from classes.NeuralNetworks import ConditionalRealNVP, GroupedNFRouter, RealNVP
 from CustomLogging import LogContext, setup_logging
-
+from classes.Collection import MaskManager
 
 SEED = 42
 
@@ -47,6 +47,8 @@ MODE_DIR_BY_TRAINING_MODEL = {
     TRAINING_MODEL_SINGLE: 'no_njets_split',
     TRAINING_MODEL_CONDITIONAL: 'conditional_njets_input',
 }
+
+masks = MaskManager('configs/masks.yaml')
 
 
 class Args(Tap):

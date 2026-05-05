@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 import logging
 import random
+from torch.utils import data
+import yaml
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Union
@@ -32,6 +34,7 @@ torch.manual_seed(42)
 np.random.seed(42)
 random.seed(42)
 t.set_num_threads(8)
+
 SEED = 42
 
 # ------ logger -----
@@ -224,19 +227,12 @@ def build_qcd_weight_bins(
 
     return bins
 
-
-
 # ------ lists -----
 
+with open("configs/training_variables.yaml", "r") as f:
+    raw = yaml.safe_load(f)
 
-variables = [
-    "pt_1","pt_2","eta_1","eta_2","jpt_1","jpt_2","jeta_1","jeta_2",
-    "m_fastmtt","pt_fastmtt","met","njets","mt_tot","m_vis",
-    "pt_tt","pt_vis","mjj","pt_dijet","pt_ttjj","deltaEta_jj","deltaR_jj",
-    "deltaR_ditaupair","deltaR_1j1","deltaR_1j2",
-    "deltaR_2j1","deltaR_2j2","deltaR_12j1","deltaR_12j2","deltaEta_1j1",
-    "deltaEta_1j2","deltaEta_2j1","deltaEta_2j2","deltaEta_12j1","deltaEta_12j2", 'tau_decaymode_1', 'tau_decaymode_2', 'nbtag',
-]
+variables = raw["variables"]
 
 dim = len(variables)
 
@@ -297,6 +293,50 @@ class BinaryClassifier(nn.Module):
         return self.net(x)
 
 # ----- functions -----
+
+class MaskManager:
+    def __init__(self, yaml_path):
+        self.yaml_path = Path(yaml_path)
+        self.masks = self.load_masks()
+        
+    def load_masks(self):
+        with open (self.yaml_path, "r") as f:
+            raw = yaml.safe_load(f)
+
+        masks = {}
+        for name, conditions in raw["masks"].items():
+            masks[name] = self._normalize_conditions(conditions)
+        return masks
+    @staticmethod
+    def _normalize_conditions(conditions):
+        fixed = []
+        for c in conditions:
+            c = (
+                c.replace("&gt;", ">")
+                 .replace("&lt;", "<")
+                 .replace("&&", "&")
+            )
+            fixed.append(f"({c})")
+        return " & ".join(fixed)
+
+
+
+    def apply(self, df, *mask_names):
+
+        if not mask_names:
+            raise ValueError("At least one mask must be provided")
+
+        unknown = set(mask_names) - self.masks.keys()
+        if unknown:
+            raise KeyError(f"Unknown masks: {unknown}")
+
+        expr = " & ".join(f"({self.masks[m]})" for m in mask_names)
+        return df.query(expr)
+
+    def get_mask(self, df: pd.DataFrame, mask_name: str) -> pd.Series:
+        return df.eval(self.masks[mask_name])
+
+
 
 @torch.no_grad()
 def predict_probabilities(
@@ -768,8 +808,14 @@ def main():
 
     # --- load data 
 
+    # --- load masks
+
+    masks = MaskManager('configs/masks.yaml')
+
     data_complete = pd.read_feather('../data/data_complete.feather')
-    data_DR = mask_DR(data_complete)
+
+    data_DR = masks.apply(data_complete, "preselection_loose", "DR_wjets")
+
     train1, val1, train2, val2 = split_even_odd(data_DR)
 
 

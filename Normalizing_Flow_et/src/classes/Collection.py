@@ -449,6 +449,51 @@ def split_even_odd(df: pd.DataFrame, SEED = 42) -> Tuple[pd.DataFrame, pd.DataFr
 
     return train1.reset_index(drop=True), val1.reset_index(drop=True), train2.reset_index(drop=True), val2.reset_index(drop=True)
 
+# ------- mask loading ------------
+
+class MaskManager:
+    def __init__(self, yaml_path):
+        self.yaml_path = Path(yaml_path)
+        self.masks = self.load_masks()
+        
+    def load_masks(self):
+        with open (self.yaml_path, "r") as f:
+            raw = yaml.safe_load(f)
+
+        masks = {}
+        for name, conditions in raw["masks"].items():
+            masks[name] = self._normalize_conditions(conditions)
+        return masks
+    @staticmethod
+    def _normalize_conditions(conditions):
+        fixed = []
+        for c in conditions:
+            c = (
+                c.replace("&gt;", ">")
+                 .replace("&lt;", "<")
+                 .replace("&&", "&")
+            )
+            fixed.append(f"({c})")
+        return " & ".join(fixed)
+
+
+
+    def apply(self, df, *mask_names):
+
+        if not mask_names:
+            raise ValueError("At least one mask must be provided")
+
+        unknown = set(mask_names) - self.masks.keys()
+        if unknown:
+            raise KeyError(f"Unknown masks: {unknown}")
+
+        expr = " & ".join(f"({self.masks[m]})" for m in mask_names)
+        return df.query(expr)
+
+    def get_mask(self, df: pd.DataFrame, mask_name: str) -> pd.Series:
+        return df.eval(self.masks[mask_name])
+
+
 
 # ------- Fake Factor Stuff 
 
@@ -512,7 +557,7 @@ def compute_eventwise_fake_factors(
         clip_value = max(clip_value, 1.0)
     else:
     '''
-    clip_value = 2.0
+    clip_value = 4.0
 
     # ---- mask for clipping and nonzero PDFs
     clip_mask = (ff_eventwise_nominal <= clip_value) & (pdf_AR > 0) & (pdf_SR > 0)
