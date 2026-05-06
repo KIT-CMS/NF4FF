@@ -365,7 +365,7 @@ def get_my_other_data(df, training_var):
 
 def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
     ax[0].set_title(
-        r"$e\tau_h$",
+        r"$\tau_h\tau_h$",
         fontsize=20,
         loc="left",
         fontproperties="Tex Gyre Heros"
@@ -716,7 +716,8 @@ def main() -> None:
         data_complete.loc[data_DR.index, "weight_qcd"] = data_DR["weight_qcd"]
 
         # Save updated file
-        data_complete.reset_index(drop=True).to_feather(cfg["paths"]["output_dir"][args.loc] + "combined_data_updated.feather")
+        data_complete.reset_index(drop=True).to_feather(cfg["paths"]["output_dir"][args.loc] + args.embedding + "/combined_data_updated.feather")
+        print(cfg["paths"]["output_dir"][args.loc] + args.embedding + "/combined_data_updated.feather")
         logger.info("Successfully inserted weight_qcd into full data_complete_updated.feather")
     else:
         logger.info("Skipped writing weight_qcd back to file (write_back=False).")
@@ -807,9 +808,9 @@ def main() -> None:
     ax[0].errorbar(bin_centers,counts_data_reduced, yerr = y_error, xerr = x_error, color = 'black', fmt = 'o' ,markersize = 5, label = 'data (reduced)')
     ax[0].bar(bin_centers, QCD_counts, width = bin_widths, color ='#b9ac70', label = 'QCD')
     ax[0].set_ylabel('events')
-    ax[0].set_yscale('log')
+    ax[0].set_yscale('linear')
     ax[0].legend()
-    ax[0].set_ylim([1, 55*np.max([np.max(counts_data_reduced), np.max(QCD_counts)])])
+    ax[0].set_ylim([7*10**3, 1.1*np.max([np.max(counts_data_reduced), np.max(QCD_counts)])])
     #adjust_ylim_for_legend(ax[0])
 
     ax[1].errorbar(bin_centers, counts_data_reduced/QCD_counts, yerr = y_error/data_counts, xerr = x_error, label = 'ratio', color = 'black', fmt = 'o')
@@ -826,15 +827,15 @@ def main() -> None:
     ax[1].set_ylabel("data / model")
     ax[1].set_ylim([0.5, 1.5])
 
-    os.makedirs(args.output_dir, exist_ok=True)
-    fig.savefig(os.path.join(args.output_dir, 'results_data_reduced.png'))
-    fig.savefig(os.path.join(args.output_dir, 'results_data_reduced.pdf'))
+    os.makedirs(cfg["plots"][args.loc], exist_ok=True)
+    fig.savefig(os.path.join(cfg["plots"][args.loc], 'results_data_reduced.png'))
+    fig.savefig(os.path.join(cfg["plots"][args.loc], 'results_data_reduced.pdf'))
 
     fig, ax = plt.subplots(
         3, 1,
         figsize=(12, 12),
         sharex=True,
-        gridspec_kw={'height_ratios': [3,1,1], 'hspace': 0.05}
+        gridspec_kw={'height_ratios': [3,1,1], 'hspace': 0.08}
     )
 
     CMS_CHANNEL_TITLE(ax)
@@ -855,12 +856,11 @@ def main() -> None:
                 fmt='o', color='black', label='data', markersize=5)
 
     ax[0].set_ylabel("Events")
-    ax[0].set_yscale('log')
-    ax[0].set_ylim([1, 55*np.max([np.max(data_counts), np.max(sim_counts)])])
-    ax[0].legend(loc='upper right', bbox_to_anchor=(0.8, 0.9), ncol=3, frameon=False)
-    #ax[0].set_ylim([0, 8000])
+    #ax[0].set_yscale('log')
+    ax[0].set_ylim([8*10**3, 1.2*np.max([np.max(data_counts), np.max(sim_counts)])])
+    ax[0].legend(loc='upper right', bbox_to_anchor=(0.99, 0.9), ncol=3, frameon=False)
     # Remove top ticks
-    #ax[0].tick_params(direction='in', top=True, right=True)
+    ax[0].tick_params(direction='in', top=True, right=True)
 
     # --- Lower panel: ratio plot ---
     ax[1].errorbar(bin_centers, ratio, 

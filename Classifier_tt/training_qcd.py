@@ -114,10 +114,11 @@ class _component_collection(metaclass=helper.CollectionMeta):
     Y: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
     weights: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
     class_weights: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
-    #class_weights_process: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
     process: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
     qcd_weights: Union[t.Tensor, None] = None
     SR_like: Union [t.Tensor, int, None] = None
+    SR_like_1: Union [t.Tensor, int, None] = None
+    SR_like_2: Union [t.Tensor, int, None] = None
 
 @dataclass
 class _collection:
@@ -331,6 +332,12 @@ def get_ff_dataset_with_qcd_weights_ss(
     # Basic validation
     if not hasattr(_dataset, "SR_like") or not hasattr(_dataset.SR_like, "ss"):
         raise AttributeError("Expected dataset.SR_like.ss boolean tensor.")
+    
+    if not hasattr(_dataset, "SR_like_1") or not hasattr(_dataset.SR_like_1, "ss"):
+        raise AttributeError("Expected dataset.SR_like_1.ss boolean tensor.")
+    
+    if not hasattr(_dataset, "SR_like_2") or not hasattr(_dataset.SR_like_2, "ss"):
+        raise AttributeError("Expected dataset.SR_like_2.ss boolean tensor.")
 
     # Container for QCD weights in SS
     _dataset.qcd_weights_ss = torch.full_like(
@@ -361,12 +368,16 @@ def get_ff_dataset_with_qcd_weights_ss(
         qcd_mask = qcd_mask_ss & njets_mask_ss
         non_qcd_mask = non_qcd_mask_ss & njets_mask_ss
 
-        # --- split by SR_like.ss ---
+        # --- split by taus and SR_like.ss ---
         for sr_value in (True, False):
             sr_mask = (_dataset.SR_like.ss == sr_value)
+            sr_mask_1 = (_dataset.SR_like_1.ss == sr_value)
+            sr_mask_2 = (_dataset.SR_like_2.ss == sr_value)
 
-            qcd_mask_sr = qcd_mask & sr_mask
-            non_qcd_mask_sr = non_qcd_mask & sr_mask
+            #qcd_mask_sr = qcd_mask & sr_mask
+            #non_qcd_mask_sr = non_qcd_mask & sr_mask
+            qcd_mask_sr = qcd_mask & sr_mask_1 & sr_mask_2
+            non_qcd_mask_sr = non_qcd_mask & sr_mask_1 & sr_mask_2
 
             # Skip invalid regions
             if (
@@ -558,9 +569,10 @@ def get_my_data(df, training_var):
             Y=ss_os_split.apply_func(lambda x: x["Label"].to_numpy(dtype = np.float32)),  # or ss_os_split.apply_func(extract_label)
             weights=ss_os_split.apply_func(lambda __df: __df["weight"].to_numpy(dtype = np.float32)),
             class_weights=ss_os_split.apply_func(lambda x: x["class_weights"].to_numpy()),
-            #class_weights_process=ss_os_split.apply_func(lambda x: x["class_weights_process"].to_numpy()),
             process=ss_os_split.apply_func(lambda x: x['process'].to_numpy(dtype = np.float32)),
             SR_like = ss_os_split.apply_func(lambda x: x["id_tau_vsJet_Tight_2"].to_numpy(dtype=np.float32)),
+            SR_like_1 = ss_os_split.apply_func(lambda x: x["id_tau_vsJet_Tight_1"].to_numpy(dtype=np.float32)),
+            SR_like_2 = ss_os_split.apply_func(lambda x: x["id_tau_vsJet_Tight_2"].to_numpy(dtype=np.float32)),
         )
 
 
@@ -645,6 +657,7 @@ def main():
     train_pt2 = get_my_data(train2, variables).to_torch(device=None)
     val_pt2   = get_my_data(val2, variables).to_torch(device=None)
 
+    max_epoch = []
 
     for fold, train_pt, val_pt  in zip(['fold1', 'fold2'], [train_pt1, train_pt2], [val_pt1, val_pt2]):
 
@@ -685,6 +698,11 @@ def main():
         njets_groups = ((0,), (1,), (2, 1000))
         qcd_mask_ss_train = (train_pt.process.ss == 0)
         qcd_mask_ss_val = (val_pt.process.ss == 0)
+
+        train_loss_all = []
+        val_loss_all = []
+        val_acc_all = []
+        lr_all = []
 
 
         for epoch in range(config.n_epochs):
@@ -738,9 +756,10 @@ def main():
             X_val = val_pt.X.ss
             y_val = val_pt.Y.ss
             w_val = val_pt.weights.ss
+            cw_val = val_pt.class_weights.ss
 
             dataset_train = TensorDataset(X_train, y_train, w_train, cw_train)
-            dataset_val = TensorDataset(X_val, y_val, w_val)
+            dataset_val = TensorDataset(X_val, y_val, w_val, cw_val)
 
             train_loader = DataLoader(
                 dataset_train,
@@ -811,6 +830,7 @@ def main():
                 train_weight_sum += batch_weight.item()
 
             train_loss = train_loss_sum / train_weight_sum
+            train_loss_all.append(train_loss)
 
 
 
@@ -822,21 +842,22 @@ def main():
             total = 0
 
             with torch.no_grad():
-                for Xb, yb, wb in val_loader:
+                for Xb, yb, wb, cwb in val_loader:
                     Xb = Xb.to(device, non_blocking=True)
                     yb = yb.to(device, non_blocking=True)
                     wb = wb.to(device, non_blocking=True)
-                    #cwpb = cwpb.to(device, non_blocking=True)
-
+                    cwb = cwb.to(device, non_blocking=True)
+                    
                     with torch.amp.autocast('cuda', enabled=use_amp):
                         logits = model(Xb)
                         y = yb.float().view(-1, 1)
                         w = wb.float().view(-1, 1)
-                        #cwp = cwpb.float().view(-1, 1)
+                        cw = cwb.float().view(-1, 1)
+                        #eff_w = w * cw
 
                         loss_per_sample = criterion(logits.float(), y)
                         batch_loss = (loss_per_sample * w).sum()
-                        batch_weight = (w).sum()
+                        batch_weight = w.sum()
                         val_loss_sum += batch_loss.item()
                         val_weight_sum += batch_weight.item()
 
@@ -847,6 +868,10 @@ def main():
 
             val_loss = val_loss_sum / val_weight_sum
             val_acc = correct / total
+
+            val_loss_all.append(val_loss)
+            val_acc_all.append(val_acc)
+
             epoch_time = time.time() - epoch_start
 
 
@@ -854,6 +879,7 @@ def main():
             # ------- LR Scheduler & Logging -------
             scheduler.step(val_loss)
             current_lr = optimizer.param_groups[0]['lr']
+            lr_all.append(current_lr)
 
             logger.info(
                 f"Epoch {epoch}: train={train_loss:.6f}, "
@@ -887,6 +913,7 @@ def main():
                 counter += 1
                 if counter >= PATIENCE:
                     logger.info(f"Early stopping at epoch {epoch}")
+                    max_epoch.append(epoch)
                     break
 
        
@@ -959,6 +986,39 @@ def main():
 
         plt.hist(probs_data, bins = bins, color = 'black', alpha = 0.3) 
         plt.hist([])
+
+
+        # ----- loss evaluation and lr evaluation -----
+        epochs = list(range(len(train_loss_all)))
+        
+        fig, ax1 = plt.subplots(figsize = (9,6))
+
+        ax2 = ax1.twinx()
+        ax2.plot(epochs, lr_all, '-', label='Learning Rate', color='grey')
+        ax2.set_ylabel('Learning Rate', fontsize=12)
+        ax2.set_ylim(0, np.max(lr_all) * 1.2)
+
+        ax1.text(
+        0.025, 0.95,
+        "Private work (CMS data/simulation)",
+        fontsize=12,
+        verticalalignment='top',
+        fontproperties="Tex Gyre Heros:italic",
+        bbox=dict(facecolor="white", alpha=0, edgecolor="white", boxstyle="round,pad=0.5"),
+        transform=ax1.transAxes
+    )
+        ax1.plot(epochs, train_loss_all, 'go-', label='Train Loss')
+        ax1.plot(epochs, val_loss_all, 'bo-', label='Val Loss')
+        ax1.plot(epochs, val_acc_all, 'co-', label='Val Accuracy')
+        ax1.set_xlabel('Epoch', fontsize=12)
+        ax1.set_ylabel('Loss', fontsize=12)
+        ax1.set_ylim(0, np.max([np.max(train_loss_all), np.max(val_loss_all)]) * 1.1)
+
+        #ax[0].legend(loc='upper right', bbox_to_anchor=(0.99, 0.9), ncol=3, frameon=False)
+        fig.legend(loc='upper right', bbox_to_anchor=(0.9, 0.95))
+        plt.tight_layout()
+        plt.savefig(cfg["loss_lr_plots"][args.loc] + f'loss_lr_{fold}.png')
+        plt.close()
 
         torch.save(checkpoint, paths_training.autopath.joinpath('model_checkpoint.pth'))
         torch.save(train_pt.weights.ss[qcd_mask_ss_train], paths_training.autopath.joinpath('qcd_weights_qcd_train.pt'))

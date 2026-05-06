@@ -107,6 +107,7 @@ results*/
 **/Training_results_to_remember/
 **/.cache/
 **/closure_plots/
+**/loss_lr_plots/
 
 # Tests
 /test.py
