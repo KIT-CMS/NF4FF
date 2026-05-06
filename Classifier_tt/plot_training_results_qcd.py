@@ -809,7 +809,8 @@ def main() -> None:
     ax[0].set_ylabel('events')
     ax[0].set_yscale('log')
     ax[0].legend()
-    adjust_ylim_for_legend(ax[0])
+    ax[0].set_ylim([1, 55*np.max([np.max(counts_data_reduced), np.max(QCD_counts)])])
+    #adjust_ylim_for_legend(ax[0])
 
     ax[1].errorbar(bin_centers, counts_data_reduced/QCD_counts, yerr = y_error/data_counts, xerr = x_error, label = 'ratio', color = 'black', fmt = 'o')
     ax[1].fill_between(
@@ -855,7 +856,7 @@ def main() -> None:
 
     ax[0].set_ylabel("Events")
     ax[0].set_yscale('log')
-    ax[0].set_ylim([1, 10*np.max([np.max(data_counts), np.max(sim_counts)])])
+    ax[0].set_ylim([1, 55*np.max([np.max(data_counts), np.max(sim_counts)])])
     ax[0].legend(loc='upper right', bbox_to_anchor=(0.8, 0.9), ncol=3, frameon=False)
     #ax[0].set_ylim([0, 8000])
     # Remove top ticks
@@ -897,11 +898,11 @@ def main() -> None:
     fig.subplots_adjust(hspace=0.05)
 
     if args.bins == 'equi_populated':
-        fig.savefig(os.path.join(args.output_dir, 'results_training_equi_QCD.png'))
-        fig.savefig(os.path.join(args.output_dir, 'results_training_equi_QCD.pdf'))
+        fig.savefig(os.path.join(cfg["plots"][args.loc], 'results_training_equi_QCD.png'))
+        fig.savefig(os.path.join(cfg["plots"][args.loc], 'results_training_equi_QCD.pdf'))
     elif args.bins == 'uniform':
-        fig.savefig(os.path.join(args.output_dir, 'results_training_uniform_QCD.png'))
-        fig.savefig(os.path.join(args.output_dir, 'results_training_uniform_QCD.pdf'))
+        fig.savefig(os.path.join(cfg["plots"][args.loc], 'results_training_uniform_QCD.png'))
+        fig.savefig(os.path.join(cfg["plots"][args.loc], 'results_training_uniform_QCD.pdf'))
 
 
 

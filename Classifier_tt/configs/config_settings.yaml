@@ -18,6 +18,10 @@ closure:
   present: /work/tapp/TauFF/NF4FF/Classifier_tt/closure_plots/
   remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/work/tapp/TauFF/NF4FF/Classifier_tt/closure_plots/
 
+plots:
+  present: /work/tapp/TauFF/NF4FF/Classifier_tt/plots/
+  remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/work/tapp/TauFF/NF4FF/Classifier_tt/plots/
+
 variables:
   - pt_vis
   - q_2
