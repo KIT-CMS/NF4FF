@@ -368,65 +368,69 @@ def get_ff_dataset_with_qcd_weights_ss(
         qcd_mask = qcd_mask_ss & njets_mask_ss
         non_qcd_mask = non_qcd_mask_ss & njets_mask_ss
 
+        SR_split = [_dataset.SR_like_1.ss, _dataset.SR_like_2.ss]
         # --- split by taus and SR_like.ss ---
-        for sr_value in (True, False):
-            sr_mask = (_dataset.SR_like.ss == sr_value)
-            sr_mask_1 = (_dataset.SR_like_1.ss == sr_value)
-            sr_mask_2 = (_dataset.SR_like_2.ss == sr_value)
+        for i in range(len(SR_split)):
+            for sr_value in (True, False):
+                #sr_mask = (_dataset.SR_like.ss == sr_value)
+                #sr_mask_1 = (_dataset.SR_like_1.ss == sr_value)
+                #sr_mask_2 = (_dataset.SR_like_2.ss == sr_value)
+                sr_mask = (SR_split[i] == sr_value)
 
-            #qcd_mask_sr = qcd_mask & sr_mask
-            #non_qcd_mask_sr = non_qcd_mask & sr_mask
-            qcd_mask_sr = qcd_mask & sr_mask_1 & sr_mask_2
-            non_qcd_mask_sr = non_qcd_mask & sr_mask_1 & sr_mask_2
+                #qcd_mask_sr = qcd_mask & sr_mask_1 & sr_mask_2
+                #non_qcd_mask_sr = non_qcd_mask & sr_mask_1 & sr_mask_2
+                qcd_mask_sr = qcd_mask & sr_mask
+                non_qcd_mask_sr = non_qcd_mask & sr_mask
 
-            # Skip invalid regions
-            if (
-                qcd_mask_sr.sum() == 0
-                or non_qcd_mask_sr.sum() == 0
-            ):
-                continue
+                # Skip invalid regions
+                if (
+                    qcd_mask_sr.sum() == 0
+                    or non_qcd_mask_sr.sum() == 0
+                ):
+                    continue
 
-            bins = build_qcd_weight_bins(
-                qcd_values=prediction_ss[qcd_mask_sr].squeeze(),
-                qcd_weights=_dataset.weights.ss[qcd_mask_sr].squeeze(),
-                non_qcd_values=prediction_ss[non_qcd_mask_sr].squeeze(),
-                non_qcd_weights=_dataset.weights.ss[non_qcd_mask_sr].squeeze(),
-                binning=qcd_weight_binning,
-                n_bins=qcd_weight_n_bins,
-                dynamic_delta=qcd_weight_dynamic_delta,
-                dynamic_delta_last=qcd_weight_dynamic_delta_last,
-                dynamic_min_qcd_yield=qcd_weight_dynamic_min_qcd_yield,
-            )
-
-            if epoch == 0:
-                logger.info(
-                    "QCD weight bins (%s, njets=%s, SR_like=%s): %d",
-                    qcd_weight_binning,
-                    njets_group,
-                    sr_value,
-                    max(int(bins.numel()) - 1, 0),
+                bins = build_qcd_weight_bins(
+                    qcd_values=prediction_ss[qcd_mask_sr].squeeze(),
+                    qcd_weights=_dataset.weights.ss[qcd_mask_sr].squeeze(),
+                    non_qcd_values=prediction_ss[non_qcd_mask_sr].squeeze(),
+                    non_qcd_weights=_dataset.weights.ss[non_qcd_mask_sr].squeeze(),
+                    binning=qcd_weight_binning,
+                    n_bins=qcd_weight_n_bins,
+                    dynamic_delta=qcd_weight_dynamic_delta,
+                    dynamic_delta_last=qcd_weight_dynamic_delta_last,
+                    dynamic_min_qcd_yield=qcd_weight_dynamic_min_qcd_yield,
                 )
 
-            non_qcd_hist, bins = t.histogram(
-                input=prediction_ss[non_qcd_mask_sr],
-                bins=bins,
-                weight=_dataset.weights.ss[non_qcd_mask_sr],
-            )
+                if epoch == 0:
+                    logger.info(f"Tau {i+1}")
+                    logger.info(
+                        "QCD weight bins (%s, njets=%s, SR_like=%s): %d",
+                        qcd_weight_binning,
+                        njets_group,
+                        sr_value,
+                        max(int(bins.numel()) - 1, 0),
+                    )
 
-            # Compute QCD weights
-            qcd_weights = _calculate_scaled_event_weights_generalized(
-                prediction_ss[qcd_mask_sr].squeeze(),
-                t.ones_like(prediction_ss[qcd_mask_sr].squeeze()),
-                bins,
-                non_qcd_hist,
-            )
+                non_qcd_hist, bins = t.histogram(
+                    input=prediction_ss[non_qcd_mask_sr],
+                    bins=bins,
+                    weight=_dataset.weights.ss[non_qcd_mask_sr],
+                )
 
-            qcd_weights = set_negatives_to_one(qcd_weights)
+                # Compute QCD weights
+                qcd_weights = _calculate_scaled_event_weights_generalized(
+                    prediction_ss[qcd_mask_sr].squeeze(),
+                    t.ones_like(prediction_ss[qcd_mask_sr].squeeze()),
+                    bins,
+                    non_qcd_hist,
+                )
 
-            # Save weights
-            _dataset.weights.ss[qcd_mask_sr] = qcd_weights
-            if hasattr(_dataset, "class_weights"):
-                _dataset.class_weights.ss[qcd_mask_sr] *= qcd_weights
+                qcd_weights = set_negatives_to_one(qcd_weights)
+
+                # Save weights
+                _dataset.weights.ss[qcd_mask_sr] = qcd_weights
+                if hasattr(_dataset, "class_weights"):
+                    _dataset.class_weights.ss[qcd_mask_sr] *= qcd_weights
 
     return _dataset.apply_func(
         lambda x: x.contiguous() if isinstance(x, torch.Tensor) else x
