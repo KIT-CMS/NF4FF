@@ -39,7 +39,7 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 # ----- TAP Arguments -----
 class Args(Tap):
-    loc: Literal["remote", "present"] = "remote"
+    loc: Literal["remote", "present"] = "present"
     embedding: Literal["embedding", "no_embedding"] = "no_embedding"
 
 # ----- constants ------
@@ -114,6 +114,7 @@ class _component_collection(metaclass=helper.CollectionMeta):
     Y: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
     weights: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
     class_weights: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
+    #class_weights_process: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
     process: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
     qcd_weights: Union[t.Tensor, None] = None
     SR_like: Union [t.Tensor, int, None] = None
@@ -272,11 +273,38 @@ def build_qcd_weight_bins(
     return bins
 
 
+def get_class_weights(
+    weights: t.Tensor,
+    Y: t.Tensor,
+    classes: tuple = (0, 1),
+    class_weighted: bool = True,
+) -> t.Tensor:
+
+    weights = weights.float()
+    Y = Y.long()
+
+    _weights = torch.zeros_like(weights)
+
+    total_weight = weights.sum()
+
+    for _class in classes:
+        mask = (Y == _class)
+        class_sum = weights[mask].sum()
+
+        if class_sum > 0:
+            _weights[mask] = total_weight / class_sum
+        else:
+            _weights[mask] = 0.0
+
+    return _weights * (weights if class_weighted else 1.0)
+
+
 def get_ff_dataset_with_qcd_weights_ss(
     dataset: _component_collection,
     model: t.nn.Module,
     qcd_process_mask_ss_loaded: torch.Tensor,
     device,
+    epoch: int,
     njets_idx: int,
     njets_groups: Tuple[Tuple[int, ...], ...] = ((0,), (1,), (2, 100)),
     subtract_njets_based: bool = False,
@@ -359,13 +387,14 @@ def get_ff_dataset_with_qcd_weights_ss(
                 dynamic_min_qcd_yield=qcd_weight_dynamic_min_qcd_yield,
             )
 
-            logger.info(
-                "QCD weight bins (%s, njets=%s, SR_like=%s): %d",
-                qcd_weight_binning,
-                njets_group,
-                sr_value,
-                max(int(bins.numel()) - 1, 0),
-            )
+            if epoch == 0:
+                logger.info(
+                    "QCD weight bins (%s, njets=%s, SR_like=%s): %d",
+                    qcd_weight_binning,
+                    njets_group,
+                    sr_value,
+                    max(int(bins.numel()) - 1, 0),
+                )
 
             non_qcd_hist, bins = t.histogram(
                 input=prediction_ss[non_qcd_mask_sr],
@@ -529,6 +558,7 @@ def get_my_data(df, training_var):
             Y=ss_os_split.apply_func(lambda x: x["Label"].to_numpy(dtype = np.float32)),  # or ss_os_split.apply_func(extract_label)
             weights=ss_os_split.apply_func(lambda __df: __df["weight"].to_numpy(dtype = np.float32)),
             class_weights=ss_os_split.apply_func(lambda x: x["class_weights"].to_numpy()),
+            #class_weights_process=ss_os_split.apply_func(lambda x: x["class_weights_process"].to_numpy()),
             process=ss_os_split.apply_func(lambda x: x['process'].to_numpy(dtype = np.float32)),
             SR_like = ss_os_split.apply_func(lambda x: x["id_tau_vsJet_Tight_2"].to_numpy(dtype=np.float32)),
         )
@@ -598,7 +628,11 @@ def main():
 
     data_complete = pd.read_feather(cfg["paths"]["input_dir"][args.loc] + args.embedding + "/combined_data.feather")
     data_DR = mask_DR(data_complete)
-
+    #print(data_DR['class_weights'].value_counts())
+    #print(list(data_DR['class_weights']))
+    #print(data_DR['Label'].value_counts())
+    #print(data_DR['process'].value_counts())
+    #exit()
 
     data_DR.loc[data_DR['process'] != 0, 'Label'] = 0
     data_DR.loc[data_DR['process'] == 0, 'Label'] = 1
@@ -665,6 +699,7 @@ def main():
                         model = model,
                         qcd_process_mask_ss_loaded= qcd_mask_ss_train,
                         device = device,
+                        epoch = epoch,
                         njets_idx = variables.index("njets"),
                         njets_groups = ((0,), (1,), (2,100)),
                         subtract_njets_based = True,
@@ -680,6 +715,7 @@ def main():
                         model = model,
                         qcd_process_mask_ss_loaded=qcd_mask_ss_val,
                         device = device,
+                        epoch = epoch,
                         njets_idx = variables.index("njets"),
                         njets_groups = ((0,), (1,), (2,100)),
                         subtract_njets_based = True,
@@ -697,12 +733,13 @@ def main():
             X_train = train_pt.X.ss
             y_train = train_pt.Y.ss
             w_train = train_pt.weights.ss
+            cw_train = train_pt.class_weights.ss
 
             X_val = val_pt.X.ss
             y_val = val_pt.Y.ss
             w_val = val_pt.weights.ss
 
-            dataset_train = TensorDataset(X_train, y_train, w_train)
+            dataset_train = TensorDataset(X_train, y_train, w_train, cw_train)
             dataset_val = TensorDataset(X_val, y_val, w_val)
 
             train_loader = DataLoader(
@@ -726,10 +763,11 @@ def main():
             train_weight_sum = 0.0
             epoch_start = time.time()
 
-            for Xb, yb, wb in train_loader:
+            for Xb, yb, wb, cwb in train_loader:
                 Xb = Xb.to(device, non_blocking=True)
                 yb = yb.to(device, non_blocking=True)
                 wb = wb.to(device, non_blocking=True)
+                cwb = cwb.to(device, non_blocking=True)
 
                 optimizer.zero_grad(set_to_none=True)
 
@@ -738,6 +776,8 @@ def main():
                     logits = model(Xb)                   # (B,1)
                     y = yb.float().view(-1, 1)           # targets
                     w = wb.float().view(-1, 1)           # weights
+                    cw = cwb.float().view(-1, 1)         # class_weights
+                    eff_w = w * cw
 
                     # Safety check for BCE
                     if not torch.all((y >= 0) & (y <= 1)):
@@ -747,9 +787,11 @@ def main():
                     # BCE per sample
                     loss_per_sample = criterion(logits.float(), y)
 
-                    # Weighted loss
-                    batch_loss = (loss_per_sample * w).sum()
-                    batch_weight = w.sum()
+                    # Weighted loss maybe add cwp
+                    #batch_loss = (loss_per_sample * w).sum()
+                    #batch_weight = w.sum()
+                    batch_loss = (loss_per_sample * eff_w).sum()
+                    batch_weight = eff_w.sum()
 
                     loss = batch_loss / batch_weight
 
@@ -784,16 +826,17 @@ def main():
                     Xb = Xb.to(device, non_blocking=True)
                     yb = yb.to(device, non_blocking=True)
                     wb = wb.to(device, non_blocking=True)
+                    #cwpb = cwpb.to(device, non_blocking=True)
 
                     with torch.amp.autocast('cuda', enabled=use_amp):
                         logits = model(Xb)
                         y = yb.float().view(-1, 1)
                         w = wb.float().view(-1, 1)
+                        #cwp = cwpb.float().view(-1, 1)
 
                         loss_per_sample = criterion(logits.float(), y)
                         batch_loss = (loss_per_sample * w).sum()
-                        batch_weight = w.sum()
-
+                        batch_weight = (w).sum()
                         val_loss_sum += batch_loss.item()
                         val_weight_sum += batch_weight.item()
 
@@ -859,6 +902,7 @@ def main():
                 model = model,
                 qcd_process_mask_ss_loaded=qcd_mask_ss_train,
                 device = device,
+                epoch = epoch,
                 njets_idx = variables.index("njets"),
                 njets_groups = ((0,), (1,), (2,100)),
                 subtract_njets_based = True,
@@ -874,6 +918,7 @@ def main():
                 model = model,
                 qcd_process_mask_ss_loaded=qcd_mask_ss_val,
                 device = device,
+                epoch = epoch,
                 njets_idx = variables.index("njets"),
                 njets_groups = ((0,), (1,), (2,100)),
                 subtract_njets_based = True,
@@ -909,7 +954,7 @@ def main():
         plt.bar(bin_centers, qcd_counts, width = bin_widths, color ='#b9ac70', label = 'QCD')
         plt.bar(bin_centers, nqcd_counts, bottom = qcd_counts, color = 'grey', width = bin_widths, label = 'nQCD')
         plt.legend()
-        plt.savefig(f'closure_plot_{fold}.png')
+        plt.savefig(cfg["closure"][args.loc] + f'closure_plot_{fold}.png')
         plt.close()
 
         plt.hist(probs_data, bins = bins, color = 'black', alpha = 0.3) 

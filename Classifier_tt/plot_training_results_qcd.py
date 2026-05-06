@@ -34,7 +34,7 @@ t.set_num_threads(8)
 # ----- tap ------
 
 class Args(Tap):
-    loc: Literal['present', 'remote'] = 'remote'
+    loc: Literal['present', 'remote'] = 'present'
     embedding: Literal["embedding", "no_embedding"] = "no_embedding"
     bins: Literal['equi_populated' , 'uniform'] ='equi_populated'
     n_bins: int = 20
@@ -579,6 +579,9 @@ def main() -> None:
     data_complete = pd.read_feather(cfg["paths"]["input_dir"][args.loc] + args.embedding + "/combined_data.feather")
     data_DR = mask_DR(data_complete)
 
+    data_DR.loc[data_DR['process'] != 0, 'Label'] = 0
+    data_DR.loc[data_DR['process'] == 0, 'Label'] = 1
+
     train1, val1, train2, val2 = split_even_odd(data_DR)
 
     train1 = get_my_data(train1, variables).to_torch(device=None)
@@ -852,12 +855,11 @@ def main() -> None:
 
     ax[0].set_ylabel("Events")
     ax[0].set_yscale('log')
-
-    #ax[0].set_ylim([0, 1.4*np.max([np.max(data_counts), np.max(sim_counts)])])
+    ax[0].set_ylim([1, 10*np.max([np.max(data_counts), np.max(sim_counts)])])
     ax[0].legend(loc='upper right', bbox_to_anchor=(0.8, 0.9), ncol=3, frameon=False)
     #ax[0].set_ylim([0, 8000])
     # Remove top ticks
-    ax[0].tick_params(direction='in', top=True, right=True)
+    #ax[0].tick_params(direction='in', top=True, right=True)
 
     # --- Lower panel: ratio plot ---
     ax[1].errorbar(bin_centers, ratio, 
@@ -891,7 +893,7 @@ def main() -> None:
     #ax[2].set_ylim([0,1])
     # Tight layout
 
-    fig.tight_layout()
+    #fig.tight_layout()
     fig.subplots_adjust(hspace=0.05)
 
     if args.bins == 'equi_populated':

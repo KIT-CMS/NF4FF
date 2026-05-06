@@ -29,6 +29,7 @@ Classifier/plots/
 Classifier/Categorizer_results/
 Data/test_data/
 Data/datasets/
+Data/QCD_MC/
 
 
 
@@ -108,4 +109,4 @@ results*/
 **/closure_plots/
 
 # Tests
-**/test.py
+/test.py

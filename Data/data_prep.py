@@ -47,7 +47,12 @@ def get_class_weights(
         _weights[Y == _class] = weights.sum() / weights[Y == _class].sum()
     return _weights * (weights if class_weighted else 1.0)
 
+def get_class_weight_per_process(df, num_classes, process, class_weighted=True):
+    num_rows = len(df)
+    num_rows_class = len(df[df['process'] == process])
+    class_weight = num_rows / (num_classes * num_rows_class)
 
+    return class_weight if class_weighted else 1.0
 
 
 def main():
@@ -81,7 +86,7 @@ def main():
     data_process = dict(zip(names, process_num))
 
     write_yaml_to_file(data_process, cfg["process_dir"][args.loc] + "/data_process_mapping_" + args.embedding)
-    exit()
+    #exit()
 
     
 
@@ -112,8 +117,11 @@ def main():
         datasets[i]['SS'] = (datasets[i]['q_1'] * datasets[i]['q_2']) > 0 #change 1 * charge 2, if same sign: >0
         datasets[i]['OS'] = (datasets[i]['q_1'] * datasets[i]['q_2']) < 0
 
-        if dataset_names[i] == 'data': datasets[i]['Label'] = 0
-        else: datasets[i]['Label'] = 1
+        #class weights for process
+        #datasets[i]['class_weights_process'] = get_class_weight_per_process(datasets[i], len(dataset_names), i)
+        print(dataset_names[i])
+        if dataset_names[i] == 'data.root': datasets[i]['Label'] = 1
+        else: datasets[i]['Label'] = 0
 
         logger.info(f"{dataset_names[i]} loaded.")
 
@@ -124,7 +132,7 @@ def main():
 
     # set class weights for process
     num_process = tuple(range(len(dataset_names)))
-    combined_data['class_weights'] = get_class_weights(weights = combined_data.weight, Y = combined_data.process, classes = num_process, class_weighted=True)
+    combined_data['class_weights'] = get_class_weights(weights = combined_data.weight, Y = combined_data.Label, classes = (0, 1), class_weighted=True)
     print(combined_data['class_weights'].value_counts())
 
     combined_data.to_feather(cfg['output_dir'][args.loc] + args.embedding + "/combined_data.feather")

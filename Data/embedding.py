@@ -75,7 +75,7 @@ for x in part:
         file = folder + f"/TauEmbedding-TauTauFinalState_Run2018{x}-UL2018_{i}.root"
         try:
             datax = load_root_file_as_pd(file)
-            print(f"Loaded {file} with {len(datax)} entries.")
+            #print(f"Loaded {file} with {len(datax)} entries.")
             data.append(datax)
         except:
             #print(f"Not found: {file}")
@@ -104,5 +104,20 @@ mask = preselec_mask(data_total)
 print(len(data_total[mask]))
 
 
+# ----- slow selection -----
+print("------------------------------")
+print("----- step by step selection -----")
 
+had_tau_decay_mode_1 = (data_total.tau_decaymode_1 == 0) | (data_total.tau_decaymode_1 == 1) | (data_total.tau_decaymode_1 == 10) | (data_total.tau_decaymode_1 == 11)
+had_tau_decay_mode_2 = (data_total.tau_decaymode_2 == 0) | (data_total.tau_decaymode_2 == 1) | (data_total.tau_decaymode_2 == 10) | (data_total.tau_decaymode_2 == 11)
+had_tau_id_vs_ele = (data_total.id_tau_vsEle_VVLoose_1 > 0.5) & (data_total.id_tau_vsEle_VVLoose_2 > 0.5)
+had_tau_id_vs_mu = (data_total.id_tau_vsMu_VLoose_1 > 0.5) & (data_total.id_tau_vsMu_VLoose_2 > 0.5)
+had_tau_pt = (data_total.pt_1 > 40) & (data_total.pt_2 > 40)
+double_trigger = (data_total.trg_double_tau35_tightiso_tightid > 0.5) | (data_total.trg_double_tau35_mediumiso_hps > 0.5) | (data_total.trg_double_tau40_mediumiso_tightid > 0.5) | (data_total.trg_double_tau40_tightiso > 0.5)
 
+print(len(data_total[had_tau_decay_mode_1]))
+print(len(data_total[had_tau_decay_mode_2]))
+print(len(data_total[had_tau_id_vs_ele]))
+print(len(data_total[had_tau_id_vs_mu]))
+print(len(data_total[had_tau_pt]))
+print(len(data_total[double_trigger]))

@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import random
 import torch as t
+import torch
 import torch.nn as nn
 import yaml
 import math
@@ -97,6 +98,11 @@ def equi_populated_bins(data, n_bins):
     return bin_edges
 
 def split_even_odd(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    '''
+    Takes the event_var of df to define fold1 and fold2.
+    This way the whole data is used for training.
+    
+    '''
     fold1 = df[df.event_var  == 0].reset_index(drop=True)
     fold2 = df[df.event_var == 1].reset_index(drop=True)
 
