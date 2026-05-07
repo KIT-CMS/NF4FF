@@ -28,6 +28,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from classes.Dataclasses import RealNVP_config, _component_collection
 from classes.NeuralNetworks import ConditionalRealNVP
+from classes.Collection import MaskManager
 from CustomLogging import LogContext, setup_logging
 
 
@@ -45,9 +46,6 @@ with open(CONFIG_DIR / 'training_variables.yaml', 'r') as f:
 logger = setup_logging(logger=logging.getLogger(__name__))
 log = LogContext(logger)
 
-PATIENCE = 30
-
-TRAINING_MODEL_CONDITIONAL = 'conditional_nf'
 
 
 class Args(Tap):
@@ -134,6 +132,28 @@ def _apply_config_mask(
 ) -> pd.DataFrame:
     return df[_build_mask_from_config(df, mask_name, masks_config)].copy()
 
+
+
+class FoldCombinedNF(t.nn.Module):
+    """Combined NF model that routes log-probability evaluation by event_var fold.
+
+    even_model: trained on odd events  (event_var == 1) -> used for even events (event_var == 0)
+    odd_model:  trained on even events (event_var == 0) -> used for odd  events (event_var == 1)
+
+    Forward input layout: x[..., 0] = event_var (0 or 1), x[..., 1:] = NF features.
+    """
+
+    def __init__(self, even_model: ConditionalRealNVP, odd_model: ConditionalRealNVP) -> None:
+        super().__init__()
+        self.even_model = even_model
+        self.odd_model = odd_model
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        even_mask = (x[..., 0].long() == 0).reshape(-1)
+        features = x[..., 1:]
+        even_out = self.even_model(features).reshape(-1)
+        odd_out = self.odd_model(features).reshape(-1)
+        return t.where(even_mask, even_out, odd_out)
 
 
 def evaluate_loader(model, loader, device):
@@ -399,35 +419,34 @@ def save_training_artifacts(checkpoint, log_rows, config, spec: ProcessTrainingS
 
 # ----- training -----
 
-def train_region(spec: ProcessTrainingSpec, region: str, train_df, val_df, weight_corr_factor, config, device):
-    logger.info("Starting %s training for %s", region, spec.name)
-    logger.info("%s %s samples: train=%d, val=%d", spec.name, region, len(train_df), len(val_df))
+def _train_single_fold(
+    spec: ProcessTrainingSpec,
+    region: str,
+    train_df,
+    val_df,
+    weight_corr_factor: float,
+    config,
+    device,
+    fold_label: str,
+) -> tuple:
+    """Train one NF model on a single fold. Returns (model, checkpoint_dict, log_rows)."""
+    logger.info("%s %s fold=%s samples: train=%d, val=%d", spec.name, region, fold_label, len(train_df), len(val_df))
 
     train_data, val_data, train_loader, val_loader = build_dataloaders(
-        train_df,
-        val_df,
-        spec,
-        config,
-        region,
-        weight_corr_factor,
+        train_df, val_df, spec, config, region, weight_corr_factor,
     )
 
     dim = len(variables)
-    uses_njets_context = True
     model = build_conditional_nf(config, dim, shift=None, scale=None, device=device)
     schema = 'conditional_nf_v1'
 
     shift, scale, valid_fraction = _compute_preprocessed_scaler_stats(
-        model,
-        train_data.X,
-        uses_njets_context=uses_njets_context,
+        model, train_data.X, uses_njets_context=True,
     )
     _initialize_model_scaler(model, shift, scale)
     logger.info(
-        "%s %s scaler initialized on preprocessed features (valid fraction: %.4f)",
-        spec.name,
-        region,
-        valid_fraction,
+        "%s %s fold=%s scaler initialized (valid fraction: %.4f)",
+        spec.name, region, fold_label, valid_fraction,
     )
 
     optimizer = t.optim.AdamW(
@@ -495,18 +514,18 @@ def train_region(spec: ProcessTrainingSpec, region: str, train_df, val_df, weigh
                 'lr': current_lr,
                 'time_s': epoch_time,
                 'type': 'epoch',
+                'fold': fold_label,
             })
 
             if avg_val_nll < best_val_nll:
                 best_val_nll = avg_val_nll
                 counter = 0
                 checkpoint = {
+                    'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                     'variables': list(variables),
                     'schema': schema,
-                    'training_model': TRAINING_MODEL_CONDITIONAL,
                 }
-                checkpoint['model_state_dict'] = model.state_dict()
             else:
                 counter += 1
 
@@ -515,18 +534,64 @@ def train_region(spec: ProcessTrainingSpec, region: str, train_df, val_df, weigh
                 train_loss=np.round(avg_train_nll, 6),
                 val_loss=np.round(avg_val_nll, 6),
                 lr=current_lr,
-                region=f"{spec.name} {region}",
+                region=f"{spec.name} {region} fold={fold_label}",
             )
 
-            if counter >= PATIENCE:
-                logger.info("Early stopping triggered for %s %s.", spec.name, region)
+            if counter >= config.training_patience:
+                logger.info("Early stopping triggered for %s %s fold=%s.", spec.name, region, fold_label)
                 break
 
     if checkpoint is None:
-        raise RuntimeError(f"No checkpoint was created for {spec.name} {region}.")
+        raise RuntimeError(f"No checkpoint was created for {spec.name} {region} fold={fold_label}.")
 
-    save_training_artifacts(checkpoint, log_rows, config, spec, region)
-    logger.info("Saved %s training artifacts for %s", spec.name, region)
+    return model, checkpoint, log_rows
+
+
+def train_region(spec: ProcessTrainingSpec, region: str, train_df, val_df, weight_corr_factor, config, device):
+    """Train a FoldCombinedNF: even_model on odd events (event_var==1), odd_model on even events (event_var==0)."""
+    logger.info("Starting folded %s training for %s", region, spec.name)
+
+    for split_name, df in [('train', train_df), ('val', val_df)]:
+        if 'event_var' not in df.columns:
+            raise KeyError(
+                f"{spec.name} {region} {split_name} split is missing required column 'event_var'."
+            )
+
+    # Split by event_var (0 = even, 1 = odd)
+    train_odd  = train_df[train_df.event_var == 1].reset_index(drop=True)
+    val_odd    = val_df[val_df.event_var == 1].reset_index(drop=True)
+    train_even = train_df[train_df.event_var == 0].reset_index(drop=True)
+    val_even   = val_df[val_df.event_var == 0].reset_index(drop=True)
+
+    fold_counts = {
+        'train_even': len(train_even),
+        'train_odd': len(train_odd),
+        'val_even': len(val_even),
+        'val_odd': len(val_odd),
+    }
+    if any(v == 0 for v in fold_counts.values()):
+        raise ValueError(
+            f"{spec.name} {region}: cannot train fold-combined model with empty fold split. Counts={fold_counts}"
+        )
+    logger.info('%s %s fold split counts: %s', spec.name, region, fold_counts)
+
+    # even_model: trained on odd events -> used for even events
+    even_model, even_ckpt, even_logs = _train_single_fold(
+        spec, region, train_odd, val_odd, weight_corr_factor, config, device, fold_label='fold_odd',
+    )
+    # odd_model: trained on even events -> used for odd events
+    odd_model, odd_ckpt, odd_logs = _train_single_fold(
+        spec, region, train_even, val_even, weight_corr_factor, config, device, fold_label='fold_even',
+    )
+
+    combined_checkpoint = {
+        'even_model_state_dict': even_ckpt['model_state_dict'],
+        'odd_model_state_dict':  odd_ckpt['model_state_dict'],
+        'variables': even_ckpt['variables'],
+        'schema': 'fold_combined_nf_v1',
+    }
+    save_training_artifacts(combined_checkpoint, even_logs + odd_logs, config, spec, region)
+    logger.info("Saved folded %s artifacts for %s", region, spec.name)
 
 
 def train_process(
@@ -539,7 +604,6 @@ def train_process(
     masks_config: dict[str, list[str]],
 ):
     logger.info("Preparing training samples for %s", spec.name)
-
     region_samples, weight_corr_factor, data_dr = prepare_region_samples(
         data_complete,
         spec,
@@ -547,7 +611,6 @@ def train_process(
         random_state=random_state,
         masks_config=masks_config,
     )
-    
     logger.info(
         "%s DR selection contains %d events; weight correction factor %.6f",
         spec.name,
@@ -560,80 +623,74 @@ def train_process(
         train_region(spec, region, train_df, val_df, weight_corr_factor, config, device)
 
 
-# ----- main -----
 
 def main():
+    
     args = Args().parse_args()
 
-    t.manual_seed(SEED)
-    np.random.seed(SEED)
-    random.seed(SEED)
+    config_path = CONFIG_DIR / 'config_NF_MC.yaml'
 
-    config_path = CONFIG_DIR / 'config_NF.yaml'
     config = RealNVP_config.from_yaml(config_path)
 
     device = t.device('cuda' if t.cuda.is_available() else 'cpu')
     logger.info("Using device: %s", device)
-    logger.info("Training model mode: %s", TRAINING_MODEL_CONDITIONAL)
 
     tail_variables = variables[4:]
     training_variables_name = f"vars{len(variables)}_{'_'.join(tail_variables)}" if tail_variables else f"vars{len(variables)}_none"
     model_root_dir = Path(args.output_root_base) / f"training_{training_variables_name}"
     logger.info("Model output root: %s", model_root_dir)
+
     masks_config = load_masks_config(MASKS_CONFIG_PATH)
 
     data_complete = pd.read_feather(DATA_DIR / 'data_complete.feather')
     logger.info("Loaded %d total events", len(data_complete))
 
     process_specs: list[ProcessTrainingSpec] = []
-    if args.training_process in ('dr_like', 'both'):
-        process_specs.append(
-            ProcessTrainingSpec(
-                name='Wjets_DR',
-                process_id=1,
-                region_sign_column='OS',
-                weight_column='weight',
-                output_root=str(model_root_dir / 'Wjets' / 'DR'),
-                dr_mask_name='mask_DR_wjets',
-                ar_like_mask_name='AR_like',
-                sr_like_mask_name='SR_like',
-                ar_region_name='AR-like',
-                sr_region_name='SR-like',
-                data_getter=get_my_data,
-            )
-        )
 
-    if args.training_process in ('antidr', 'both'):
-        process_specs.append(
-            ProcessTrainingSpec(
-                name='Wjets_antiDR',
-                process_id=1,
-                region_sign_column='OS',
-                weight_column='weight',
-                output_root=str(model_root_dir / 'Wjets' / 'antiDR'),
-                dr_mask_name='mask_antiDR_wjets',
-                ar_like_mask_name='AR',
-                sr_like_mask_name='SR',
-                ar_region_name='AR',
-                sr_region_name='SR',
-                data_getter=get_my_data,
-            )
+    process_specs.append(
+        ProcessTrainingSpec(
+            name='DR',
+            process_id=1,
+            region_sign_column='OS',
+            weight_column='weight',
+            output_root=str(model_root_dir / 'Wjets' / 'DR'),
+            dr_mask_name='mask_DR_wjets',
+            ar_like_mask_name='AR_like',
+            sr_like_mask_name='SR_like',
+            ar_region_name='AR-like',
+            sr_region_name='SR-like',
+            data_getter=get_my_data,
         )
+    )
+    process_specs.append(
+        ProcessTrainingSpec(
+            name='antiDR',
+            process_id=1,
+            region_sign_column='OS',
+            weight_column='weight',
+            output_root=str(model_root_dir / 'Wjets' / 'antiDR'),
+            dr_mask_name='mask_antiDR_wjets',
+            ar_like_mask_name='AR',
+            sr_like_mask_name='SR',
+            ar_region_name='AR',
+            sr_region_name='SR',
+            data_getter=get_my_data,
+        )
+    )
 
     for spec in process_specs:
-        logger.info("Launching %s training in mode %s", spec.name, TRAINING_MODEL_CONDITIONAL)
+        logger.info("Launching %s training", spec.name)
         train_process(
             spec,
             data_complete,
             config,
             device,
-            test_size=args.test_size,
-            random_state=args.random_state,
+            test_size=config.test_size,
+            random_state=SEED,
             masks_config=masks_config,
         )
 
     logger.info("Completed all njets trainings")
-
 
 if __name__ == '__main__':
     main()

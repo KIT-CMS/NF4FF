@@ -535,6 +535,7 @@ def compute_eventwise_fake_factors(
     pdf_AR: np.ndarray,
     pdf_SR: np.ndarray,
     global_ff: float,
+    clip_value: float,
 ) -> tuple[np.ndarray, np.ndarray, float, np.ndarray, float]:
 
     # ---- safe ratio
@@ -557,7 +558,6 @@ def compute_eventwise_fake_factors(
         clip_value = max(clip_value, 1.0)
     else:
     '''
-    clip_value = 4.0
 
     # ---- mask for clipping and nonzero PDFs
     clip_mask = (ff_eventwise_nominal <= clip_value) & (pdf_AR > 0) & (pdf_SR > 0)
@@ -608,7 +608,6 @@ def compute_eventwise_fake_factors_binary_classifier(
 
     ff_eventwise_full = global_ff_cor * ratio
     ff_eventwise_full = np.where(valid_ratio_mask, ff_eventwise_full, 0.0)
-    ff_eventwise_full = np.clip(ff_eventwise_full, a_min=0.0, a_max=clip_value)
 
     ff_eventwise_clipped = ff_eventwise_full[clip_mask]
 

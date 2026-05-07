@@ -73,6 +73,13 @@ mode_dir = ''
 include_njets_feature = False
 resolved_tag = ''
 
+
+# clip value for uncorrected fake_factors
+
+clip_value = 1e7   # used for raw wjets ff
+clip_value_2 = 5.0   #used for qcd ff
+clip_value_ff_corrected = 20.0     #used for correct wjets ff
+
 classifier_features_wjets = None
 classifier_features_qcd = None
 prior_ar_over_sr_wjets = None
@@ -805,92 +812,113 @@ def plot_ff_clipping_histogram(
     ff_full_wjets: np.ndarray,
     clip_mask_wjets: np.ndarray,
     clip_value_wjets: float,
+    invalid_wjets_mask: np.ndarray,
     ff_full_qcd: np.ndarray,
     clip_mask_qcd: np.ndarray,
     clip_value_qcd: float,
+    invalid_qcd_mask: np.ndarray,
     wjets_clipped_percent: float,
     qcd_clipped_percent: float,
     plot_dir: str | Path,
+    label: str = 'data',
     ff_full_wjets_uncorrected: np.ndarray | None = None,
     clip_mask_wjets_uncorrected: np.ndarray | None = None,
 ) -> None:
+    """Plot and save the FF distribution histogram with removal-threshold markers."""
+    bins = np.logspace(-3, 2, 80)
 
+    def _plot_panel(ax, ff_full, clip_mask, invalid_mask, clip_value, clipped_percent, color, process_label):
+        # three categories: kept, removed by zero/invalid PDF, removed by high FF
+        valid_and_kept    = clip_mask
+        removed_zero_pdf  = invalid_mask
+        removed_high_ff   = (~clip_mask) & (~invalid_mask)
 
-    """Plot and save the FF clipping diagnostic histogram (`hist_FF.png`)."""
-    bins = np.logspace(-3, 1, 61)
-    ff_kept_wjets = ff_full_wjets[clip_mask_wjets]
-    ff_clipped_wjets = ff_full_wjets[~clip_mask_wjets]
-    ff_kept_qcd = ff_full_qcd[clip_mask_qcd]
-    ff_clipped_qcd = ff_full_qcd[~clip_mask_qcd]
+        # for display: use ff_full where available; events with invalid ratio have ff~0, skip them
+        ff_valid = np.where(~invalid_mask, ff_full, np.nan)
 
-    fig, ax = plt.subplots(2, 1, figsize=(8, 7))
+        ax.hist(
+            ff_valid[valid_and_kept],
+            bins=bins,
+            histtype='step',
+            linewidth=1.8,
+            color=color,
+            label=f'{process_label} FF — kept ({100.0 * float(np.mean(valid_and_kept)):.1f}%)',
+        )
+        if removed_high_ff.any():
+            ax.hist(
+                ff_valid[removed_high_ff],
+                bins=bins,
+                histtype='step',
+                linewidth=1.4,
+                linestyle=':',
+                color=color,
+                alpha=0.65,
+                label=f'removed: FF > threshold ({100.0 * float(np.mean(removed_high_ff)):.1f}%)',
+            )
+        if removed_zero_pdf.any():
+            ax.axhline(
+                0,
+                color='tab:red',
+                linewidth=0,
+                label=f'removed: zero/invalid PDF ({100.0 * float(np.mean(removed_zero_pdf)):.1f}%)',
+            )
+            # draw a text annotation instead since these events have no plottable FF
+            ax.text(
+                0.02, 0.97,
+                f'zero/invalid PDF removed: {100.0 * float(np.mean(removed_zero_pdf)):.1f}%',
+                transform=ax.transAxes,
+                va='top', ha='left',
+                fontsize=9,
+                color='tab:red',
+            )
+        ax.axvline(
+            clip_value,
+            color='black',
+            linestyle='--',
+            linewidth=1.4,
+            label=fr'removal threshold ({clip_value:.2g})',
+        )
+        ax.set_xscale('log')
+        ax.set_xlim(bins[0], bins[-1])
+        ax.set_xlabel(f'{process_label} fake factor')
+        ax.set_ylabel('Events')
+        ax.set_title(f'{process_label} eventwise FF — {label}')
+        ax.grid(True, linestyle=':', alpha=0.5)
+        ax.legend(frameon=False, fontsize=9)
 
-    if ff_full_wjets_uncorrected is not None and clip_mask_wjets_uncorrected is not None:
-        ff_kept_wjets_uncorrected = ff_full_wjets_uncorrected[clip_mask_wjets_uncorrected]
-        ax[0].hist(ff_kept_wjets_uncorrected, bins=bins, label="W+jets FF (no correction)", color="#e76300", alpha=0.45)
-        ax[0].hist(ff_kept_wjets, bins=bins, label="W+jets FF (with correction)", color="#e76300", alpha=0.9)
-        ax[0].hist(ff_clipped_wjets, bins=bins, label="W+jets FF clipped (with correction)", color="#e76300", alpha=0.18)
-    else:
-        ax[0].hist(ff_kept_wjets, bins=bins, label="W+jets FF (kept)", color="#e76300", alpha=0.9)
-        ax[0].hist(ff_clipped_wjets, bins=bins, label="W+jets FF (clipped)", color="#e76300", alpha=0.25)
+    fig, axes = plt.subplots(2, 1, figsize=(8, 10))
 
-    ax[0].axvline(clip_value_wjets, color="black", linestyle="--", linewidth=1.4, label=fr"W+jets clip ({clip_value_wjets:.2f})")
-    ax[0].set_xscale("log")
-    ax[0].set_yscale('log')
-    ax[0].set_xlim(1e-4, 1e2)
-    ax[0].set_ylabel("Events")
-    ax[0].set_title("W+jets eventwise FF", pad=30)
-    adjust_ylim_for_legend(ax[0], spacing=0.12)
-    ax[0].text(0.05, 0.95, "",
-        transform=ax[0].transAxes,
-        va='top')
-
-    ax[0].text(
-        0.98,
-        0.94,
-        f"Clipped: {wjets_clipped_percent:.2f}%",
-        transform=ax[0].transAxes,
-        ha='right',
-        va='top',
-        fontsize=10,
+    _plot_panel(
+        axes[0], ff_full_wjets, clip_mask_wjets, invalid_wjets_mask,
+        clip_value_wjets, wjets_clipped_percent, '#e76300', 'W+jets',
     )
-    ymin, ymax = ax[0].get_ylim()
-    ax[0].set_ylim(ymin, ymax * 1.2)  # add 20% headroom
-    CMS_CHANNEL_TITLE([ax[0]])
-    CMS_LUMI_TITLE([ax[0]])
-    CMS_LABEL([ax[0]])
-    CMS_NJETS_TITLE([ax[0]], title=r"$N_{jets} \geq 0$")
+    if ff_full_wjets_uncorrected is not None:
+        valid_wu = np.isfinite(ff_full_wjets_uncorrected) & (ff_full_wjets_uncorrected > 0)
+        axes[0].hist(
+            ff_full_wjets_uncorrected[valid_wu],
+            bins=bins,
+            histtype='step',
+            linewidth=1.4,
+            linestyle='--',
+            color='#e76300',
+            alpha=0.45,
+            label='W+jets FF (before DR-SR correction)',
+        )
+        axes[0].legend(frameon=False, fontsize=9)
 
-    ax[1].hist(ff_kept_qcd, bins=bins, label="QCD FF (kept)", color="#b9ac70", alpha=0.9)
-    ax[1].hist(ff_clipped_qcd, bins=bins, label="QCD FF (clipped)", color="#b9ac70", alpha=0.25)
-    ax[1].axvline(clip_value_qcd, color="black", linestyle="--", linewidth=1.4, label=fr"QCD clip ({clip_value_qcd:.2f})")
-    ax[1].set_xscale("log")
-    ax[1].set_yscale('log')
-    ax[1].set_xlim(1e-3, 1e1)
-    ax[1].set_ylabel("Events")
-    ax[1].set_xlabel("Eventwise FF")
-    ax[1].text(
-        0.98,
-        0.94,
-        f"Clipped: {qcd_clipped_percent:.2f}%",
-        transform=ax[1].transAxes,
-        ha='right',
-        va='top',
-        fontsize=10,
+    _plot_panel(
+        axes[1], ff_full_qcd, clip_mask_qcd, invalid_qcd_mask,
+        clip_value_qcd, qcd_clipped_percent, '#b9ac70', 'QCD',
     )
-    ymin, ymax = ax[1].get_ylim()
-    ax[1].set_ylim(ymin, ymax * 1.2)  # add 20% headroom
+    CMS_CHANNEL_TITLE([axes[0]])
+    CMS_LUMI_TITLE([axes[0]])
+    CMS_LABEL([axes[0]])
 
-    handles0, labels0 = ax[0].get_legend_handles_labels()
-    handles1, labels1 = ax[1].get_legend_handles_labels()
-    fig.legend(handles0 + handles1, labels0 + labels1,
-               loc='upper center', bbox_to_anchor=(0.5, 1.0),
-               ncol=3, frameon=False, fontsize=9)
-
-    plt.tight_layout(rect=[0, 0, 1, 0.90])
+    fig.tight_layout()
     plot_dir = Path(plot_dir)
     plot_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(plot_dir / 'hist_FF.png')
+    fig.savefig(plot_dir / f'hist_FF_{label}.png')
+    fig.savefig(plot_dir / f'hist_FF_{label}.pdf')
     plt.close(fig)
 
 
@@ -899,7 +927,7 @@ def plot_wjets_dr_sr_correction_comparison(
     ff_wjets_after: np.ndarray,
     plot_dir: str | Path,
     bins: int = 60,
-    plot_range: tuple[float, float] = (1e-3, 20),
+    plot_range: tuple[float, float] = (1e-5, 1e4),
     ff_clip_max: float | None = None,
 ) -> None:
     """Compare Wjets fake-factor distributions before/after DR-SR correction."""
@@ -936,8 +964,9 @@ def plot_wjets_dr_sr_correction_comparison(
         label='Wjets FF after DR-SR correction',
     )
     ax.set_xscale('log')
-    if ff_clip_max is not None:
-        ax.set_xlim(right=ff_clip_max)
+    # Enforce the requested plotting range; relying on autoscale can shrink the shown range.
+    ax.set_xlim(plot_range[0], plot_range[1])
+    ax.set_ylim([0, 15000])
     ax.set_xlabel('Wjets fake factor')
     ax.set_ylabel('Events')
     ax.set_title('Wjets FF: before vs after DR-SR correction')
@@ -1063,6 +1092,7 @@ def normalizing_flow_ff(
     correction_features_wjets_antidr: list[str] | None = None,
     correction_global_ff_wjets_dr: float | None = None,
     correction_global_ff_wjets_antidr: float | None = None,
+    sample_label: str = 'data',
 ):
     """
     Computes eventwise fake factors for W+jets and QCD, and returns
@@ -1110,6 +1140,7 @@ def normalizing_flow_ff(
         )
         ff_full_wjets_uncorrected = ff_full_wjets.copy()
         clip_mask_wjets_uncorrected = clip_mask_wjets.copy()
+        invalid_wjets_mask = ~(np.isfinite(ratio_wjets) & (ratio_wjets > 0))
 
         if (
             correction_model_wjets_dr is not None
@@ -1164,6 +1195,7 @@ def normalizing_flow_ff(
             ratio_qcd,
             global_ff_qcd,
         )
+        invalid_qcd_mask = ~(np.isfinite(ratio_qcd) & (ratio_qcd > 0))
     else:
         # --- W+jets: evaluate PDFs on the full df ---
         df_pt_wjets = get_my_data_wjets(df, input_variables).to_torch().to(device)
@@ -1172,8 +1204,9 @@ def normalizing_flow_ff(
         pdf_SR_like_wjets = evaluate_pdf(model_SR_like_wjets, df_pt_wjets.X)
 
         ff_full_wjets, _, global_ff_cor_wjets, clip_mask_wjets, clip_value_wjets = compute_eventwise_fake_factors(
-            pdf_AR_like_wjets, pdf_SR_like_wjets, global_ff_wjets
+            pdf_AR_like_wjets, pdf_SR_like_wjets, global_ff_wjets, clip_value=clip_value
         )
+        invalid_wjets_mask = ~((pdf_AR_like_wjets > 0) & (pdf_SR_like_wjets > 0))
 
         # --- QCD FF ---
         # Evaluate QCD PDFs on the same full df (before any W+jets filtering)
@@ -1183,12 +1216,10 @@ def normalizing_flow_ff(
         pdf_SR_like_qcd = evaluate_pdf(model_SR_like_qcd, df_pt_qcd.X)
 
         ff_full_qcd, _, global_ff_cor_qcd, clip_mask_qcd, clip_value_qcd = compute_eventwise_fake_factors(
-            pdf_AR_like_qcd, pdf_SR_like_qcd, global_ff_qcd
+            pdf_AR_like_qcd, pdf_SR_like_qcd, global_ff_qcd, clip_value=clip_value_2,
         )
+        invalid_qcd_mask = ~((pdf_AR_like_qcd > 0) & (pdf_SR_like_qcd > 0))
 
-    # Keep per-process clipping/correction independent.
-    # `compute_eventwise_fake_factors` already applies each process-specific
-    # global correction. A second combined correction can strongly over-scale FFs.
     combined_mask = clip_mask_wjets & clip_mask_qcd
 
     if not np.any(combined_mask):
@@ -1199,12 +1230,28 @@ def normalizing_flow_ff(
         df['ff_nf'] = pd.Series(dtype=float)
         return df
 
+    # Recompute correction factors using the combined mask so that the
+    # actual set of removed events (intersection of both masks) is reflected
+    # in the normalization of each FF array.
+    # Each helper computed its correction factor from its own clip_mask;
+    # here we undo that per-process acceptance and re-apply the combined one.
+    n_total = len(combined_mask)
+    n_combined = max(int(np.sum(combined_mask)), 1)
+    n_wjets_kept = max(int(np.sum(clip_mask_wjets)), 1)
+    n_qcd_kept = max(int(np.sum(clip_mask_qcd)), 1)
+
+    # rescale: factor = (per-process acceptance) / (combined acceptance)
+    wjets_rescale = n_wjets_kept / n_combined   # > 1 when extra events removed by QCD mask
+    qcd_rescale   = n_qcd_kept   / n_combined
+
     logger.info(
-        "%s clipping acceptance: Wjets=%.4f, QCD=%.4f, joint=%.4f",
+        "%s clipping acceptance: Wjets=%.4f, QCD=%.4f, joint=%.4f | rescale: Wjets=%.4f, QCD=%.4f",
         'Classifier' if ff_estimator == 'binary_classifier' else 'NF',
-        float(np.mean(clip_mask_wjets)),
-        float(np.mean(clip_mask_qcd)),
-        float(np.mean(combined_mask)),
+        n_wjets_kept / n_total,
+        n_qcd_kept / n_total,
+        n_combined / n_total,
+        wjets_rescale,
+        qcd_rescale,
     )
 
     wjets_clipped_percent = 100.0 * (1.0 - float(np.mean(clip_mask_wjets)))
@@ -1212,8 +1259,8 @@ def normalizing_flow_ff(
     joint_clipped_percent = 100.0 * (1.0 - float(np.mean(combined_mask)))
 
     df = df[combined_mask].copy()
-    df['ff_nf_wjets'] = ff_full_wjets[combined_mask]
-    df['ff_nf_qcd'] = ff_full_qcd[combined_mask]
+    df['ff_nf_wjets'] = ff_full_wjets[combined_mask] * wjets_rescale
+    df['ff_nf_qcd'] = ff_full_qcd[combined_mask] * qcd_rescale
 
     # --- optional DR-SR correction flow (Wjets only) ---
     if args is not None and args.apply_dr_sr_correction and dr_sr_flow_model is not None:
@@ -1225,7 +1272,30 @@ def normalizing_flow_ff(
             dr_sr_flow_meta,
             device,
         )
-        df['ff_nf_wjets'] = ff_sr_wjets
+        # Remove events outside the corrected-FF domain and keep normalization
+        # by applying an acceptance correction to the remaining events.
+        _ff_clip_max = clip_value_ff_corrected
+        corrected_keep_mask = np.isfinite(ff_sr_wjets) & (ff_sr_wjets > 0)
+        if _ff_clip_max is not None:
+            corrected_keep_mask &= (ff_sr_wjets <= _ff_clip_max)
+
+        if not np.any(corrected_keep_mask):
+            logger.warning('No events survive corrected Wjets FF clipping; returning empty dataframe.')
+            df = df.iloc[0:0].copy()
+            df['ff_nf_wjets'] = pd.Series(dtype=float)
+            df['ff_nf_qcd'] = pd.Series(dtype=float)
+            df['ff_nf'] = pd.Series(dtype=float)
+            return df, combined_mask
+
+        corrected_acceptance = max(float(np.mean(corrected_keep_mask)), 1e-12)
+        ff_sr_wjets_kept = ff_sr_wjets[corrected_keep_mask] / corrected_acceptance
+        df = df[corrected_keep_mask].copy()
+        df['ff_nf_wjets'] = ff_sr_wjets_kept
+        logger.info(
+            'Applied corrected Wjets FF event removal (acceptance=%.4f, correction=%.4f).',
+            corrected_acceptance,
+            1.0 / corrected_acceptance,
+        )
         logger.info('Applied DR-SR correction flow to ff_nf_wjets.')
 
         if plotting:
@@ -1242,12 +1312,15 @@ def normalizing_flow_ff(
             ff_full_wjets=ff_full_wjets,
             clip_mask_wjets=clip_mask_wjets,
             clip_value_wjets=clip_value_wjets,
+            invalid_wjets_mask=invalid_wjets_mask,
             ff_full_qcd=ff_full_qcd,
             clip_mask_qcd=clip_mask_qcd,
             clip_value_qcd=clip_value_qcd,
+            invalid_qcd_mask=invalid_qcd_mask,
             wjets_clipped_percent=wjets_clipped_percent,
             qcd_clipped_percent=qcd_clipped_percent,
             plot_dir=plot_dir,
+            label=sample_label,
             ff_full_wjets_uncorrected=ff_full_wjets_uncorrected,
             clip_mask_wjets_uncorrected=clip_mask_wjets_uncorrected,
         )
@@ -2740,6 +2813,7 @@ def run_plots_for_njets_category(category_name, njets_title, masks_config: dict[
         device,
         plotting=True,
         plot_dir=category_plot_dir,
+        sample_label='data',
         include_njets=include_njets_feature,
         ff_estimator=args.ff_estimator,
         prior_ar_over_sr_wjets=prior_ar_over_sr_wjets,
@@ -2762,11 +2836,11 @@ def run_plots_for_njets_category(category_name, njets_title, masks_config: dict[
     data_ttbar_L_AR_OS = data_AR[(data_AR.process == 9)]
     data_embedding_AR_OS = data_AR[(data_AR.process == 10)]
 
-    data_diboson_AR_OS_nf, _ = normalizing_flow_ff(data_diboson_AR_OS, variables, model_AR_like_wjets, model_SR_like_wjets, global_ff_wjets, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_wjets=prior_ar_over_sr_wjets, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_wjets=classifier_features_wjets, classifier_features_qcd=classifier_features_qcd, correction_model_wjets_dr=correction_model_wjets_dr, correction_model_wjets_antidr=correction_model_wjets_antidr, correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr, correction_features_wjets_dr=correction_features_wjets_dr, correction_features_wjets_antidr=correction_features_wjets_antidr, correction_global_ff_wjets_dr=global_ff_wjets_dr_correction, correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction)
-    data_DY_AR_OS_nf, _ = normalizing_flow_ff(data_DY_AR_OS, variables, model_AR_like_wjets, model_SR_like_wjets, global_ff_wjets, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_wjets=prior_ar_over_sr_wjets, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_wjets=classifier_features_wjets, classifier_features_qcd=classifier_features_qcd, correction_model_wjets_dr=correction_model_wjets_dr, correction_model_wjets_antidr=correction_model_wjets_antidr, correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr, correction_features_wjets_dr=correction_features_wjets_dr, correction_features_wjets_antidr=correction_features_wjets_antidr, correction_global_ff_wjets_dr=global_ff_wjets_dr_correction, correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction)
-    data_ST_AR_OS_nf, _ = normalizing_flow_ff(data_ST_AR_OS, variables, model_AR_like_wjets, model_SR_like_wjets, global_ff_wjets, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_wjets=prior_ar_over_sr_wjets, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_wjets=classifier_features_wjets, classifier_features_qcd=classifier_features_qcd, correction_model_wjets_dr=correction_model_wjets_dr, correction_model_wjets_antidr=correction_model_wjets_antidr, correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr, correction_features_wjets_dr=correction_features_wjets_dr, correction_features_wjets_antidr=correction_features_wjets_antidr, correction_global_ff_wjets_dr=global_ff_wjets_dr_correction, correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction)
-    data_ttbar_L_AR_OS_nf, _ = normalizing_flow_ff(data_ttbar_L_AR_OS, variables, model_AR_like_wjets, model_SR_like_wjets, global_ff_wjets, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_wjets=prior_ar_over_sr_wjets, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_wjets=classifier_features_wjets, classifier_features_qcd=classifier_features_qcd, correction_model_wjets_dr=correction_model_wjets_dr, correction_model_wjets_antidr=correction_model_wjets_antidr, correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr, correction_features_wjets_dr=correction_features_wjets_dr, correction_features_wjets_antidr=correction_features_wjets_antidr, correction_global_ff_wjets_dr=global_ff_wjets_dr_correction, correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction)
-    data_embedding_AR_OS_nf, _ = normalizing_flow_ff(data_embedding_AR_OS, variables, model_AR_like_wjets, model_SR_like_wjets, global_ff_wjets, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_wjets=prior_ar_over_sr_wjets, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_wjets=classifier_features_wjets, classifier_features_qcd=classifier_features_qcd, correction_model_wjets_dr=correction_model_wjets_dr, correction_model_wjets_antidr=correction_model_wjets_antidr, correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr, correction_features_wjets_dr=correction_features_wjets_dr, correction_features_wjets_antidr=correction_features_wjets_antidr, correction_global_ff_wjets_dr=global_ff_wjets_dr_correction, correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction)
+    data_diboson_AR_OS_nf, _ = normalizing_flow_ff(data_diboson_AR_OS, variables, model_AR_like_wjets, model_SR_like_wjets, global_ff_wjets, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=True, sample_label='diboson', plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_wjets=prior_ar_over_sr_wjets, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_wjets=classifier_features_wjets, classifier_features_qcd=classifier_features_qcd, correction_model_wjets_dr=correction_model_wjets_dr, correction_model_wjets_antidr=correction_model_wjets_antidr, correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr, correction_features_wjets_dr=correction_features_wjets_dr, correction_features_wjets_antidr=correction_features_wjets_antidr, correction_global_ff_wjets_dr=global_ff_wjets_dr_correction, correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction)
+    data_DY_AR_OS_nf, _ = normalizing_flow_ff(data_DY_AR_OS, variables, model_AR_like_wjets, model_SR_like_wjets, global_ff_wjets, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=True, sample_label='DY', plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_wjets=prior_ar_over_sr_wjets, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_wjets=classifier_features_wjets, classifier_features_qcd=classifier_features_qcd, correction_model_wjets_dr=correction_model_wjets_dr, correction_model_wjets_antidr=correction_model_wjets_antidr, correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr, correction_features_wjets_dr=correction_features_wjets_dr, correction_features_wjets_antidr=correction_features_wjets_antidr, correction_global_ff_wjets_dr=global_ff_wjets_dr_correction, correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction)
+    data_ST_AR_OS_nf, _ = normalizing_flow_ff(data_ST_AR_OS, variables, model_AR_like_wjets, model_SR_like_wjets, global_ff_wjets, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=True, sample_label='ST', plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_wjets=prior_ar_over_sr_wjets, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_wjets=classifier_features_wjets, classifier_features_qcd=classifier_features_qcd, correction_model_wjets_dr=correction_model_wjets_dr, correction_model_wjets_antidr=correction_model_wjets_antidr, correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr, correction_features_wjets_dr=correction_features_wjets_dr, correction_features_wjets_antidr=correction_features_wjets_antidr, correction_global_ff_wjets_dr=global_ff_wjets_dr_correction, correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction)
+    data_ttbar_L_AR_OS_nf, _ = normalizing_flow_ff(data_ttbar_L_AR_OS, variables, model_AR_like_wjets, model_SR_like_wjets, global_ff_wjets, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=True, sample_label='ttbar', plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_wjets=prior_ar_over_sr_wjets, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_wjets=classifier_features_wjets, classifier_features_qcd=classifier_features_qcd, correction_model_wjets_dr=correction_model_wjets_dr, correction_model_wjets_antidr=correction_model_wjets_antidr, correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr, correction_features_wjets_dr=correction_features_wjets_dr, correction_features_wjets_antidr=correction_features_wjets_antidr, correction_global_ff_wjets_dr=global_ff_wjets_dr_correction, correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction)
+    data_embedding_AR_OS_nf, _ = normalizing_flow_ff(data_embedding_AR_OS, variables, model_AR_like_wjets, model_SR_like_wjets, global_ff_wjets, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=True, sample_label='embedding', plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_wjets=prior_ar_over_sr_wjets, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_wjets=classifier_features_wjets, classifier_features_qcd=classifier_features_qcd, correction_model_wjets_dr=correction_model_wjets_dr, correction_model_wjets_antidr=correction_model_wjets_antidr, correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr, correction_features_wjets_dr=correction_features_wjets_dr, correction_features_wjets_antidr=correction_features_wjets_antidr, correction_global_ff_wjets_dr=global_ff_wjets_dr_correction, correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction)
 
     data_events = data_SR_OS[(data_SR_OS.process == 0)]
     data_diboson_SR_OS = data_SR_OS[(data_SR_OS.process == 2) | (data_SR_OS.process == 3)]

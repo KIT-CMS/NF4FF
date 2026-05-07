@@ -400,7 +400,7 @@ def plot_ff_distributions(
     ff_DR: np.ndarray,
     plot_dir: Path = None,
     bins: int = 50,
-    range: tuple[float, float] = (0.001, 10),
+    range: tuple[float, float] = (0.0001, 10000),
     title: str = "Fake Factor Distribution",
     xlabel: str = "Fake Factor",
     ylabel: str = "Frequency",
@@ -469,13 +469,39 @@ def plt_control_plots(
     clipping_mask = FF < 2.0
     correction_factor = len(clipping_mask)/np.sum(np.abs(clipping_mask - 1))
 
-    bins = np.linspace(range[0], range[1], 50)
+    sr_vals = SR[var].to_numpy()
+    ar_vals = AR[var].to_numpy()
+
+    sr_pos = np.isfinite(sr_vals) & (sr_vals > 0)
+    ar_pos = np.isfinite(ar_vals) & (ar_vals > 0)
+    ar_plot_mask = clipping_mask & ar_pos
+
+    if not sr_pos.any() and not ar_plot_mask.any():
+        logger.warning('No positive values for log-x control plot of %s in %s; skipping.', var, region)
+        return
+
+    positive_sources = []
+    if sr_pos.any():
+        positive_sources.append(sr_vals[sr_pos])
+    if ar_plot_mask.any():
+        positive_sources.append(ar_vals[ar_plot_mask])
+
+    positive_all = np.concatenate(positive_sources)
+    x_min = range[0] if range[0] and range[0] > 0 else float(np.min(positive_all))
+    x_max = range[1] if range[1] and range[1] > x_min else float(np.max(positive_all))
+
+    if not np.isfinite(x_min) or not np.isfinite(x_max) or x_max <= x_min:
+        logger.warning('Invalid log-x bounds for %s in %s (x_min=%s, x_max=%s); skipping.', var, region, x_min, x_max)
+        return
+
+    bins = np.logspace(np.log10(x_min), np.log10(x_max), 50)
     plt.figure(figsize=(8, 6))
-    plt.hist(SR[var], bins=bins, weights=SR['weight'], histtype='step', color='blue', edgecolor='blue', label='MC')
-    plt.hist(AR[var][clipping_mask], bins=bins, weights=correction_factor * FF[clipping_mask] * AR['weight'][clipping_mask], histtype='step', color='red', edgecolor='red', label='FF')
+    plt.hist(sr_vals[sr_pos], bins=bins, weights=SR['weight'].to_numpy()[sr_pos], histtype='step', color='blue', edgecolor='blue', label='MC')
+    plt.hist(ar_vals[ar_plot_mask], bins=bins, weights=correction_factor * FF[ar_plot_mask] * AR['weight'].to_numpy()[ar_plot_mask], histtype='step', color='red', edgecolor='red', label='FF')
     plt.title(f"Distribution of {var} in {region}")
     plt.xlabel(var)
     plt.ylabel("Frequency")
+    plt.xscale('log')
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.5)
     plt.tight_layout()
@@ -887,16 +913,22 @@ def main():
     ff_DR_events = np.clip(ff_DR_events_raw, 0, 10)
     ff_SR_events = np.clip(ff_SR_events_raw, 0, 10)
 
+    # MC raw FFs (unclipped) — used for flow training
+    ff_DR_MC_raw = compute_fake_factors(log_pdf_AR_like_MC, log_pdf_SR_like_MC, global_ff_DR_MC, clip_range=None)
+    ff_SR_MC_raw = compute_fake_factors(log_pdf_AR_MC, log_pdf_SR_MC, global_ff_SR_MC, clip_range=None)
+
+    ff_DR_MC = np.clip(ff_DR_MC_raw, 0, 10)
+    ff_SR_MC = np.clip(ff_SR_MC_raw, 0, 10)
+
+    # Train the DR-SR correction flow on MC (process==1): the true SR is known for MC,
+    # so the flow learns FF_DR -> FF_SR from simulation, not from data.
     add_fake_factors_to_feather(
-        full_df=data_AR_events,
-        selected_df=data_AR_events,
-        ff_dr=ff_DR_events_raw,
-        ff_sr=ff_SR_events_raw,
+        full_df=data_AR_MC,
+        selected_df=data_AR_MC,
+        ff_dr=ff_DR_MC_raw,
+        ff_sr=ff_SR_MC_raw,
         feather_path=FF_FACTORS_DIR / f'fake_factors_{resolved_tag}.feather',
     )
-
-    ff_DR_MC = compute_fake_factors(log_pdf_AR_like_MC, log_pdf_SR_like_MC, global_ff_DR_MC)
-    ff_SR_MC = compute_fake_factors(log_pdf_AR_MC, log_pdf_SR_MC, global_ff_SR_MC)
 
     plot_ff_distributions(ff_SR_events_raw, ff_DR_events_raw, title='Fake Factors data events, MC models', plot_dir=PLOTS_DIR)
 
@@ -912,8 +944,8 @@ def main():
     if flow_checkpoint_dir.exists():
         flow_model, flow_meta = load_flow_model(flow_checkpoint_dir, device=device)
         # Attach the raw FF_DR computed in this run so the flow sees the same values it was trained on
-        df_ar_for_flow = data_AR_events.reset_index(drop=True).copy()
-        df_ar_for_flow['FF_DR'] = ff_DR_events_raw
+        df_ar_for_flow = data_AR_MC.reset_index(drop=True).copy()
+        df_ar_for_flow['FF_DR'] = ff_DR_MC_raw
         ff_sr_flow = compute_ff_sr_from_flow(
             model=flow_model,
             df=df_ar_for_flow,
@@ -928,14 +960,14 @@ def main():
         logger.info('Flow comparison: %d / %d events in training domain', valid_flow.sum(), len(valid_flow))
         _ff_clip_max = flow_meta.get('ff_clip_max', None)
         plot_ff_comparison_with_flow(
-            ff_sr_nf=ff_SR_events_raw[valid_flow],
-            ff_dr=ff_DR_events_raw[valid_flow],
+            ff_sr_nf=ff_SR_MC_raw[valid_flow],
+            ff_dr=ff_DR_MC_raw[valid_flow],
             ff_sr_flow=ff_sr_flow[valid_flow],
             plot_dir=PLOTS_DIR,
             xlim=_ff_clip_max,
         )
         plot_ff_sr_comparison(
-            ff_sr_real=ff_SR_events_raw[valid_flow],
+            ff_sr_real=ff_SR_MC_raw[valid_flow],
             ff_sr_flow=ff_sr_flow[valid_flow],
             plot_dir=PLOTS_DIR,
             xlim=_ff_clip_max,

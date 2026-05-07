@@ -19,7 +19,6 @@ variables_MC:
   - pt_tt
   - m_fastmtt
 
-
 variables_correlation:
   - pt_1
   - pt_2
@@ -31,15 +30,11 @@ variables_correlation:
   - m_fastmtt
   - mt_1
   - mt_tot
+  - njets
+  - mt_2
 
 variables_correction:
-  - pt_1
-  - pt_2
-  - m_vis
-  - deltaR_ditaupair
   - pt_vis
   - met
-  - pt_tt
-  - m_fastmtt
+  - njets
   - mt_1
-  - mt_tot
