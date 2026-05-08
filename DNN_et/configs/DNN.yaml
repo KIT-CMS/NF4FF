@@ -1,0 +1,17 @@
+model:
+  hidden_nodes: [128, 128]
+  output_nodes: 1
+  activation: ReLU
+  output_activation: Sigmoid
+  dropout: 0.1
+
+training:
+  epochs: 500
+  lr: 0.001
+
+scheduler:
+  patience: 5
+  early_stopping_patience: 15
+  factor: 0.5
+  min_delta: 1.0e-4
+  min_lr: 1.0e-7
