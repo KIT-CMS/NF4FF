@@ -7,6 +7,7 @@ from classes.helper import _component_collection, _same_sign_opposite_sign_split
 import numpy as np
 from sklearn.model_selection import train_test_split
 
+
 class SelectionManager:
 
     def __init__(self, yaml_path):
@@ -59,7 +60,8 @@ class SelectionManager:
 
         expr = self.processes[process]
         return df.eval(expr, engine="python")
-    
+
+
 class RegionView:
 
     def __init__(self, df, mask):
@@ -77,13 +79,22 @@ class RegionView:
     def __getitem__(self, key):
         return self._df.loc[self._mask, key]
 
+    def __setitem__(self, key, value):
+        """Assign values to the underlying dataframe for masked rows."""
+        self._df.loc[self._mask, key] = value
+
+    def copy(self):
+        """Return a plain DataFrame copy of the masked events."""
+        return self._df.loc[self._mask].copy()
+
     def __getattr__(self, name):
 
         if name in self._df.columns:
             return self._df.loc[self._mask, name]
 
         return getattr(self._df.loc[self._mask], name)
-    
+
+
 class ProcessView:
 
     def __init__(self, df, process_mask, manager):
@@ -115,7 +126,8 @@ class ProcessView:
 
     def __getitem__(self, key):
         return self._df.loc[self._process_mask, key]
-    
+
+
 class AnalysisDataFrame:
 
     def __init__(self, df, manager):
@@ -162,11 +174,39 @@ class AnalysisDataFrame:
             return self.process(name)
 
         return getattr(self._df, name)
+    
+
+    def __getitem__(self, key):
+
+        #
+        # Process access
+        #
+        if key in self._manager.processes:
+            return self.process(key)
+
+        #
+        # Region access
+        #
+        if key in self._manager.regions:
+            return RegionView(self._df, self.mask(key))
+
+        #
+        # Fall back to pandas column access
+        #
+        return self._df[key]
 
     @property
     def events(self):
         return self._df
-    
+
+
+def load_variables(yaml_path):
+    with open(yaml_path, "r") as f:
+        config = yaml.safe_load(f)
+    yaml_vars = config.get("variables", [])
+    return yaml_vars
+
+
 def load_data(feather_file, config_file):
 
     df = pd.read_feather(feather_file)
@@ -174,6 +214,7 @@ def load_data(feather_file, config_file):
     manager = SelectionManager(config_file)
 
     return AnalysisDataFrame(df, manager)
+
 
 def training_data(
     df_sig,
@@ -224,6 +265,16 @@ def training_data(
         weights=weights[idx],
     )
 
+
+def test_data(
+    df_test,
+    training_var,
+    ):
+
+    _df = df_test[training_var].to_numpy(dtype=np.float32)
+    
+    return _component_collection(X = _df)
+
 def create_training_dataset(
     df_sig,
     df_bkg,
@@ -265,3 +316,20 @@ def create_training_dataset(
     ).to_torch(device=None)
 
     return train, val
+
+def estimate_qcd_in_bins(
+	df,
+	var: str,
+	bins = np.ndarray,
+):
+	data = np.histogram(df.data.AR_SS[var], weights = df.data.AR_SS.weight, bins = bins)
+	wjets = np.histogram(df.wjets.AR_SS[var], weights = df.wjets.AR_SS.weight, bins = bins )
+	diboson = np.histogram(df.diboson.AR_SS[var], weights = df.diboson.AR_SS.weight, bins = bins )
+	DYjets = np.histogram(df.DYjets.AR_SS[var], weights = df.DYjets.AR_SS.weight, bins = bins )
+	ST = np.histogram(df.ST.AR_SS[var], weights = df.ST.AR_SS.weight, bins = bins)
+	ttbar = np.histogram(df.ttbar.AR_SS[var], weights = df.ttbar.AR_SS.weight, bins = bins )
+	embedding = np.histogram(df.embedding.AR_SS[var], weights = df.embedding.AR_SS.weight, bins = bins )
+
+	qcd = data - wjets - diboson - DYjets - ST - ttbar - embedding
+
+	return qcd

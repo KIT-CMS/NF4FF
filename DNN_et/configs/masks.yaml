@@ -26,6 +26,15 @@ masks:
     - mt_1 < 70
     - q_1 * q_2 < 0
 
+  AR_SS:
+    - id_tau_vsJet_VLoose_2 > 0.5
+    - id_tau_vsJet_Tight_2 < 0.5
+    - iso_1 >= 0.0
+    - iso_1 < 0.15
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+    - mt_1 < 70
+    - q_1 * q_2 > 0
   DR_wjets:
     - id_tau_vsJet_VLoose_2 > 0.5
     - nbtag == 0
@@ -62,6 +71,10 @@ regions:
     - preselection
     - AR
 
+  AR_SS:
+    - preselection
+    - AR_SS
+
   SR_like_wjets:
     - preselection
     - DR_wjets
@@ -85,12 +98,10 @@ regions:
 processes:
   data: process == 0
   wjets: process == 1
-
   diboson: process.isin([2, 3])
   DYjets: process.isin([4, 5])
   ST: process.isin([6, 7])
   ttbar: process.isin([8, 9])
-
   embedding: process == 10
 
   diboson_J: process == 2

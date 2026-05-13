@@ -406,6 +406,73 @@ class GroupedDNN(GroupedLayerABC):
         )
 
 
+class FoldCombinedDNN(t.nn.Module):
+    def __init__(
+        self,
+        even_model: Union[DNN, GroupedDNN, t.nn.Module],
+        odd_model: Union[DNN, GroupedDNN, t.nn.Module],
+        fold_id_name: str = "event_parity",
+    ) -> None:
+        super(FoldCombinedDNN, self).__init__()
+        self.even_model = even_model  # Even Model: Trained on ODD -> Use for EVEN events
+        self.odd_model = odd_model  # Odd Model: Trained on EVEN -> Use for ODD events
+        self._fold_id_name = fold_id_name
+        self._input_nodes = even_model._input_nodes + 1  # +1 for event ID
+
+        if even_model._input_names is not None:
+            self._input_names = [fold_id_name] + even_model._input_names
+
+    def forward(self, X: t.Tensor) -> t.Tensor:
+        even_event_ids, features = (X[0, ...].long() % 2 == 0).squeeze(), X[1:, ...].T
+
+        output_even = self.even_model(features).squeeze()
+        output_odd = self.odd_model(features).squeeze()
+
+        condition = even_event_ids.view(-1, 1) if output_even.dim() > 1 else even_event_ids
+
+        return t.where(condition, output_even, output_odd)
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.even_model, name)
+
+    @property
+    def _imports(self) -> str:
+        imports = set()
+
+        if self.__class__.__module__ != "builtins":
+            imports.add(f"from {self.__class__.__module__} import {self.__class__.__name__}")
+
+        def add_model_imports(model):
+            if hasattr(model, "__class__") and model.__class__.__module__ != "builtins":
+                imports.add(f"from {model.__class__.__module__} import {model.__class__.__name__}")
+
+            if hasattr(model, "_imports"):
+                for line in model._imports.split("\n"):
+                    if line.strip():
+                        imports.add(line)
+
+        add_model_imports(self.even_model)
+        add_model_imports(self.odd_model)
+
+        return "\n".join(sorted(list(imports))) + "\n"
+
+    @property
+    def model_name(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"even_model={self.even_model.model_name}, "
+            f"odd_model={self.odd_model.model_name}, "
+            f"fold_id_name='{self._fold_id_name}', "
+            ")"
+        )
+
+    def __recreate__(self) -> str:
+        return f"{self._imports}__model = {self.model_name}\n\n"
+
+
 def save_model(item: t.nn.Module, path: Path) -> None:
     path = Path(path)
     assert not path.suffix, "Provide a directory, not a file name"
@@ -504,3 +571,12 @@ def load_model(
         log_nested_scaler_shifts(__model, device)
         return __model.to(device)
 
+
+def load_fold_combined_model(
+    even_model_path: Path,  # usually fold0
+    odd_model_path: Path,   # usually fold1
+) -> FoldCombinedDNN:
+    return FoldCombinedDNN(
+        even_model=load_model(even_model_path).eval(),
+        odd_model=load_model(odd_model_path).eval(),
+    )

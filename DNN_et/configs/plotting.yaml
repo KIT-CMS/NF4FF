@@ -1,0 +1,105 @@
+bins_by_variable:
+    # [start, stop, num] for np.linspace(start, stop, num)
+    pt_1: [0, 150, 31]
+    pt_2: [0, 150, 31]
+    m_vis: [0, 220, 31]
+    deltaR_ditaupair: [0, 5, 21]
+    pt_vis: [0, 160, 31]
+    pt_tt: [0, 160, 31]
+    m_fastmtt: [0, 220, 31]
+    eta_1: [-3, 3, 31]
+    eta_2: [-3, 3, 31]
+    met: [0, 150, 31]
+    mt_1: [0, 150, 31]
+    mt_2: [0, 150, 31]
+
+    jpt_1: [0, 150, 31]
+    jpt_2: [0, 150, 31]
+    jeta_1: [-5, 5, 31]
+    jeta_2: [-5, 5, 31]
+    pt_fastmtt: [0, 220, 31]
+    njets: [-0.5, 8.5, 10]
+    mt_tot: [0, 400, 41]
+    mjj: [0, 600, 31]
+    pt_dijet: [0, 400, 41]
+    pt_ttjj: [0, 200, 41]
+    deltaEta_jj: [-6, 6, 31]
+    deltaR_jj: [-6, 6, 31]
+    deltaR_1j1: [-6, 6, 31]
+    deltaR_1j2: [-6, 6, 31]
+    deltaR_2j1: [-6, 6, 31]
+    deltaR_2j2: [-6, 6, 31]
+    deltaR_12j1: [-6, 6, 31]
+    deltaR_12j2: [-6, 6, 31]
+    deltaEta_1j1: [-6, 6, 31]
+    deltaEta_1j2: [-6, 6, 31]
+    deltaEta_2j1: [-6, 6, 31]
+    deltaEta_2j2: [-6, 6, 31]
+    deltaEta_12j1: [-6, 6, 31]
+    deltaEta_12j2: [-6, 6, 31]
+    nbtag: [-0.5, 4.5, 6]
+    iso_1: [0, 0.15, 31]
+    iso_2: [0.6, 1.2, 31]
+    tau_decaymode_1: [-0.5, 12.5, 14]
+    tau_decaymode_2: [-0.5, 12.5, 14]
+    mass_1: [0, 0.1, 31]
+    mass_2: [0, 2.0, 31]
+
+variables_set_small:
+    - pt_1
+    - pt_2
+    - m_vis
+    - deltaR_ditaupair
+    - pt_vis
+    - pt_tt
+    - m_fastmtt
+    - eta_1
+    - eta_2
+    - met
+    - mt_1
+    - mt_2
+
+variables_set_large:
+    - pt_1
+    - pt_2
+    - eta_1
+    - eta_2
+    - jpt_1
+    - jpt_2
+    - jeta_1
+    - jeta_2
+    - m_fastmtt
+    - pt_fastmtt
+    - met
+    - njets
+    - mt_tot
+    - m_vis
+    - pt_tt
+    - pt_vis
+    - mjj
+    - pt_dijet
+    - pt_ttjj
+    - deltaEta_jj
+    - deltaR_jj
+    - deltaR_ditaupair
+    - deltaR_1j1
+    - deltaR_1j2
+    - nbtag
+    - mt_1
+    - mt_2
+    - iso_1
+    - iso_2
+    - deltaR_2j1
+    - deltaR_2j2
+    - deltaR_12j1
+    - deltaR_12j2
+    - deltaEta_1j1
+    - deltaEta_1j2
+    - deltaEta_2j1
+    - deltaEta_2j2
+    - deltaEta_12j1
+    - deltaEta_12j2
+    - tau_decaymode_1
+    - tau_decaymode_2
+    - mass_1
+    - mass_2
