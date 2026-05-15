@@ -3,15 +3,15 @@ model:
   output_nodes: 1
   activation: ReLU
   output_activation: Sigmoid
-  dropout: 0.1
+  dropout: 0.10
 
 training:
   epochs: 500
-  lr: 0.001
+  lr: 0.0001
 
 scheduler:
-  patience: 5
-  early_stopping_patience: 15
-  factor: 0.5
+  patience: 10
+  early_stopping_patience: 50
+  factor: 0.1
   min_delta: 1.0e-4
   min_lr: 1.0e-7

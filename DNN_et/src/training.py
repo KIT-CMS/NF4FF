@@ -13,7 +13,6 @@ from dataclasses import is_dataclass, fields
 from classes.CustomLogging import Logging
 from pathlib import Path
 
-
 SEED = 42
 logger = logging.getLogger(__name__)
 

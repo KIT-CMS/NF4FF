@@ -30,6 +30,73 @@ class TrainingDashboard:
 
         return "".join(blocks[i] for i in scaled)
 
+    def _sparkline_delta(self, values, width=30):
+        """
+        Oscillator-style delta sparkline (zero-centered signal).
+
+        - green = improving (below zero)
+        - red   = worsening (above zero)
+        - intensity = magnitude of change
+        - EMA smoothing for stability
+        """
+
+        if len(values) < 2:
+            return [("─", "dim")]
+
+        # -----------------------
+        # raw deltas
+        # -----------------------
+        deltas = [
+            values[i] - values[i - 1]
+            for i in range(1, len(values))
+        ]
+
+        # -----------------------
+        # EMA smoothing (oscillator stability)
+        # -----------------------
+        alpha = 0.3
+        smoothed = []
+        ema = deltas[0]
+
+        for d in deltas:
+            ema = alpha * d + (1 - alpha) * ema
+            smoothed.append(ema)
+
+        smoothed = smoothed[-width:]
+
+        max_abs = max(abs(x) for x in smoothed) + 1e-12
+
+        # intensity levels (oscillator bands)
+        levels = "▁▂▃▄▅▆▇█"
+
+        rendered = []
+
+        for v in smoothed:
+
+            mag = abs(v) / max_abs
+            idx = int(mag * (len(levels) - 1))
+            idx = min(idx, len(levels) - 1)
+
+            char = levels[idx]
+
+            # -----------------------
+            # ABOVE ZERO → worsening loss
+            # -----------------------
+            if v > 0:
+                # red oscillator above baseline
+                rendered.append((char, "bold red"))
+
+            # -----------------------
+            # BELOW ZERO → improving loss
+            # -----------------------
+            elif v < 0:
+                rendered.append((char, "bold green"))
+
+            else:
+                rendered.append(("─", "white"))
+
+        return rendered
+
     def render(
         self,
         epoch,
@@ -67,11 +134,13 @@ class TrainingDashboard:
         # -----------------------
         # Sparkline
         # -----------------------
-        trend = self._sparkline(self.history["val_loss"])
+        trend = self._sparkline_delta(self.history["val_loss"])
 
         trend_text = Text()
-        trend_text.append("Val Trend: ", style="bold")
-        trend_text.append(trend)
+        trend_text.append("Val Δ Trend: ", style="bold")
+
+        for char, style in trend:
+            trend_text.append(char, style=style)
 
         # -----------------------
         # SINGLE COMPACT PANEL (IMPORTANT FIX)

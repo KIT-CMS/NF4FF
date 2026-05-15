@@ -22,6 +22,7 @@ __pycache__/
 
 CODE/
 plots/
+plots*/
 data/
 
 Classifier/data/
@@ -37,6 +38,10 @@ Classifier_all_in_one/plots/
 CustomLogging/
 !Classifier_all_in_one/CustomLogging/
 !Classifier_all_in_one/CustomLogging/**
+
+DNN_et/taylor_coefficients
+
+
 
 FakeFaktor/
 Helper/

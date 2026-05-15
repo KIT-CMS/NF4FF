@@ -369,7 +369,7 @@ def calculate_fake_factor_classic(
         df,
         ):
     _df = df.copy()
-    ff = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors/workdir/ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz')
+    ff = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors.back/workdir/ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz')
 
     frac = ff['process_fractions']
 
@@ -378,7 +378,7 @@ def calculate_fake_factor_classic(
     ff_qcd = ff['QCD_fake_factors']
     ff_ttbar = ff['ttbar_fake_factors']
 
-    corr = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors/workdir/ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz')
+    corr = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors.back/workdir/ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz')
 
 
     _df["wjets_classic_ff"] = ff_wjets.evaluate(
@@ -462,8 +462,8 @@ def calculate_fake_factor_dnn(
 ):
     _df = df.copy()
 
-    _ff_file = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors/workdir/ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz')
-    _corr_file = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors/workdir/ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz')
+    _ff_file = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors.back/workdir/ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz')
+    _corr_file = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors.back/workdir/ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz')
 
     _frac = _ff_file['process_fractions']
     _ff_ttbar = _ff_file['ttbar_fake_factors']
