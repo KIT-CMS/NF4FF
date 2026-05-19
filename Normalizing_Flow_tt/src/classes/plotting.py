@@ -6,7 +6,7 @@ from typing import Optional, Tuple, Sequence, Literal, Union
 
 Number = Union[int, float]
 import logging
-from CustomLogging import setup_logging
+from classes.Logging import setup_logging
 logger = setup_logging(logger=logging.getLogger(__name__))
 
 class MultiDimHist:

@@ -42,7 +42,7 @@ class Args(Tap):
     output_dir: str = 'plots'
     ckpt_pth_fold1: str = 'fold1/last/'
     ckpt_pth_fold2: str = 'fold2/last/'
-    write_back: bool = False
+    write_back: bool = True
 
 
 

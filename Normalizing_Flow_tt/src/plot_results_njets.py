@@ -1,3 +1,7 @@
+'''
+loads models, evaluates fake factors, and makes plots
+'''
+
 from __future__ import annotations
 import logging
 import hashlib
@@ -15,7 +19,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 import yaml
 from tap import Tap
-from CustomLogging import setup_logging
+from classes.Logging import setup_logging
 from classes.NeuralNetworks import RealNVP, RealNVP_NN, AffineCoupling, MLP, ConditionalRealNVP, BinaryClassifier
 import correctionlib as cr
 from classes.Dataclasses import ModelConfig

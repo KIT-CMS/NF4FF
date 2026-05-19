@@ -1,3 +1,7 @@
+'''
+trains SR/AR binary classifiers for Wjets and QCD
+'''
+
 import logging
 import random
 import time
@@ -69,51 +73,59 @@ def build_training_model_tag(
 
 # ----- shared helpers -----
 
-def mask_preselection_loose(df):
-    mask_eta = (df.eta_1 <= 2.1) & (df.eta_2 <= 2.3)
-    mask_pt = (df.pt_1 >= 33) & (df.pt_2 >= 30)
+def mask_preselection_loose(df, tau):
+    '''
+    tau = 1, 2
+    '''
+    #mask_eta = (df.eta_1 <= 2.1) & (df.eta_2 <= 2.3)
+    mask_pt = (df.pt_1 >= 40) & (df.pt_2 >= 40)
     mask_tau_decay_mode = (
-        (df.tau_decaymode_2 == 0)
-        | (df.tau_decaymode_2 == 1)
-        | (df.tau_decaymode_2 == 10)
-        | (df.tau_decaymode_2 == 11)
+        (df[f'tau_decaymode_{tau}'] == 0)
+        | (df[f'tau_decaymode_{tau}'] == 1)
+        | (df[f'tau_decaymode_{tau}'] == 10)
+        | (df[f'tau_decaymode_{tau}'] == 11)
     )
-    return df[mask_eta & mask_pt & mask_tau_decay_mode]
+    return df[mask_pt & mask_tau_decay_mode] # & mask_eta]
+
+#todo: muss hier noch näheres spezifiziert werden? Ein cut zum anderen tau?
+def SR_like(df, tau):
+    '''
+    tau id passed at tight WP of the tau specified
+    tau = 1, 2
+    '''
+    if tau not in [1, 2]:
+        raise ValueError(f"Invalid tau number: {tau}. Expected 1 or 2.")
+    return df[df[f'id_tau_vsJet_Tight_{tau}'] > 0.5]
 
 
-def SR_like(df):
-    return df[df.id_tau_vsJet_Tight_2 > 0.5]
-
-
-def AR_like(df):
-    mask = (df.id_tau_vsJet_VLoose_2 > 0.5) & (df.id_tau_vsJet_Tight_2 < 0.5)
+def AR_like(df, tau):
+    '''
+    tau id passed at very loose WP but failed tight WP of the tau specified
+    tau = 1, 2
+    '''
+    if tau not in [1, 2]:
+        raise ValueError(f"Invalid tau number: {tau}. Expected 1 or 2.")
+    
+    if tau == 1:
+        mask1 = (df['id_tau_vsJet_VLoose_1'] > 0.5) 
+        mask2 = (df['id_tau_vsJet_Tight_1'] < 0.5)
+    elif tau == 2:
+        mask1 = (df['id_tau_vsJet_VLoose_2'] > 0.5) 
+        mask2 = (df['id_tau_vsJet_Tight_2'] < 0.5)
+    
+    mask = (mask1 & mask2)
     return df[mask]
 
 
-def mask_DR_wjets(df):
-    mask = (
-        (df.id_tau_vsJet_VLoose_2 > 0.5)
-        & (df.nbtag == 0)
-        & (df.iso_1 > 0.0)
-        & (df.iso_1 < 0.15)
-        & (df.extramuon_veto < 0.5)
-        & (df.extraelec_veto < 0.5)
-        & (df.mt_1 > 70)
-    )
-    return df[mask].copy()
-
-
 def mask_DR_qcd(df):
-    mask = (
-        (df.id_tau_vsJet_VLoose_2 > 0.5)
-        & (df.q_1 * df.q_2 > 0)
-        & (df.iso_1 > 0.02)
-        & (df.iso_1 < 0.15)
-        & (df.extramuon_veto < 0.5)
-        & (df.extraelec_veto < 0.5)
-        & (df.mt_1 < 50)
-    )
-    return df[mask].copy()
+    mask_a1 = (df.q_1 * df.q_2 > 0)
+    mask_a2 = ((df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
+    mask_a3 = ((df.id_tau_vsJet_VLoose_1 > 0.5))
+    mask_a4 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
+    
+    mask_DR = (mask_a1 & mask_a2 & mask_a3 & mask_a4)
+    
+    return df[mask_DR].copy()
 
 
 def sanitize_weights(weights: t.Tensor, process_name: str, split_name: str) -> t.Tensor:

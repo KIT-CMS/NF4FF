@@ -15,14 +15,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Any, List, Union
 from classes.path_managment import StorePathHelper
-from CustomLogging import setup_logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
 from classes.training import train_epoch, val_epoch
 from classes.path_managment import StorePathHelper
-from CustomLogging import setup_logging
+from classes.Logging import setup_logging
 import yaml
 import numpy as np
 import random

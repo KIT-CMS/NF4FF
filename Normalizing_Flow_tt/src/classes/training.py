@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import logging
-from CustomLogging import setup_logging
+from classes.Logging import setup_logging
 import math
 
 def linear_warmup_then_cosine(optimizer, step, warmup_steps, base_lr, total_steps):     # not used relict

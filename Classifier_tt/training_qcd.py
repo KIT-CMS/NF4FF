@@ -923,7 +923,9 @@ def main():
        
 
         # save checkpoint
-        paths_training = StorePathHelper(directory=f"results/QCD/inclusive/{fold}")
+        temp_path = cfg["ckpt_dir"][args.loc] + f"{fold}"
+        #paths_training = StorePathHelper(directory=f"results/QCD/inclusive/{fold}")
+        paths_training = StorePathHelper(directory=temp_path)
         
         # Ensure QCD weights are computed one final time before saving
         model.eval()
@@ -981,10 +983,25 @@ def main():
         qcd_counts, _ = np.histogram(probs_data, weights = weights_qcd, bins=bins)
         nqcd_counts, _ = np.histogram(probs_nqcd, weights = weights_nqcd, bins=bins)
         bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
-        plt.errorbar(bin_centers,data_counts,  color = 'black', fmt = 'o' ,markersize = 5, label = 'data (reduced)')
-        plt.bar(bin_centers, qcd_counts, width = bin_widths, color ='#b9ac70', label = 'QCD')
-        plt.bar(bin_centers, nqcd_counts, bottom = qcd_counts, color = 'grey', width = bin_widths, label = 'nQCD')
-        plt.legend()
+
+        fig, ax = plt.subplots(figsize = (9,6))
+        ax.errorbar(bin_centers,data_counts,  color = 'black', fmt = 'o' ,markersize = 5, label = 'data (reduced)')
+        ax.bar(bin_centers, qcd_counts, width = bin_widths, color ='#b9ac70', label = 'QCD')
+        ax.bar(bin_centers, nqcd_counts, bottom = qcd_counts, color = 'grey', width = bin_widths, label = 'nQCD')
+        
+        ax.text(
+        0.025, 0.95,
+        "Private work (CMS data/simulation)",
+        fontsize=12,
+        verticalalignment='top',
+        fontproperties="Tex Gyre Heros:italic",
+        bbox=dict(facecolor="white", alpha=0, edgecolor="white", boxstyle="round,pad=0.5"),
+        transform=ax.transAxes
+    )
+        ax.set_ylabel('events')
+        ax.set_ylim(0, np.max([data_counts, qcd_counts, nqcd_counts]) * 1.3)
+        fig.legend(loc='upper right', bbox_to_anchor=(0.9, 0.95))
+        plt.tight_layout()
         plt.savefig(cfg["closure"][args.loc] + f'closure_plot_{fold}.png')
         plt.close()
 
@@ -1032,7 +1049,9 @@ def main():
         pd.DataFrame(log_rows).to_pickle(str(paths_training.autopath.joinpath('training_logs.pkl')))
 
         run_dir = Path(str(paths_training.autopath))
-        last_dir = Path("results") / "QCD" / "inclusive" / fold / "last"
+        print(run_dir)
+        last_dir = Path(temp_path) / "last"
+        print(last_dir)
         update_last_training_folder(run_dir=run_dir, last_dir=last_dir)
 
         

@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import logging
-from CustomLogging import setup_logging
+from classes.Logging import setup_logging
 from typing import Any, Callable, Dict, List, Union, Tuple
 from abc import ABC, abstractmethod
 

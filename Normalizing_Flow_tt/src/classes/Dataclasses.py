@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 
 
-import CODE.HELPER as helper
+import classes.helper as helper
 
 from dataclasses import KW_ONLY, dataclass
 from typing import (Any, Callable, Dict, Iterable, List, Protocol, Tuple,
