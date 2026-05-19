@@ -1,0 +1,4 @@
+variables: /work/tapp/TauFF/NF4FF/Normalizing_Flow_tt/configs/training_variables.yaml
+config_NF: /work/tapp/TauFF/NF4FF/Normalizing_Flow_tt/configs/config_NF.yaml
+datasets: /work/tapp/TauFF/NF4FF/Data/datasets/
+NF_results: /work/tapp/TauFF/NF4FF/Normalizing_Flow_tt/NF_results
