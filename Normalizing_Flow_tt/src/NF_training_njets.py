@@ -34,16 +34,11 @@ np.random.seed(SEED)
 random.seed(SEED)
 t.set_num_threads(8)
 
-# ----- path and variable setup -----
+# ----- path setup -----
 
 cfg_path = load_config('/work/tapp/TauFF/NF4FF/Normalizing_Flow_tt/configs/config_path.yaml')
 
-with open(cfg_path['variables'], 'r') as f:
-    variables = yaml.safe_load(f)['variables']
-
-logger = setup_logging(logger=logging.getLogger(__name__))
-log = LogContext(logger)
-
+# ----- global training parameters -----
 PATIENCE = 30
 
 # ----- how to handle njets -----
@@ -59,6 +54,7 @@ MODE_DIR_BY_TRAINING_MODEL = {
 }
 
 
+# ----- used taining parameters
 class Args(Tap):
 
     split_njets: bool = False  # Deprecated compatibility flag; maps to grouped mode when used alone.
@@ -67,10 +63,20 @@ class Args(Tap):
 
     training_model: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = TRAINING_MODEL_SINGLE  # Training mode: grouped split, single inclusive NF, or conditional NF with njets input.
     taus = [1, 2] #[1, 2, 12] # list of tau fakes
-    embedding: Literal["embedding", "no_embedding"] = "no_embedding" 
+    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
+    var: Literal["variables_5", "variables_8"] = "variables_5"
 
     def configure(self) -> None:
         self.add_argument('--split_njets', action='store_true')
+
+args = Args().parse_args()
+
+# ----- variables used in flows -----
+with open(cfg_path['variables'], 'r') as f:
+    variables = yaml.safe_load(f)[args.var]
+
+logger = setup_logging(logger=logging.getLogger(__name__))
+log = LogContext(logger)
 
 
 def resolve_training_model(args: Args) -> str:
@@ -96,6 +102,7 @@ class ProcessTrainingSpec:
     output_root: str
     dr_mask: Callable[[pd.DataFrame], pd.DataFrame]
     data_getter: Callable
+    tau: int
 
 
 def build_training_variables_tag(variables: list[str]) -> str:
@@ -341,10 +348,10 @@ def prepare_region_samples(data_complete, spec: ProcessTrainingSpec, test_size: 
 
     train_df, val_df = train_test_split(data_dr, test_size=test_size, random_state=random_state)
 
-    train_ar = mask_preselection_loose(AR_like(train_df, 1))
-    val_ar = mask_preselection_loose(AR_like(val_df, 1))
-    train_sr = mask_preselection_loose(SR_like(train_df, 1))
-    val_sr = mask_preselection_loose(SR_like(val_df, 1))
+    train_ar = mask_preselection_loose(AR_like(train_df, spec.tau))
+    val_ar = mask_preselection_loose(AR_like(val_df, spec.tau))
+    train_sr = mask_preselection_loose(SR_like(train_df, spec.tau))
+    val_sr = mask_preselection_loose(SR_like(val_df, spec.tau))
 
     numerator = pd.concat([train_ar[spec.weight_column], val_ar[spec.weight_column]]).sum()
     denominator = pd.concat([train_sr[spec.weight_column], val_sr[spec.weight_column]]).sum()
@@ -580,7 +587,7 @@ def train_process(spec: ProcessTrainingSpec, data_complete, config, device, trai
 # ----- main -----
 
 def main():
-    args = Args().parse_args()
+    #args = Args().parse_args()
     training_model = resolve_training_model(args)
 
     t.manual_seed(SEED)
@@ -599,19 +606,64 @@ def main():
     model_root_dir = Path(cfg_path['NF_results']) / mode_dir / f"training_{training_variables_tag}"
     logger.info("Model output root: %s", model_root_dir)
 
+    # ----- load data -----
     data_complete = pd.read_feather(cfg_path['datasets'] + args.embedding + '/combined_data_updated.feather')
     logger.info("Loaded %d total events", len(data_complete))
 
-    process_specs = [
-        ProcessTrainingSpec(
-            name='QCD',
-            region_sign_column='SS',
-            weight_column='weight_qcd',
-            output_root=str(model_root_dir / 'QCD' / 'all'),
-            dr_mask=mask_DR,
-            data_getter=get_my_data_qcd,
-        ),
-    ]
+    if args.taus == [1, 2]:
+        process_specs = [
+            ProcessTrainingSpec(
+                name='tau1',
+                region_sign_column='SS',
+                weight_column='weight_qcd',
+                output_root=str(model_root_dir / 'QCD' / 'all'),
+                dr_mask=mask_DR,
+                data_getter=get_my_data_qcd,
+                tau=args.taus[0],
+            ),
+            ProcessTrainingSpec(
+                name='tau2',
+                region_sign_column='SS',
+                weight_column='weight_qcd',
+                output_root=str(model_root_dir / 'QCD' / 'all'),
+                dr_mask=mask_DR,
+                data_getter=get_my_data_qcd,
+                tau=args.taus[2],
+            ),
+        ]
+    elif args.taus == [1, 2, 12]:
+        process_specs = [
+            ProcessTrainingSpec(
+                name='tau1',
+                region_sign_column='SS',
+                weight_column='weight_qcd',
+                output_root=str(model_root_dir / 'QCD' / 'all'),
+                dr_mask=mask_DR,
+                data_getter=get_my_data_qcd,
+                tau=args.taus[0],
+            ),
+            ProcessTrainingSpec(
+                name='tau2',
+                region_sign_column='SS',
+                weight_column='weight_qcd',
+                output_root=str(model_root_dir / 'QCD' / 'all'),
+                dr_mask=mask_DR,
+                data_getter=get_my_data_qcd,
+                tau=args.taus[2],
+            ),
+            ProcessTrainingSpec(
+                name='both_taus',
+                region_sign_column='SS',
+                weight_column='weight_qcd',
+                output_root=str(model_root_dir / 'QCD' / 'all'),
+                dr_mask=mask_DR,
+                data_getter=get_my_data_qcd,
+                tau=args.taus[12],
+            ),
+        ]
+    else:
+        raise ValueError(f"Invalid taus configuration: {args.taus}. Expected [1, 2] or [1, 2, 12].")
+
 
     for spec in process_specs:
         logger.info("Launching %s training in mode %s", spec.name, training_model)

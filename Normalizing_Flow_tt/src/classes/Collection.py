@@ -415,15 +415,6 @@ def load_grouped_qcd_njets_router(
 
 # ------- data loading -------
 
-def get_my_data_wjets(df, training_var):
-    _df = df
-
-    return _component_collection(
-        X=_df[training_var].to_numpy(dtype=np.float32),
-        weights=_df["weight_wjets"].to_numpy(dtype=np.float32),
-
-    )
-
 def get_my_data_qcd(df, training_var):
     _df = df
 
