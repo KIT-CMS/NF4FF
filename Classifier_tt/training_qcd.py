@@ -619,6 +619,8 @@ def main():
     # -----load variables from settings config
 
     variables = cfg["variables"]
+    print("Variables used for training:", variables)
+    exit()
     dim = len(variables)
 
 

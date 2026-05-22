@@ -132,18 +132,14 @@ def mask_preselection_loose(df):
 
 
 #todo: muss hier noch näheres spezifiziert werden? Ein cut zum anderen tau?
-def SR_like(df, tau):
+def SR_like(df):
     '''
     tau id passed at tight WP of the tau specified
     tau = 1, 2
     '''
-    if tau not in [1, 2, 12]:
-        raise ValueError(f"Invalid tau number: {tau}. Expected 1 or 2.")
-
-    if tau == 12:
-        mask = (df['id_tau_vsJet_Tight_1'] > 0.5) and (df['id_tau_vsJet_Tight_2'] > 0.5)
-    else:
-        mask = (df[f'id_tau_vsJet_Tight_{tau}'] > 0.5)
+    mask1 = df['id_tau_vsJet_Tight_1'] > 0.5
+    mask2 = df['id_tau_vsJet_Tight_2'] > 0.5
+    mask = (mask1 & mask2)
     return df[mask]
 
 
@@ -158,14 +154,17 @@ def AR_like(df, tau):
     if tau == 1:
         mask1 = (df['id_tau_vsJet_VLoose_1'] > 0.5) 
         mask2 = (df['id_tau_vsJet_Tight_1'] < 0.5)
+        mask3 = (df['id_tau_vsJet_Tight_2'] > 0.5)
     elif tau == 2:
         mask1 = (df['id_tau_vsJet_VLoose_2'] > 0.5) 
         mask2 = (df['id_tau_vsJet_Tight_2'] < 0.5)
+        mask3 = (df['id_tau_vsJet_Tight_1'] > 0.5)
     elif tau == 12:
         mask1 = (df['id_tau_vsJet_VLoose_1'] > 0.5) & (df['id_tau_vsJet_VLoose_2'] > 0.5)
         mask2 = (df['id_tau_vsJet_Tight_1'] < 0.5) & (df['id_tau_vsJet_Tight_2'] < 0.5)
+        mask3 = None
     
-    mask = (mask1 & mask2)
+    mask = (mask1 & mask2 & mask3)
     return df[mask]
 
 
@@ -350,8 +349,8 @@ def prepare_region_samples(data_complete, spec: ProcessTrainingSpec, test_size: 
 
     train_ar = mask_preselection_loose(AR_like(train_df, spec.tau))
     val_ar = mask_preselection_loose(AR_like(val_df, spec.tau))
-    train_sr = mask_preselection_loose(SR_like(train_df, spec.tau))
-    val_sr = mask_preselection_loose(SR_like(val_df, spec.tau))
+    train_sr = mask_preselection_loose(SR_like(train_df))
+    val_sr = mask_preselection_loose(SR_like(val_df))
 
     numerator = pd.concat([train_ar[spec.weight_column], val_ar[spec.weight_column]]).sum()
     denominator = pd.concat([train_sr[spec.weight_column], val_sr[spec.weight_column]]).sum()
@@ -616,7 +615,7 @@ def main():
                 name='tau1',
                 region_sign_column='SS',
                 weight_column='weight_qcd',
-                output_root=str(model_root_dir / 'QCD' / 'all'),
+                output_root=str(model_root_dir / 'tau1' / 'all'),
                 dr_mask=mask_DR,
                 data_getter=get_my_data_qcd,
                 tau=args.taus[0],
@@ -625,10 +624,10 @@ def main():
                 name='tau2',
                 region_sign_column='SS',
                 weight_column='weight_qcd',
-                output_root=str(model_root_dir / 'QCD' / 'all'),
+                output_root=str(model_root_dir / 'tau2' / 'all'),
                 dr_mask=mask_DR,
                 data_getter=get_my_data_qcd,
-                tau=args.taus[2],
+                tau=args.taus[1],
             ),
         ]
     elif args.taus == [1, 2, 12]:
@@ -637,7 +636,7 @@ def main():
                 name='tau1',
                 region_sign_column='SS',
                 weight_column='weight_qcd',
-                output_root=str(model_root_dir / 'QCD' / 'all'),
+                output_root=str(model_root_dir / 'tau1' / 'all'),
                 dr_mask=mask_DR,
                 data_getter=get_my_data_qcd,
                 tau=args.taus[0],
@@ -646,23 +645,47 @@ def main():
                 name='tau2',
                 region_sign_column='SS',
                 weight_column='weight_qcd',
-                output_root=str(model_root_dir / 'QCD' / 'all'),
+                output_root=str(model_root_dir / 'tau2' / 'all'),
                 dr_mask=mask_DR,
                 data_getter=get_my_data_qcd,
-                tau=args.taus[2],
+                tau=args.taus[1],
             ),
             ProcessTrainingSpec(
                 name='both_taus',
                 region_sign_column='SS',
                 weight_column='weight_qcd',
+                output_root=str(model_root_dir / 'tau12' / 'all'),
+                dr_mask=mask_DR,
+                data_getter=get_my_data_qcd,
+                tau=args.taus[2],
+            ),
+        ]
+    elif args.taus == 1:
+        process_specs = [
+            ProcessTrainingSpec(
+                name='tau1',
+                region_sign_column='SS',
+                weight_column='weight_qcd',
                 output_root=str(model_root_dir / 'QCD' / 'all'),
                 dr_mask=mask_DR,
                 data_getter=get_my_data_qcd,
-                tau=args.taus[12],
+                tau=args.taus,
             ),
         ]
+    elif args.taus == 2:
+        process_specs = [
+            ProcessTrainingSpec(
+                name='tau2',
+                region_sign_column='SS',
+                weight_column='weight_qcd',
+                output_root=str(model_root_dir / 'QCD' / 'all'),
+                dr_mask=mask_DR,
+                data_getter=get_my_data_qcd,
+                tau=args.taus,
+            ),
+        ]    
     else:
-        raise ValueError(f"Invalid taus configuration: {args.taus}. Expected [1, 2] or [1, 2, 12].")
+        raise ValueError(f"Invalid taus configuration: {args.taus}. Expected 1, 2, [1, 2] or [1, 2, 12].")
 
 
     for spec in process_specs:
