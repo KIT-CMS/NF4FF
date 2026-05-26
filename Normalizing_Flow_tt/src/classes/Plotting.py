@@ -4,7 +4,7 @@ import numpy as np
 
 def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
     ax[0].set_title(
-        r"$e\tau_h$",
+        r"$\tau_h\tau_h$",
         fontsize=20,
         loc="left",
         fontproperties="Tex Gyre Heros"

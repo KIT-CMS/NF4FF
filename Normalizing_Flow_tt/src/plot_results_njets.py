@@ -55,7 +55,7 @@ class Args(Tap):
     #classifier_corrections_training_tag: str = ''  # Optional Wjets correction training folder suffix in binary_classifier_corrections. Empty -> pick most recent.
     #classifier_corrections_hidden_layers: int = -1  # Wjets correction model hidden layers; -1 means reuse `classifier_hidden_layers`.
     plot_training_diagnostics: bool = False   # Plot training loss / learning-rate / time-per-epoch curves.
-    plot_nf_sampling: bool = False           # Plot NF-sampled vs data histograms in training variables.
+    plot_nf_sampling: bool = True           # Plot NF-sampled vs data histograms in training variables.
     plot_ff_results: bool = True             # Plot fake-factor comparison stacks for each njets category.
     plot_ar_data_with_clipping: bool = False  # Plot AR data with both kept and excluded events (by clipping mask).
     plot_taylor_coefficients: bool = False   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
@@ -179,7 +179,7 @@ def _build_training_variables_prefix(variables: list[str]) -> str:
     return f"vars{len(variables)}_{readable_tail}"
 
 
-def resolve_training_tag(variables: list[str], mode_dir: str, base_dir: str = 'Training_results_new') -> str:
+def resolve_training_tag(variables: list[str], mode_dir: str, base_dir: str = cfg_path['NF_results']) -> str:
     """
     Glob for a training folder whose name starts with 'training_<prefix>'
     (ignoring the trailing hash).  Returns the folder-name suffix that follows
@@ -2406,28 +2406,23 @@ def run_plots_for_njets_category(category_name, njets_title):
 
     elif args.embedding == 'no_embedding': #Todo
         process_map = load_config(cfg_path['process_map_no_emb'])
-        print("Process map for no embedding:", process_map)
-        print(process_map["diboson_J"])
-        print(data_AR["process"].value_counts())
-        exit()
-        data_diboson_AR_OS = data_AR[((data_AR.process == 2) | (data_AR.process == 3))]
-        data_DY_AR_OS = data_AR[(data_AR.process == 4) | (data_AR.process == 5)]
-        data_ST_AR_OS = data_AR[(data_AR.process == 6) | (data_AR.process == 7)]
-        data_ttbar_L_AR_OS = data_AR[(data_AR.process == 9)]
-        data_embedding_AR_OS = data_AR[(data_AR.process == 10)]
+        
+        # ----- AR OS -----
+        data_diboson_AR_OS = data_AR[((data_AR.process == process_map["diboson_J"]) | (data_AR.process == process_map["diboson_L"]) | (data_AR.process == process_map["diboson_T"]))]
+        data_DY_AR_OS = data_AR[(data_AR.process == process_map["DYjets_J"]) | (data_AR.process == process_map["DYjets_L"]) | (data_AR.process == process_map["DYjets_T"])]
+        data_ST_AR_OS = data_AR[(data_AR.process == process_map["ST_J"]) | (data_AR.process == process_map["ST_L"]) | (data_AR.process == process_map["ST_T"])]
+        data_ttbar_AR_OS = data_AR[(data_AR.process == process_map["ttbar_J"]) | (data_AR.process == process_map["ttbar_L"]) | (data_AR.process == process_map["ttbar_T"])]
 
         data_diboson_AR_OS_nf, _ = normalizing_flow_ff(data_diboson_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_qcd=classifier_features_qcd)
         data_DY_AR_OS_nf, _ = normalizing_flow_ff(data_DY_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_qcd=classifier_features_qcd)
         data_ST_AR_OS_nf, _ = normalizing_flow_ff(data_ST_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_qcd=classifier_features_qcd)
-        data_ttbar_L_AR_OS_nf, _ = normalizing_flow_ff(data_ttbar_L_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_qcd=classifier_features_qcd)
-        data_embedding_AR_OS_nf, _ = normalizing_flow_ff(data_embedding_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_qcd=classifier_features_qcd)
+        data_ttbar_AR_OS_nf, _ = normalizing_flow_ff(data_ttbar_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_qcd=classifier_features_qcd)
 
-        data_events = data_SR_OS[(data_SR_OS.process == 0)]
-        data_diboson_SR_OS = data_SR_OS[(data_SR_OS.process == 2) | (data_SR_OS.process == 3)]
-        data_DY_SR_OS = data_SR_OS[(data_SR_OS.process == 4) | (data_SR_OS.process == 5)]
-        data_ST_SR_OS = data_SR_OS[(data_SR_OS.process == 6) | (data_SR_OS.process == 7)]
-        data_ttbar_L_SR_OS = data_SR_OS[(data_SR_OS.process == 9)]
-        data_embedding_SR_OS = data_SR_OS[(data_SR_OS.process == 10)]
+        data_events = data_SR_OS[(data_SR_OS.process == process_map["data"])]
+        data_diboson_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["diboson_J"]) | (data_SR_OS.process == process_map["diboson_L"]) | (data_SR_OS.process == process_map["diboson_T"])]
+        data_DY_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["DYjets_J"]) | (data_SR_OS.process == process_map["DYjets_L"]) | (data_SR_OS.process == process_map["DYjets_T"])]
+        data_ST_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["ST_J"]) | (data_SR_OS.process == process_map["ST_L"]) | (data_SR_OS.process == process_map["ST_T"])]
+        data_ttbar_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["ttbar_J"]) | (data_SR_OS.process == process_map["ttbar_L"]) | (data_SR_OS.process == process_map["ttbar_T"])]
 
         #data_AR_OS_classic = total_ff_corrected(data_AR_OS)
         #data_diboson_AR_OS_classic = total_ff_corrected(data_diboson_AR_OS)
@@ -2438,7 +2433,7 @@ def run_plots_for_njets_category(category_name, njets_title):
 
         total_variables = len(list_variables)
         for index, (var, bins, xlabel) in enumerate(zip(list_variables, list_bins, list_xlabels), start=1):
-            if should_log_plot_progress(index, total_variables):
+            if should_log_plot_progress(index, total_variables, 1):
                 logger.info(
                     "Plotting %s: %d/%d variables (%s)",
                     category_name,
@@ -2467,16 +2462,14 @@ def run_plots_for_njets_category(category_name, njets_title):
             counts_ff_data2, _ = np.histogram(data_AR_OS_nf[var], bins=bins)#, weights=data_AR_OS_nf['ff_nf']**2, bins=bins)
 
             counts_ff_diboson, _ = np.histogram(data_diboson_AR_OS_nf[var], weights=data_diboson_AR_OS_nf.weight, bins=bins)# * data_diboson_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_diboson2, _ = np.histogram(data_diboson_AR_OS_nf[var], weights=data_diboson_AR_OS_nf.weight, bins=bins)# * data_diboson_AR_OS_nf['ff_nf'])**2, bins=bins)
+            counts_ff_diboson2, _ = np.histogram(data_diboson_AR_OS_nf[var], weights=data_diboson_AR_OS_nf.weight**2, bins=bins)# * data_diboson_AR_OS_nf['ff_nf'])**2, bins=bins)
             counts_ff_DY, _ = np.histogram(data_DY_AR_OS_nf[var], weights=data_DY_AR_OS_nf.weight, bins=bins)# * data_DY_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_DY2, _ = np.histogram(data_DY_AR_OS_nf[var], weights=data_DY_AR_OS_nf.weight, bins=bins)# * data_DY_AR_OS_nf['ff_nf'])**2, bins=bins)
+            counts_ff_DY2, _ = np.histogram(data_DY_AR_OS_nf[var], weights=data_DY_AR_OS_nf.weight**2, bins=bins)# * data_DY_AR_OS_nf['ff_nf'])**2, bins=bins)
             counts_ff_ST, _ = np.histogram(data_ST_AR_OS_nf[var], weights=data_ST_AR_OS_nf.weight, bins=bins)# * data_ST_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_ST2, _ = np.histogram(data_ST_AR_OS_nf[var], weights=data_ST_AR_OS_nf.weight, bins=bins)# * data_ST_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_ttbar_L, _ = np.histogram(data_ttbar_L_AR_OS_nf[var], weights=data_ttbar_L_AR_OS_nf.weight, bins=bins)# * data_ttbar_L_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_ttbar_L2, _ = np.histogram(data_ttbar_L_AR_OS_nf[var], weights=data_ttbar_L_AR_OS_nf.weight, bins=bins)# * data_ttbar_L_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_embedding, _ = np.histogram(data_embedding_AR_OS_nf[var], weights=data_embedding_AR_OS_nf.weight, bins=bins)# * data_embedding_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_embedding2, _ = np.histogram(data_embedding_AR_OS_nf[var], weights=data_embedding_AR_OS_nf.weight, bins=bins)# * data_embedding_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_FF = counts_ff_data - counts_ff_diboson - counts_ff_DY - counts_ff_ST - counts_ff_ttbar_L - counts_ff_embedding
+            counts_ff_ST2, _ = np.histogram(data_ST_AR_OS_nf[var], weights=data_ST_AR_OS_nf.weight**2, bins=bins)# * data_ST_AR_OS_nf['ff_nf'])**2, bins=bins)
+            counts_ff_ttbar, _ = np.histogram(data_ttbar_AR_OS_nf[var], weights=data_ttbar_AR_OS_nf.weight, bins=bins)# * data_ttbar_L_AR_OS_nf['ff_nf'], bins=bins)
+            counts_ff_ttbar2, _ = np.histogram(data_ttbar_AR_OS_nf[var], weights=data_ttbar_AR_OS_nf.weight**2, bins=bins)# * data_ttbar_L_AR_OS_nf['ff_nf'])**2, bins=bins)
+            counts_FF = counts_ff_data - counts_ff_diboson - counts_ff_DY - counts_ff_ST - counts_ff_ttbar
 
             counts_diboson, _ = np.histogram(data_diboson_SR_OS[var], weights=data_diboson_SR_OS.weight, bins=bins)
             counts_diboson2, _ = np.histogram(data_diboson_SR_OS[var], weights=data_diboson_SR_OS.weight**2, bins=bins)
@@ -2484,11 +2477,9 @@ def run_plots_for_njets_category(category_name, njets_title):
             counts_DY2, _ = np.histogram(data_DY_SR_OS[var], weights=data_DY_SR_OS.weight**2, bins=bins)
             counts_ST, _ = np.histogram(data_ST_SR_OS[var], weights=data_ST_SR_OS.weight, bins=bins)
             counts_ST2, _ = np.histogram(data_ST_SR_OS[var], weights=data_ST_SR_OS.weight**2, bins=bins)
-            counts_ttbar_L, _ = np.histogram(data_ttbar_L_SR_OS[var], weights=data_ttbar_L_SR_OS.weight, bins=bins)
-            counts_ttbar_L2, _ = np.histogram(data_ttbar_L_SR_OS[var], weights=data_ttbar_L_SR_OS.weight**2, bins=bins)
-            counts_embedding, _ = np.histogram(data_embedding_SR_OS[var], weights=data_embedding_SR_OS.weight, bins=bins)
-            counts_embedding2, _ = np.histogram(data_embedding_SR_OS[var], weights=data_embedding_SR_OS.weight**2, bins=bins)
-
+            counts_ttbar, _ = np.histogram(data_ttbar_SR_OS[var], weights=data_ttbar_SR_OS.weight, bins=bins)
+            counts_ttbar2, _ = np.histogram(data_ttbar_SR_OS[var], weights=data_ttbar_SR_OS.weight**2, bins=bins)
+            
             counts_data, _ = np.histogram(data_events[var], bins=bins)
 
             bin_widths = np.diff(bins)
@@ -2510,117 +2501,115 @@ def run_plots_for_njets_category(category_name, njets_title):
             y_error = np.sqrt(counts_data)
             x_error = 0.5 * bin_widths
             num = np.sqrt(
-                counts_ff_data2 + counts_ff_diboson2 + counts_ff_ttbar_L2 +
-                counts_ff_embedding2 + counts_ff_ST2 + counts_ff_DY2 +
+                counts_ff_data2 + 
+                counts_ff_diboson2 + counts_ff_ttbar2 + counts_ff_ST2 + counts_ff_DY2 +
+                counts_diboson2 + counts_ttbar2 + counts_DY2 + counts_ST2
+            )
+
+            den = (
+                counts_FF + counts_diboson + 
+                counts_ttbar + counts_ST + counts_DY
+            )
+
+            y_error_stat = np.divide(num, den, out=np.zeros_like(num), where=den != 0)
+        
+            """
+            num_classic = np.sqrt(
+                counts_ff_data_classic2 + counts_ff_diboson_classic2 +
+                counts_ff_ttbar_L_classic2 + counts_ff_embedding_classic2 +
+                counts_ff_ST_classic2 + counts_ff_DY_classic2 +
                 counts_diboson2 + counts_ttbar_L2 + counts_embedding2 +
                 counts_DY2 + counts_ST2
             )
 
-            den = (
-                counts_FF + counts_diboson + counts_ttbar_L +
+            den_classic = (
+                counts_FF_classic + counts_diboson + counts_ttbar_L +
                 counts_embedding + counts_ST + counts_DY
             )
 
-            y_error_stat = np.divide(num, den, out=np.zeros_like(num), where=den != 0)
-
-        """
-        num_classic = np.sqrt(
-            counts_ff_data_classic2 + counts_ff_diboson_classic2 +
-            counts_ff_ttbar_L_classic2 + counts_ff_embedding_classic2 +
-            counts_ff_ST_classic2 + counts_ff_DY_classic2 +
-            counts_diboson2 + counts_ttbar_L2 + counts_embedding2 +
-            counts_DY2 + counts_ST2
-        )
-
-        den_classic = (
-            counts_FF_classic + counts_diboson + counts_ttbar_L +
-            counts_embedding + counts_ST + counts_DY
-        )
-
-        y_error_stat_classic = np.divide(
-            num_classic,
-            den_classic,
-            out=np.zeros_like(num_classic),
-            where=den_classic != 0
-        )
-        """ 
-        stack_components = [
-            (counts_diboson, "#94a4a2", 'Diboson'),
-            (counts_ttbar_L, '#832db6', r'$t\bar{t} \to \tau$'),
-            (counts_ST, "#717581", r"Single t"),
-            (counts_DY, '#3f90da', r'$Z \to \ell \ell$'),
-            (counts_FF, "#a96b59", r'Jet $\rightarrow \tau_h$'),
-            (counts_embedding, '#ffa90e', r'$\tau$ embedded'),
-        ]
-        counts_stack_total = draw_stacked_stepfill(ax[0], bin_edges, stack_components)
-        ax[0].stairs(counts_stack_total, bin_edges, color='black', linewidth=0.7)
-
-        ax[0].errorbar(bin_centers, counts_data, yerr=y_error, xerr=x_error, fmt='o', color='black', label='Data', markersize=6, elinewidth=1.2, capsize=0)
-        ax[0].set_ylabel("Events")
-        handles, labels = ax[0].get_legend_handles_labels()
-        handles = handles[::-1]
-        labels = labels[::-1]
-        handles, labels = reorder_for_rowwise_legend(handles, labels, ncol=4)
-        ax[0].legend(handles, labels, title=' ', title_fontsize=20, loc='upper left', ncol=4, frameon=False)
-        adjust_ylim_for_legend(ax[0])
-        ax[0].tick_params(direction='in', top=True, right=True)
-
-        ax[1].errorbar(
-            bin_centers,
-            np.divide(counts_data, den, out=np.zeros_like(counts_data, dtype=float), where=den != 0),
-            xerr=x_error,
-            yerr=np.divide(y_error, counts_data, out=np.zeros_like(counts_data, dtype=float), where=counts_data != 0),
-            fmt='o',
-            color='black',
-            markersize=6,
-            label=(r'NN $F_\text{F}$' if args.ff_estimator == 'binary_classifier' else r'NF $F_\text{F}$')
-        )
-        ax[1].fill_between(bin_centers, 1 - y_error_stat, 1 + y_error_stat, color="gray", alpha=0.3, step='mid', label="Stat. Unc.")
-        ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
-        ax[1].set_ylabel("Data / Model")
-        ax[1].set_ylim([args.ratio_ylim_min, args.ratio_ylim_max])
-        ax[1].grid(True, linestyle=':', alpha=0.7)
-        ax[1].tick_params(direction='in', top=True, right=True)
-        ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
-
-        ax[2].axis('off')
-        """
-        ax[3].errorbar(
-            bin_centers,
-            np.divide(counts_data, den_classic, out=np.zeros_like(counts_data, dtype=float), where=den_classic != 0),
-            xerr=x_error,
-            yerr=np.divide(y_error, counts_data, out=np.zeros_like(counts_data, dtype=float), where=counts_data != 0),
-            fmt='o',
-            color='black',
-            markersize=6,
-            label=r'Cor class $F_\text{F}$ '
-        )
-        ax[3].fill_between(bin_centers, 1 - y_error_stat_classic, 1 + y_error_stat_classic, color="gray", alpha=0.3, step='mid', label="Stat. Unc.")
-        ax[3].axhline(1, color='red', linestyle='--', linewidth=1.5)
-        ax[3].set_ylabel("Data / Model")
-        ax[3].set_ylim([args.ratio_ylim_min, args.ratio_ylim_max])
-        ax[3].grid(True, linestyle=':', alpha=0.7)
-        ax[3].tick_params(direction='in', top=True, right=True)
-        ax[3].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
-        ax[3].set_xlabel(xlabel)
-        """
-        fig.savefig(category_plot_dir / f'{var}.png')
-        fig.savefig(category_plot_dir / f'{var}.pdf')
-        plt.close(fig)
-
-        # Plot AR data with clipping information if requested
-        if args.plot_ar_data_with_clipping:
-            plot_ar_data_with_clipping_info(
-                var=var,
-                bins=bins,
-                xlabel=xlabel,
-                data_ar_os_full=data_AR_OS,
-                clipping_mask=ar_os_clipping_mask,
-                njets_title=njets_title,
-                output_dir=category_plot_dir,
+            y_error_stat_classic = np.divide(
+                num_classic,
+                den_classic,
+                out=np.zeros_like(num_classic),
+                where=den_classic != 0
             )
-        else:
-            raise ValueError(f"Invalid taus configuration: {args.embedding}. Expected embedding or no_embedding.")
+            """ 
+            stack_components = [
+                (counts_diboson, "#94a4a2", 'Diboson'),
+                (counts_ttbar, '#832db6', r'$t\bar{t} \to \tau$'),
+                (counts_ST, "#717581", r"Single t"),
+                (counts_DY, '#3f90da', r'$Z \to \ell \ell$'),
+                (counts_FF, "#a96b59", r'Jet $\rightarrow \tau_h$'),
+            ]
+            counts_stack_total = draw_stacked_stepfill(ax[0], bin_edges, stack_components)
+            ax[0].stairs(counts_stack_total, bin_edges, color='black', linewidth=0.7)
+
+            ax[0].errorbar(bin_centers, counts_data, yerr=y_error, xerr=x_error, fmt='o', color='black', label='Data', markersize=6, elinewidth=1.2, capsize=0)
+            ax[0].set_ylabel("Events")
+            handles, labels = ax[0].get_legend_handles_labels()
+            handles = handles[::-1]
+            labels = labels[::-1]
+            handles, labels = reorder_for_rowwise_legend(handles, labels, ncol=4)
+            ax[0].legend(handles, labels, title=' ', title_fontsize=20, loc='upper right', ncol=3, frameon=False)
+            adjust_ylim_for_legend(ax[0])
+            ax[0].tick_params(direction='in', top=True, right=True)
+
+            ax[1].errorbar(
+                bin_centers,
+                np.divide(counts_data, den, out=np.zeros_like(counts_data, dtype=float), where=den != 0),
+                xerr=x_error,
+                yerr=np.divide(y_error, counts_data, out=np.zeros_like(counts_data, dtype=float), where=counts_data != 0),
+                fmt='o',
+                color='black',
+                markersize=6,
+                label=(r'NN $\text{F}_\text{F}$' if args.ff_estimator == 'binary_classifier' else r'NF $\text{F}_\text{F}$')
+            )
+            ax[1].fill_between(bin_centers, 1 - y_error_stat, 1 + y_error_stat, color="gray", alpha=0.3, step='mid', label="Stat. Unc.")
+            ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
+            ax[1].set_ylabel("Data / Model")
+            ax[1].set_ylim([args.ratio_ylim_min, args.ratio_ylim_max])
+            ax[1].grid(True, linestyle=':', alpha=0.7)
+            ax[1].tick_params(direction='in', top=True, right=True)
+            ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
+
+            ax[2].axis('off')
+            """
+            ax[3].errorbar(
+                bin_centers,
+                np.divide(counts_data, den_classic, out=np.zeros_like(counts_data, dtype=float), where=den_classic != 0),
+                xerr=x_error,
+                yerr=np.divide(y_error, counts_data, out=np.zeros_like(counts_data, dtype=float), where=counts_data != 0),
+                fmt='o',
+                color='black',
+                markersize=6,
+                label=r'Cor class $F_\text{F}$ '
+            )
+            ax[3].fill_between(bin_centers, 1 - y_error_stat_classic, 1 + y_error_stat_classic, color="gray", alpha=0.3, step='mid', label="Stat. Unc.")
+            ax[3].axhline(1, color='red', linestyle='--', linewidth=1.5)
+            ax[3].set_ylabel("Data / Model")
+            ax[3].set_ylim([args.ratio_ylim_min, args.ratio_ylim_max])
+            ax[3].grid(True, linestyle=':', alpha=0.7)
+            ax[3].tick_params(direction='in', top=True, right=True)
+            ax[3].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
+            ax[3].set_xlabel(xlabel)
+            """
+            fig.savefig(category_plot_dir / f'{var}.png')
+            fig.savefig(category_plot_dir / f'{var}.pdf')
+            plt.close(fig)
+
+            # Plot AR data with clipping information if requested
+            if args.plot_ar_data_with_clipping:
+                plot_ar_data_with_clipping_info(
+                    var=var,
+                    bins=bins,
+                    xlabel=xlabel,
+                    data_ar_os_full=data_AR_OS,
+                    clipping_mask=ar_os_clipping_mask,
+                    njets_title=njets_title,
+                    output_dir=category_plot_dir,
+                )
+    else:
+        raise ValueError(f"Invalid taus configuration: {args.embedding}. Expected embedding or no_embedding.")
 
     logger.info("Finished %s: saved plots to %s", category_name, category_plot_dir)
 
@@ -2658,14 +2647,17 @@ def main() -> None:
     initialize_runtime_context()
 
     # Step 2: optional model interpretability diagnostics (Taylor analysis)
+    print(" ")
     logger.info('Step 2/4: Running optional Taylor diagnostics')
     run_taylor_plots_if_requested()
 
     # Step 3: produce category-wise plots (0, 1, >=2, inclusive)
+    print(" ")
     logger.info('Step 3/4: Producing njets-category plots')
     run_all_njets_categories()
 
     # Step 4: finalize
+    print(" ")
     logger.info('Step 4/4: Completed all njets plot categories')
 
 
