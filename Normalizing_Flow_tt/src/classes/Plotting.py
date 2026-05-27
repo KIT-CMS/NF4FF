@@ -4,35 +4,36 @@ import numpy as np
 
 def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
     ax[0].set_title(
-        r"$\tau_h\tau_h$",
-        fontsize=20,
+        r"$\mathrm{\tau_h\tau_h}$",
+        #fontsize=20,
         loc="left",
-        fontproperties="Tex Gyre Heros"
+        #fontproperties="Tex Gyre Heros"
     )
 
-def CMS_NJETS_TITLE(ax, title=r"$N_{jets} \geq 0$", *args, **kwargs):
+def CMS_NJETS_TITLE(ax, title=r"$\mathrm{N_{jets}} \geq 0$", *args, **kwargs):
     ax[0].set_title(
         title,
-        fontsize=20,
+        #fontsize=20,
         loc="center",
-        fontproperties="Tex Gyre Heros"
+        #fontproperties="Tex Gyre Heros"
     )
 
 def CMS_LUMI_TITLE(ax, *args, **kwargs):
     ax[0].set_title(
-        "59.8 $fb^{-1}$ (2018, 13 TeV)",
-        fontsize=20,
+        "59.8 $\mathrm{fb}^{-1}$ (2018, 13 TeV)",
+        #fontsize=20,
         loc="right",
-        fontproperties="Tex Gyre Heros"
+        #fontproperties="Tex Gyre Heros"
     )
 
 def CMS_LABEL(ax, *args, **kwargs):
     ax[0].text(
         0.025, 0.95,
         "Private work (CMS data/simulation)",
-        fontsize=15,
+        fontsize=20,
         verticalalignment='top',
-        fontproperties="Tex Gyre Heros:italic",
+        style ="italic",
+        #fontproperties="Tex Gyre Heros:italic",
         bbox=dict(facecolor="white", alpha=0, edgecolor="white", boxstyle="round,pad=0.5"),
         transform=ax[0].transAxes
     )

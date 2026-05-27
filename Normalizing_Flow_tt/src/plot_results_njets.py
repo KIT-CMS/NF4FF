@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 import yaml
 from tap import Tap
+import mplhep as hep
 from classes.Logging import setup_logging
 from classes.NeuralNetworks import RealNVP, RealNVP_NN, AffineCoupling, MLP, ConditionalRealNVP, BinaryClassifier
 import correctionlib as cr
@@ -51,11 +52,8 @@ class Args(Tap):
     ff_estimator: Literal['nf', 'binary_classifier'] = 'nf'  # FF backend: use NF models or SR/AR binary-classifier models.
     classifier_training_tag: str = ''  # Optional classifier training folder suffix after 'training_'. Empty -> pick most recent.
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
-    #apply_wjets_binary_correction: bool = True  # Apply Wjets event-wise antiDR/DR correction in binary-classifier mode.
-    #classifier_corrections_training_tag: str = ''  # Optional Wjets correction training folder suffix in binary_classifier_corrections. Empty -> pick most recent.
-    #classifier_corrections_hidden_layers: int = -1  # Wjets correction model hidden layers; -1 means reuse `classifier_hidden_layers`.
     plot_training_diagnostics: bool = False   # Plot training loss / learning-rate / time-per-epoch curves.
-    plot_nf_sampling: bool = True           # Plot NF-sampled vs data histograms in training variables.
+    plot_nf_sampling: bool = False           # Plot NF-sampled vs data histograms in training variables.
     plot_ff_results: bool = True             # Plot fake-factor comparison stacks for each njets category.
     plot_ar_data_with_clipping: bool = False  # Plot AR data with both kept and excluded events (by clipping mask).
     plot_taylor_coefficients: bool = False   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
@@ -682,7 +680,7 @@ def plot_pdf_distributions(
     CMS_CHANNEL_TITLE([ax])
     CMS_LUMI_TITLE([ax])
     CMS_LABEL([ax])
-    CMS_NJETS_TITLE([ax], title=r"$N_{jets} \geq 0$")
+    CMS_NJETS_TITLE([ax], title=r"$\mathrm{N_{jets}} \geq 0$")
 
     # ---------------------------------------------------------
     # Output filenames
@@ -1286,9 +1284,9 @@ def initialize_runtime_context() -> None:
         list_variables = variables
 
     with open(cfg_path['labels'], 'r') as f:
-        labels = yaml.safe_load(f)['et']
+        labels = yaml.safe_load(f)['tt']
     with open(cfg_path['labels_short'], 'r') as f:
-        labels_short = yaml.safe_load(f)['et']
+        labels_short = yaml.safe_load(f)['tt']
     list_xlabels = [labels[k] for k in list_variables]
 
     bins_by_variable = _build_main_bins_by_variable()
@@ -1455,6 +1453,11 @@ def plot_nf_sampling_training_variables(category_name: str, njets_title: str, da
                 color='black',
                 label=f'Data ({len(data_values)})',
             )
+
+            #print(labels.get(var))
+            #print(labels.get(var, var))
+            #print(labels[var])
+            #print(var)
 
             axis.set_title(title)
             axis.set_xlabel(labels.get(var, var))
@@ -2223,6 +2226,7 @@ def plot_ar_data_with_clipping_info(
 
 
 def run_plots_for_njets_category(category_name, njets_title):
+    hep.style.use(hep.style.CMS)  # Use CMS style for all plots in this category
     category_plot_dir = plot_root_dir / category_name
     category_plot_dir.mkdir(parents=True, exist_ok=True)
 
@@ -2319,6 +2323,7 @@ def run_plots_for_njets_category(category_name, njets_title):
 
         total_variables = len(list_variables)
         for index, (var, bins, xlabel) in enumerate(zip(list_variables, list_bins, list_xlabels), start=1):
+            
             if should_log_plot_progress(index, total_variables):
                 logger.info(
                     "Plotting %s: %d/%d variables (%s)",
@@ -2454,7 +2459,7 @@ def run_plots_for_njets_category(category_name, njets_title):
                 fmt='o',
                 color='black',
                 markersize=6,
-                label=(r'NN $\text{F}_\text{F}$' if args.ff_estimator == 'binary_classifier' else r'NF $\text{F}_\text{F}$')
+                label=(r'NN $\F_\text{F}$' if args.ff_estimator == 'binary_classifier' else r'NF $F_\text{F}$')
             )
             ax[1].fill_between(bin_centers, 1 - y_error_stat, 1 + y_error_stat, color="gray", alpha=0.3, step='mid', label="Stat. Unc.")
             ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
@@ -2463,7 +2468,7 @@ def run_plots_for_njets_category(category_name, njets_title):
             ax[1].grid(True, linestyle=':', alpha=0.7)
             ax[1].tick_params(direction='in', top=True, right=True)
             ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
-
+            
             ax[2].axis('off')
             """
             ax[3].errorbar(
@@ -2500,7 +2505,8 @@ def run_plots_for_njets_category(category_name, njets_title):
                     njets_title=njets_title,
                     output_dir=category_plot_dir,
                 )
-    elif args.embedding == 'no_embedding': #Todo
+
+    elif args.embedding == 'no_embedding':
         process_map = load_config(cfg_path['process_map_no_emb'])
         
         # ----- AR OS -----
@@ -2582,10 +2588,10 @@ def run_plots_for_njets_category(category_name, njets_title):
             bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
 
             fig, ax = plt.subplots(
-                3, 1,
+                2, 1,
                 figsize=(9,9),
                 sharex=True,
-                gridspec_kw={'height_ratios': [4,1,0.2], 'hspace': 0.05},
+                gridspec_kw={'height_ratios': [4,1], 'hspace': 0.05},
                 constrained_layout=True
             )
 
@@ -2638,17 +2644,19 @@ def run_plots_for_njets_category(category_name, njets_title):
                 (counts_FF, "#a96b59", r'Jet $\rightarrow \tau_h$'),
             ]
             counts_stack_total = draw_stacked_stepfill(ax[0], bin_edges, stack_components)
+            #todo: xlabel?
             ax[0].stairs(counts_stack_total, bin_edges, color='black', linewidth=0.7)
 
             ax[0].errorbar(bin_centers, counts_data, yerr=y_error, xerr=x_error, fmt='o', color='black', label='Data', markersize=6, elinewidth=1.2, capsize=0)
-            ax[0].set_ylabel("Events")
+            ax[0].set_ylabel("Events", fontsize=23)
             handles, labels = ax[0].get_legend_handles_labels()
             handles = handles[::-1]
             labels = labels[::-1]
-            handles, labels = reorder_for_rowwise_legend(handles, labels, ncol=4)
-            ax[0].legend(handles, labels, title=' ', title_fontsize=20, loc='upper right', ncol=3, frameon=False)
+            handles, labels = reorder_for_rowwise_legend(handles, labels, ncol=3)
+            ax[0].legend(handles, labels, title=' ', loc='upper right', ncol=3, frameon=False, fontsize='x-small')
             adjust_ylim_for_legend(ax[0])
             ax[0].tick_params(direction='in', top=True, right=True)
+            #ax[0].ticklabel_format(style='sci', axis='y', scilimits=(3,3))
 
             ax[1].errorbar(
                 bin_centers,
@@ -2658,17 +2666,17 @@ def run_plots_for_njets_category(category_name, njets_title):
                 fmt='o',
                 color='black',
                 markersize=6,
-                label=(r'NN $\text{F}_\text{F}$' if args.ff_estimator == 'binary_classifier' else r'NF $\text{F}_\text{F}$')
+                label=(r'NN $F_\text{F}$' if args.ff_estimator == 'binary_classifier' else r'NF $F_\text{F}$')
             )
             ax[1].fill_between(bin_centers, 1 - y_error_stat, 1 + y_error_stat, color="gray", alpha=0.3, step='mid', label="Stat. Unc.")
             ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
-            ax[1].set_ylabel("Data / Model")
+            ax[1].set_ylabel("Data / Model", fontsize=23, loc='center')
             ax[1].set_ylim([args.ratio_ylim_min, args.ratio_ylim_max])
             ax[1].grid(True, linestyle=':', alpha=0.7)
             ax[1].tick_params(direction='in', top=True, right=True)
-            ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
-
-            ax[2].axis('off')
+            ax[1].legend(loc='upper left', ncol=2, frameon=False, fontsize='xx-small') #, bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0
+            
+            #ax[2].axis('off')
             """
             ax[3].errorbar(
                 bin_centers,
@@ -2689,6 +2697,8 @@ def run_plots_for_njets_category(category_name, njets_title):
             ax[3].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
             ax[3].set_xlabel(xlabel)
             """
+            #fig.supxlabel(xlabel)
+            ax[-1].set_xlabel(xlabel)
             fig.savefig(category_plot_dir / f'{var}.png')
             fig.savefig(category_plot_dir / f'{var}.pdf')
             plt.close(fig)
@@ -2725,10 +2735,10 @@ def run_taylor_plots_if_requested() -> None:
 
 def run_all_njets_categories() -> None:
     njets_categories = [
-        ('njets_0', r'$N_{jets} = 0$'),
-        ('njets_1', r'$N_{jets} = 1$'),
-        ('njets_geq_2', r'$N_{jets} \geq 2$'),
-        ('njets_inclusive', r'$N_{jets} \geq 0$'),
+        ('njets_0', r'$\mathrm{N_{jets}} = 0$'),
+        ('njets_1', r'$\mathrm{N_{jets}} = 1$'),
+        ('njets_geq_2', r'$\mathrm{N_{jets}} \geq 2$'),
+        ('njets_inclusive', r'$\mathrm{N_{jets}} \geq 0$'),
     ]
 
     for category_name, njets_title in njets_categories:
