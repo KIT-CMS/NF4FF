@@ -311,3 +311,6 @@ tt:
 
    tau_decaymode_1: Tau decaymode 1
    tau_decaymode_2: Tau decaymode 2
+   q_1: Leading hadronic Tau charge
+   q_2: Trailing hadronic Tau charge
+   event: Event number

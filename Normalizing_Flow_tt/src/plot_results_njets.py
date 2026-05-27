@@ -54,7 +54,7 @@ class Args(Tap):
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
     plot_training_diagnostics: bool = False   # Plot training loss / learning-rate / time-per-epoch curves.
     plot_nf_sampling: bool = False           # Plot NF-sampled vs data histograms in training variables.
-    plot_ff_results: bool = True             # Plot fake-factor comparison stacks for each njets category.
+    plot_ff_results: bool = False             # Plot fake-factor comparison stacks for each njets category.
     plot_ar_data_with_clipping: bool = False  # Plot AR data with both kept and excluded events (by clipping mask).
     plot_taylor_coefficients: bool = False   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
     plot_complete_variables: bool = False
@@ -1280,14 +1280,20 @@ def initialize_runtime_context() -> None:
     
     if args.plot_complete_variables:
         list_variables = cfg_set['variables']
+        list_variables.remove('q_1')
+        list_variables.remove('q_2')
+        list_variables.remove('event')
+        list_variables.remove('metphi')
     else:
         list_variables = variables
+
 
     with open(cfg_path['labels'], 'r') as f:
         labels = yaml.safe_load(f)['tt']
     with open(cfg_path['labels_short'], 'r') as f:
         labels_short = yaml.safe_load(f)['tt']
-    list_xlabels = [labels[k] for k in list_variables]
+    
+    list_xlabels = [labels[k] for k in list_variables]    
 
     bins_by_variable = _build_main_bins_by_variable()
     list_bins = [np.asarray(bins_by_variable[var]) for var in list_variables]
