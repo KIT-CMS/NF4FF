@@ -53,7 +53,7 @@ class Args(Tap):
     classifier_training_tag: str = ''  # Optional classifier training folder suffix after 'training_'. Empty -> pick most recent.
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
     plot_training_diagnostics: bool = False   # Plot training loss / learning-rate / time-per-epoch curves.
-    plot_nf_sampling: bool = False           # Plot NF-sampled vs data histograms in training variables.
+    plot_nf_sampling: bool = True           # Plot NF-sampled vs data histograms in training variables.
     plot_ff_results: bool = False             # Plot fake-factor comparison stacks for each njets category.
     plot_ar_data_with_clipping: bool = False  # Plot AR data with both kept and excluded events (by clipping mask).
     plot_taylor_coefficients: bool = False   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
@@ -971,15 +971,12 @@ def load_masks_config(path: str | Path = MASKS_CONFIG_PATH) -> dict[str, list[st
         raw = yaml.safe_load(handle) or {}
 
     masks = raw.get('masks', raw)
-    print('masks= ', masks)
+
     if not isinstance(masks, dict):
         raise ValueError(f'Invalid masks config format in {config_path}: expected a mapping at root or under "masks"')
 
     normalized: dict[str, list[str]] = {}
-    for name, expressions in masks.items():
-        print("name: ", name)
-        print("expressions: ", expressions)
-        
+    for name, expressions in masks.items():        
         if isinstance(expressions, str):
             normalized[name] = [expressions]
             continue
@@ -1014,16 +1011,6 @@ def _build_mask_from_config(df: pd.DataFrame, mask_name: str) -> pd.Series:
 def _apply_config_mask(df: pd.DataFrame, mask_name: str) -> pd.DataFrame:
     return df[_build_mask_from_config(df, mask_name)].copy()
 
-
-def mask_DR_qcd(df):
-    return _apply_config_mask(df, 'mask_DR_qcd')
-
-def AR_like_qcd(df):
-    return _apply_config_mask(df, 'AR_like_qcd')
-
-def SR_like_qcd(df):
-    return _apply_config_mask(df, 'SR_like_qcd')
-
 def mask_preselection_tight(df):
     return _apply_config_mask(df, 'mask_preselection_tight')
 
@@ -1037,11 +1024,26 @@ def mask_preselection_for_estimator(df):
         return mask_preselection_tight_binary_classifier(df)
     return mask_preselection_tight(df)
 
+def mask_DR(df):
+    return _apply_config_mask(df, 'mask_DR')
+
+def AR_like_tau1(df):
+    return _apply_config_mask(df, 'AR_like_tau1')
+
+def AR_like_tau2(df):
+    return _apply_config_mask(df, 'AR_like_tau2')
+
+def SR_like(df):
+    return _apply_config_mask(df, 'SR_like')
+
+def AR_tau1(df):                 # without SS/OS conditions !!!!!!!!!!!!11
+    return _apply_config_mask(df, 'AR_tau1')
+
+def AR_tau2(df):                 # without SS/OS conditions !!!!!!!!!!!!11
+    return _apply_config_mask(df, 'AR_tau2')
+
 def SR(df):                 # without SS/OS conditions !!!!!!!!!!!!11
     return _apply_config_mask(df, 'SR')
-
-def AR(df):                 # without SS/OS conditions !!!!!!!!!!!!11
-    return _apply_config_mask(df, 'AR')
 
 
 # ----------- other utils -----------
@@ -1140,16 +1142,13 @@ def initialize_runtime_context() -> None:
     global args, variables, dim, training_variables_tag, variables_with_njets, device
     global mode_dir, include_njets_feature, resolved_tag
     global MASKS_CONFIG
-    global classifier_features_wjets, classifier_features_qcd
-    global prior_ar_over_sr_wjets, prior_ar_over_sr_qcd
-    global correction_model_wjets_dr, correction_model_wjets_antidr
-    global correction_features_wjets_dr, correction_features_wjets_antidr
-    global correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr
-    global chk_pth_model_AR_like_wjets, chk_pth_model_SR_like_wjets
-    global chk_pth_model_AR_like_qcd, chk_pth_model_SR_like_qcd
-    global model_AR_like_wjets, model_SR_like_wjets, model_AR_like_qcd, model_SR_like_qcd
+    global classifier_features_qcd
+    global chk_pth_model_AR_like_tau1, chk_pth_model_AR_like_tau2, chk_pth_model_SR_like_tau1, chk_pth_model_SR_like_tau2
+    global model_AR_like_tau1, model_AR_like_tau2, model_SR_like_tau1, model_SR_like_tau2
     global data_complete, list_variables, labels, labels_short, list_xlabels, list_bins
     global main_plot_bins_by_variable, sampling_plot_bins_by_variable, plot_root_dir
+
+
 
     # Step 1: parse runtime arguments and core variable list
     with open(cfg_path['variables'], 'r') as f:
@@ -1163,8 +1162,7 @@ def initialize_runtime_context() -> None:
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     MASKS_CONFIG = load_masks_config(MASKS_CONFIG_PATH)
 
-    #print(AR_like_qcd(pd.DataFrame({'pt_1': [50, 29, 199], 'pt_2': [30, 5, 45]})))
-    #exit()
+    
 
     # Step 2: resolve model mode and load model checkpoints
     _MODE_DIR = {
@@ -1175,16 +1173,9 @@ def initialize_runtime_context() -> None:
     mode_dir = _MODE_DIR[args.model_mode]
     include_njets_feature = args.model_mode in ('grouped_njets_split', 'conditional_nf')
 
-    classifier_features_wjets = None
     classifier_features_qcd = None
-    prior_ar_over_sr_wjets = None
     prior_ar_over_sr_qcd = None
-    correction_model_wjets_dr = None
-    correction_model_wjets_antidr = None
-    correction_features_wjets_dr = None
-    correction_features_wjets_antidr = None
-    correction_prior_ar_over_sr_wjets_dr = None
-    correction_prior_ar_over_sr_wjets_antidr = None
+    
 
     if args.ff_estimator == 'binary_classifier':
         include_njets_feature = False
@@ -1210,71 +1201,63 @@ def initialize_runtime_context() -> None:
         )
         model_SR_like_qcd = model_AR_like_qcd
 
-        if args.apply_wjets_binary_correction:
-            correction_base = Path('Training_results_new') / 'binary_classifier_corrections'
-            correction_hidden_layers = args.classifier_hidden_layers if args.classifier_corrections_hidden_layers < 0 else args.classifier_corrections_hidden_layers
-            correction_prefix = f'training_hl{correction_hidden_layers}_'
-            logger.info('Searching correction trainings with prefix: %s', correction_prefix)
-            resolved_correction_tag = args.classifier_corrections_training_tag or resolve_latest_training_tag(
-                str(correction_base),
-                prefix=correction_prefix,
-            )
-            logger.info('Using binary-classifier correction training tag: %s', resolved_correction_tag)
-
-            chk_pth_corr_wjets_dr, chk_pth_corr_wjets_antidr = correction_classifier_paths(resolved_correction_tag)
-            correction_model_wjets_dr, correction_features_wjets_dr, correction_prior_ar_over_sr_wjets_dr = load_binary_classifier_checkpoint(
-                chk_pth_corr_wjets_dr,
-                device=device,
-            )
-            correction_model_wjets_antidr, correction_features_wjets_antidr, correction_prior_ar_over_sr_wjets_antidr = load_binary_classifier_checkpoint(
-                chk_pth_corr_wjets_antidr,
-                device=device,
-            )
-        else:
-            logger.info('Wjets binary antiDR/DR correction disabled via args.apply_wjets_binary_correction=False')
-
-    else:
+    elif args.ff_estimator == 'nf':
         resolved_tag = resolve_training_tag(variables, mode_dir)
         logger.info('Using training tag: %s (exact computed: %s)', resolved_tag, training_variables_tag)
 
-        chk_pth_model_AR_like_qcd = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/QCD/all/AR-like/latest'
-        chk_pth_model_SR_like_qcd = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/QCD/all/SR-like/latest'
+        chk_pth_model_AR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau1/all/AR-like/latest'
+        chk_pth_model_SR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau1/all/SR-like/latest'
+        chk_pth_model_AR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau2/all/AR-like/latest'
+        chk_pth_model_SR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau2/all/SR-like/latest'
 
-        config_AR_like_qcd = load_saved_model_config(chk_pth_model_AR_like_qcd, config_path)
-        config_SR_like_qcd = load_saved_model_config(chk_pth_model_SR_like_qcd, config_path)
-
+        config_AR_like_tau1 = load_saved_model_config(chk_pth_model_AR_like_tau1, config_path)
+        config_SR_like_tau1 = load_saved_model_config(chk_pth_model_SR_like_tau1, config_path)
+        config_AR_like_tau2 = load_saved_model_config(chk_pth_model_AR_like_tau2, config_path)
+        config_SR_like_tau2 = load_saved_model_config(chk_pth_model_SR_like_tau2, config_path)
+        
+        logger.info('Loading models from RNVP checkpoints:')
         if args.model_mode == 'grouped_njets_split':
-            model_AR_like_wjets = load_grouped_wjets_njets_router(
-                checkpoint_dir=chk_pth_model_AR_like_wjets,
+            model_AR_like_tau1 = load_grouped_qcd_njets_router(
+                checkpoint_dir=chk_pth_model_AR_like_tau1,
                 config_path=config_path,
                 variables=variables,
                 device=device,
             )
-            model_SR_like_wjets = load_grouped_wjets_njets_router(
-                checkpoint_dir=chk_pth_model_SR_like_wjets,
+            model_SR_like_tau1 = load_grouped_qcd_njets_router(
+                checkpoint_dir=chk_pth_model_SR_like_tau1,
                 config_path=config_path,
                 variables=variables,
                 device=device,
             )
-            model_AR_like_qcd = load_grouped_qcd_njets_router(
-                checkpoint_dir=chk_pth_model_AR_like_qcd,
+            model_AR_like_tau2 = load_grouped_qcd_njets_router(
+                checkpoint_dir=chk_pth_model_AR_like_tau2,
                 config_path=config_path,
                 variables=variables,
                 device=device,
             )
-            model_SR_like_qcd = load_grouped_qcd_njets_router(
-                checkpoint_dir=chk_pth_model_SR_like_qcd,
+            model_SR_like_tau2 = load_grouped_qcd_njets_router(
+                checkpoint_dir=chk_pth_model_SR_like_tau2,
                 config_path=config_path,
                 variables=variables,
                 device=device,
             )
         elif args.model_mode == 'conditional_nf':
-            model_AR_like_qcd = load_conditional_flow(dim=dim, cfg=config_AR_like_qcd, checkpoint_path=f'{chk_pth_model_AR_like_qcd}/model_checkpoint.pth', device=device)
-            model_SR_like_qcd = load_conditional_flow(dim=dim, cfg=config_SR_like_qcd, checkpoint_path=f'{chk_pth_model_SR_like_qcd}/model_checkpoint.pth', device=device)
+            model_AR_like_tau1 = load_conditional_flow(dim=dim, cfg=config_AR_like_tau1, checkpoint_path=f'{chk_pth_model_AR_like_tau1}/model_checkpoint.pth', device=device)
+            model_SR_like_tau1 = load_conditional_flow(dim=dim, cfg=config_SR_like_tau1, checkpoint_path=f'{chk_pth_model_SR_like_tau1}/model_checkpoint.pth', device=device)
+            model_AR_like_tau2 = load_conditional_flow(dim=dim, cfg=config_AR_like_tau2, checkpoint_path=f'{chk_pth_model_AR_like_tau2}/model_checkpoint.pth', device=device)
+            model_SR_like_tau2 = load_conditional_flow(dim=dim, cfg=config_SR_like_tau2, checkpoint_path=f'{chk_pth_model_SR_like_tau2}/model_checkpoint.pth', device=device)
+        elif args.model_mode == 'single_nf':
+            model_AR_like_tau1 = load_flow(dim=dim, cfg=config_AR_like_tau1, checkpoint_path=f'{chk_pth_model_AR_like_tau1}/model_checkpoint.pth', device=device)
+            model_SR_like_tau1 = load_flow(dim=dim, cfg=config_SR_like_tau1, checkpoint_path=f'{chk_pth_model_SR_like_tau1}/model_checkpoint.pth', device=device)
+            model_AR_like_tau2 = load_flow(dim=dim, cfg=config_AR_like_tau2, checkpoint_path=f'{chk_pth_model_AR_like_tau2}/model_checkpoint.pth', device=device)
+            model_SR_like_tau2 = load_flow(dim=dim, cfg=config_SR_like_tau2, checkpoint_path=f'{chk_pth_model_SR_like_tau2}/model_checkpoint.pth', device=device)
         else:
-            model_AR_like_qcd = load_flow(dim=dim, cfg=config_AR_like_qcd, checkpoint_path=f'{chk_pth_model_AR_like_qcd}/model_checkpoint.pth', device=device)
-            model_SR_like_qcd = load_flow(dim=dim, cfg=config_SR_like_qcd, checkpoint_path=f'{chk_pth_model_SR_like_qcd}/model_checkpoint.pth', device=device)
-
+            raise ValueError(f'Unknown model mode: {args.model_mode}. Supported: "grouped_njets_split", "conditional_nf", "single_nf".')
+    else:
+        raise ValueError(f'Unknown FF estimator: {args.ff_estimator}. Supported: "nf", "binary_classifier".')
+    
+    
+    
     # Step 3: load data and plotting labels/binning
     data_complete = pd.read_feather(f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather')
     
@@ -1300,23 +1283,28 @@ def initialize_runtime_context() -> None:
     main_plot_bins_by_variable = {var: np.asarray(bins_by_variable[var]) for var in list_variables}
     sampling_plot_bins_by_variable = _build_sampling_bins_from_main(main_plot_bins_by_variable, max_scale=2.0)
 
+
+
     # Step 4: prepare output directories and optional training diagnostics
     if args.ff_estimator == 'binary_classifier':
         correction_mode_dir = 'with_corrections' if args.apply_wjets_binary_correction else 'without_corrections'
         plot_root_dir = Path(cfg_path['plots']) / 'binary_classifier' / correction_mode_dir / f"training_{resolved_tag}"
     else:
         plot_root_dir = Path(cfg_path['plots']) / mode_dir / f"training_{resolved_tag}"
+    
     plot_root_dir.mkdir(parents=True, exist_ok=True)
-    logger.info("Plot output root: %s", plot_root_dir)
+    logger.info(f"Plot output root: {plot_root_dir}")
 
     training_log_specs = [
-        ('QCD AR-like', chk_pth_model_AR_like_qcd),
-        ('QCD SR-like', chk_pth_model_SR_like_qcd),
+        ('Tau 1 AR-like', chk_pth_model_AR_like_tau1),
+        ('Tau 1 SR-like', chk_pth_model_SR_like_tau1),
+        ('Tau 2 AR-like', chk_pth_model_AR_like_tau2),
+        ('Tau 2 SR-like', chk_pth_model_SR_like_tau2),
     ]
     if args.ff_estimator == 'binary_classifier':
         training_log_specs = [
-            ('Wjets SR/AR classifier', chk_pth_model_AR_like_wjets),
-            ('QCD SR/AR classifier', chk_pth_model_AR_like_qcd),
+            ('Tau 1 SR/AR classifier', chk_pth_model_AR_like_tau1),
+            ('Tau 2 SR/AR classifier', chk_pth_model_AR_like_tau2),
         ]
     if args.plot_training_diagnostics:
         plot_training_histories(training_log_specs, plot_root_dir / 'training_diagnostics')
@@ -1369,29 +1357,32 @@ def plot_nf_sampling_training_variables(category_name: str, njets_title: str, da
     sampling_plot_dir = plot_root_dir / 'nf_sampling_validation' / category_name
     sampling_plot_dir.mkdir(parents=True, exist_ok=True)
 
-    #wjets_ar_data = AR_like_wjets(data_preselected)
-    #wjets_ar_data = wjets_ar_data[(wjets_ar_data.process == 0) & (wjets_ar_data.OS == True)].copy()
-    #wjets_sr_data = SR_like_wjets(data_preselected)
-    #wjets_sr_data = wjets_sr_data[(wjets_sr_data.process == 0) & (wjets_sr_data.OS == True)].copy()
+    tau1_ar_data = AR_like_tau1(data_preselected)
+    tau1_ar_data = tau1_ar_data[(tau1_ar_data.process == 0) & (tau1_ar_data.SS == True)].copy()
 
-    qcd_ar_data = AR_like_qcd(data_preselected)
-    qcd_ar_data = qcd_ar_data[(qcd_ar_data.process == 0) & (qcd_ar_data.SS == True)].copy()
-    qcd_sr_data = SR_like_qcd(data_preselected)
-    qcd_sr_data = qcd_sr_data[(qcd_sr_data.process == 0) & (qcd_sr_data.SS == True)].copy()
+    tau2_ar_data = AR_like_tau2(data_preselected)
+    tau2_ar_data = tau2_ar_data[(tau2_ar_data.process == 0) & (tau2_ar_data.SS == True)].copy()
+
+    sr_data = SR_like(data_preselected)
+    sr_data = sr_data[(sr_data.process == 0) & (sr_data.SS == True)].copy()
 
     panel_specs = [
-        #('Wjets AR-like', wjets_ar_data, model_AR_like_wjets, '#1f77b4'),
-        #('Wjets SR-like', wjets_sr_data, model_SR_like_wjets, '#17becf'),
-        ('QCD AR-like', qcd_ar_data, model_AR_like_qcd, '#d62728'),
-        ('QCD SR-like', qcd_sr_data, model_SR_like_qcd, '#ff7f0e'),
+        ('Tau1 AR-like', tau1_ar_data, model_AR_like_tau1, '#d62728'),
+        ('Tau2 AR-like', tau2_ar_data, model_AR_like_tau2, '#2ca02c'), #todo Farbe
+        ('Tau1 SR-like', sr_data, model_SR_like_tau1, '#ff7f0e'),
+        ('Tau2 SR-like', sr_data, model_SR_like_tau2, '#1f77b4'),
     ]
-
+    
+    
     n_samples = 10_000
+
+    # ----- one plot vor every variable -----
     for var in variables:
         fig, axes = plt.subplots(2, 2, figsize=(12, 9), sharex=False, sharey=False)
         flat_axes = axes.flatten()
         fixed_bins = sampling_plot_bins_by_variable.get(var)
 
+        # ----- in each plot: one plot of each region ------
         for axis, (title, data_df, model, color) in zip(flat_axes, panel_specs):
             if data_df.empty:
                 axis.text(0.5, 0.5, 'No data events', ha='center', va='center', transform=axis.transAxes)
@@ -1459,11 +1450,6 @@ def plot_nf_sampling_training_variables(category_name: str, njets_title: str, da
                 color='black',
                 label=f'Data ({len(data_values)})',
             )
-
-            #print(labels.get(var))
-            #print(labels.get(var, var))
-            #print(labels[var])
-            #print(var)
 
             axis.set_title(title)
             axis.set_xlabel(labels.get(var, var))
@@ -2233,22 +2219,22 @@ def plot_ar_data_with_clipping_info(
 
 def run_plots_for_njets_category(category_name, njets_title):
     hep.style.use(hep.style.CMS)  # Use CMS style for all plots in this category
+
     category_plot_dir = plot_root_dir / category_name
     category_plot_dir.mkdir(parents=True, exist_ok=True)
 
     data_complete_njets = select_njets_category(data_complete, category_name)
     data_preselected = mask_preselection_for_estimator(data_complete_njets)
 
+    # ----- plot NF sampling -----
     if args.plot_nf_sampling and args.ff_estimator == 'nf':
         plot_nf_sampling_training_variables(category_name, njets_title, data_preselected)
     if not args.plot_ff_results:
         return
 
+    # ----- prepare data for FF estimation -----
     logger.info(
-        "Starting %s: %d input events, %d after preselection",
-        category_name,
-        len(data_complete_njets),
-        len(data_preselected),
+        f"Starting {category_name}: {len(data_complete_njets)} input events, {len(data_preselected)} after preselection"
     )
 
     data_AR = AR(data_preselected)
@@ -2748,7 +2734,7 @@ def run_all_njets_categories() -> None:
     ]
 
     for category_name, njets_title in njets_categories:
-        logger.info("Queueing plot production for %s", category_name)
+        logger.info(f"Queueing plot production for {category_name}")
         if args.plot_ff_results or (args.plot_nf_sampling and args.ff_estimator == 'nf'):
             run_plots_for_njets_category(category_name, njets_title)
 

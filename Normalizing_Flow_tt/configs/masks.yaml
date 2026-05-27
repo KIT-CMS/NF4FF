@@ -1,36 +1,3 @@
-mask_DR_qcd:
-  - q_1 * q_2 > 0
-  - extramuon_veto < 0.5
-  - extraelec_veto < 0.5
-  - id_tau_vsJet_VLoose_1 > 0.5
-  - id_tau_vsJet_VLoose_2 > 0.5
-
-AR_like_qcd:
-  #tau_1:
-  - id_tau_vsJet_VLoose_1 > 0.5
-  - id_tau_vsJet_Tight_1 < 0.5
-  - id_tau_vsJet_Tight_2 > 0.5
-  - q_1 * q_2 > 0
-  - extramuon_veto < 0.5
-  - extraelec_veto < 0.5
-  - process == 0
-  #tau_2:
-  #  - id_tau_vsJet_VLoose_2 > 0.5
-  #  - id_tau_vsJet_Tight_2 < 0.5
-  #  - id_tau_vsJet_Tight_1 > 0.5
-  #  - q_1 * q_2 > 0
-  #  - extramuon_veto < 0.5
-  #  - extraelec_veto < 0.5
-  #  - process == 0
-
-SR_like_qcd:
-  - id_tau_vsJet_Tight_1 > 0.5
-  - id_tau_vsJet_Tight_2 > 0.5
-  - q_1 * q_2 > 0
-  - extramuon_veto < 0.5
-  - extraelec_veto < 0.5
-  - process == 0
-
 # Effective definition used in code (the second duplicate in the old implementation).
 mask_preselection_tight:
   - pt_1 >= 40
@@ -42,7 +9,43 @@ mask_preselection_tight_binary_classifier:
   - pt_2 >= 40
   - (tau_decaymode_2 == 0) | (tau_decaymode_2 == 1) | (tau_decaymode_2 == 10) | (tau_decaymode_2 == 11)
 
-# Keep behavior identical to previous code: nbtag and charge-sign were defined but not used.
+# Determination Region
+mask_DR:
+  - q_1 * q_2 > 0
+  - extramuon_veto < 0.5
+  - extraelec_veto < 0.5
+  - id_tau_vsJet_VLoose_1 > 0.5
+  - id_tau_vsJet_VLoose_2 > 0.5
+
+AR_like_tau1:  
+  - id_tau_vsJet_VLoose_1 > 0.5
+  - id_tau_vsJet_Tight_1 < 0.5
+  - id_tau_vsJet_Tight_2 > 0.5
+  - q_1 * q_2 > 0
+  - extramuon_veto < 0.5
+  - extraelec_veto < 0.5
+  - process == 0
+
+AR_like_tau2:
+  - id_tau_vsJet_VLoose_2 > 0.5
+  - id_tau_vsJet_Tight_2 < 0.5
+  - id_tau_vsJet_Tight_1 > 0.5
+  - q_1 * q_2 > 0
+  - extramuon_veto < 0.5
+  - extraelec_veto < 0.5
+  - process == 0
+
+SR_like:
+  - id_tau_vsJet_Tight_1 > 0.5
+  - id_tau_vsJet_Tight_2 > 0.5
+  - q_1 * q_2 > 0
+  - extramuon_veto < 0.5
+  - extraelec_veto < 0.5
+  - process == 0
+
+
+
+# Anti-Determination Region
 SR:
   - id_tau_vsJet_Tight_1 > 0.5
   - id_tau_vsJet_Tight_2 > 0.5
@@ -50,18 +53,18 @@ SR:
   - extramuon_veto < 0.5
   - extraelec_veto < 0.5
 
-AR:
-  #tau_1:
+AR_tau1:
   - id_tau_vsJet_VLoose_1 > 0.5
   - id_tau_vsJet_Tight_1 < 0.5
   - id_tau_vsJet_Tight_2 > 0.5
   - (q_1*q_2) < 0
   - extramuon_veto < 0.5
   - extraelec_veto < 0.5
-  #tau_2:
-  #  - id_tau_vsJet_VLoose_2 > 0.5
-  #  - id_tau_vsJet_Tight_2 < 0.5
-  #  - id_tau_vsJet_Tight_1 > 0.5
-  #  - (q_1*q_2) < 0
-  #  - extramuon_veto < 0.5
-  #  - extraelec_veto < 0.5
+  
+AR_tau2:
+  - id_tau_vsJet_VLoose_2 > 0.5
+  - id_tau_vsJet_Tight_2 < 0.5
+  - id_tau_vsJet_Tight_1 > 0.5
+  - (q_1*q_2) < 0
+  - extramuon_veto < 0.5
+  - extraelec_veto < 0.5
