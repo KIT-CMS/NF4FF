@@ -1369,10 +1369,10 @@ def plot_nf_sampling_training_variables(category_name: str, njets_title: str, da
     sr_data = sr_data[(sr_data.process == 0) & (sr_data.SS == True)].copy()
 
     panel_specs = [
-        ('Tau1 AR-like', tau1_ar_data, model_AR_like_tau1, '#d62728'),
-        ('Tau2 AR-like', tau2_ar_data, model_AR_like_tau2, '#2ca02c'), #todo Farbe
-        ('Tau1 SR-like', sr_data, model_SR_like_tau1, '#ff7f0e'),
-        ('Tau2 SR-like', sr_data, model_SR_like_tau2, '#1f77b4'),
+        ("Tau 1 AR-like", tau1_ar_data, model_AR_like_tau1, '#d62728'),
+        ("Tau 2 AR-like", tau2_ar_data, model_AR_like_tau2, '#2ca02c'), #todo Farbe
+        ("Tau 1 SR-like", sr_data, model_SR_like_tau1, '#ff7f0e'),
+        ("Tau 2 SR-like", sr_data, model_SR_like_tau2, '#1f77b4'),
     ]
     
     
@@ -1380,12 +1380,18 @@ def plot_nf_sampling_training_variables(category_name: str, njets_title: str, da
 
     # ----- one plot vor every variable -----
     for var in variables:
-        fig, axes = plt.subplots(2, 2, figsize=(12, 9), sharex=False, sharey=False)
+        fig, axes = plt.subplots(2, 2, figsize=(19.2, 14.4), sharex=False, sharey=False)
         flat_axes = axes.flatten()
         fixed_bins = sampling_plot_bins_by_variable.get(var)
 
         # ----- in each plot: one plot of each region ------
         for axis, (title, data_df, model, color) in zip(flat_axes, panel_specs):
+
+            CMS_CHANNEL_TITLE(axis)
+            CMS_LUMI_TITLE(axis)
+            CMS_LABEL(axis)
+            CMS_NJETS_TITLE(axis, title=njets_title)
+
             if data_df.empty:
                 axis.text(0.5, 0.5, 'No data events', ha='center', va='center', transform=axis.transAxes)
                 axis.set_title(title)
@@ -1434,7 +1440,7 @@ def plot_nf_sampling_training_variables(category_name: str, njets_title: str, da
                     if bins.size < 10:
                         bins = np.linspace(float(combined.min()), float(combined.max()), 31)
 
-            axis.hist(
+            n_sample,_ ,_ = axis.hist(
                 sampled_values,
                 bins=bins,
                 density=True,
@@ -1443,7 +1449,7 @@ def plot_nf_sampling_training_variables(category_name: str, njets_title: str, da
                 color=color,
                 label=f'NF sampled ({n_samples})',
             )
-            axis.hist(
+            n_data,_ ,_ = axis.hist(
                 data_values,
                 bins=bins,
                 density=True,
@@ -1452,18 +1458,19 @@ def plot_nf_sampling_training_variables(category_name: str, njets_title: str, da
                 color='black',
                 label=f'Data ({len(data_values)})',
             )
-
-            axis.set_title(title)
+            
+            axis.set_title(title, fontsize=25, pad=10)
             axis.set_xlabel(labels.get(var, var))
             axis.set_ylabel('Density')
             axis.set_yscale('log')
             axis.grid(True, linestyle=':', alpha=0.35)
-            axis.legend(frameon=False, loc='best')
+            axis.legend(frameon=False, loc='upper right', bbox_to_anchor=(1.0, 0.9))
             axis.set_xlim(float(bins[0]), float(bins[-1]))
+            axis.set_ylim(top=5*np.max([np.max(n_sample), np.max(n_data)]))
 
         fig.suptitle(
             f'NF sampled vs data ({category_name}, {njets_title})\nTraining variable: {labels.get(var, var)}',
-            fontsize=16,
+            fontsize=28,
             y=1.01,
         )
         fig.tight_layout()
@@ -2220,7 +2227,7 @@ def plot_ar_data_with_clipping_info(
 
 
 def run_plots_for_njets_category(category_name, njets_title):
-    #hep.style.use(hep.style.CMS)  # Use CMS style for all plots in this category
+    hep.style.use(hep.style.CMS)  # Use CMS style for all plots in this category
 
     category_plot_dir = plot_root_dir / category_name
     category_plot_dir.mkdir(parents=True, exist_ok=True)

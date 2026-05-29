@@ -1,9 +1,12 @@
 import math
 import matplotlib.pyplot as plt
 import numpy as np
+from collections.abc import Iterable
 
 def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
-    ax[0].set_title(
+    if isinstance(ax, Iterable):
+        ax = ax[0]
+    ax.set_title(
         r"$\mathrm{\tau_h\tau_h}$",
         #fontsize=20,
         loc="left",
@@ -11,7 +14,9 @@ def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
     )
 
 def CMS_NJETS_TITLE(ax, title=r"$\mathrm{N_{jets}} \geq 0$", *args, **kwargs):
-    ax[0].set_title(
+    if isinstance(ax, Iterable):
+        ax = ax[0]
+    ax.set_title(
         title,
         #fontsize=20,
         loc="center",
@@ -19,7 +24,9 @@ def CMS_NJETS_TITLE(ax, title=r"$\mathrm{N_{jets}} \geq 0$", *args, **kwargs):
     )
 
 def CMS_LUMI_TITLE(ax, *args, **kwargs):
-    ax[0].set_title(
+    if isinstance(ax, Iterable):
+        ax = ax[0]
+    ax.set_title(
         "59.8 $\mathrm{fb}^{-1}$ (2018, 13 TeV)",
         #fontsize=20,
         loc="right",
@@ -27,7 +34,9 @@ def CMS_LUMI_TITLE(ax, *args, **kwargs):
     )
 
 def CMS_LABEL(ax, *args, **kwargs):
-    ax[0].text(
+    if isinstance(ax, Iterable):
+        ax = ax[0]
+    ax.text(
         0.025, 0.95,
         "Private work (CMS data/simulation)",
         fontsize=20,
@@ -35,7 +44,7 @@ def CMS_LABEL(ax, *args, **kwargs):
         style ="italic",
         #fontproperties="Tex Gyre Heros:italic",
         bbox=dict(facecolor="white", alpha=0, edgecolor="white", boxstyle="round,pad=0.5"),
-        transform=ax[0].transAxes
+        transform=ax.transAxes
     )
 
 
