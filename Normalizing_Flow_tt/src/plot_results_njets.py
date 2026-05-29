@@ -2220,7 +2220,7 @@ def plot_ar_data_with_clipping_info(
 
 
 def run_plots_for_njets_category(category_name, njets_title):
-    hep.style.use(hep.style.CMS)  # Use CMS style for all plots in this category
+    #hep.style.use(hep.style.CMS)  # Use CMS style for all plots in this category
 
     category_plot_dir = plot_root_dir / category_name
     category_plot_dir.mkdir(parents=True, exist_ok=True)
