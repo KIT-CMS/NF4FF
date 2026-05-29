@@ -2,23 +2,23 @@
 trains normalizing flows with three modes
 '''
 
-import logging
-import random
-import time
-import hashlib
-import re
 from dataclasses import dataclass
+import hashlib
+import logging
 from pathlib import Path
+import random
+import re
+import time
 from typing import Callable, Literal
 
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import train_test_split
+from tap import Tap
 import torch as t
 import torch.nn as nn
-import yaml
-from tap import Tap
-from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
+import yaml
 
 from classes.Collection import get_my_data_qcd, load_config
 from classes.Dataclasses import RealNVP_config

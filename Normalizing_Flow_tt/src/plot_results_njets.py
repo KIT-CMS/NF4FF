@@ -5,30 +5,32 @@ loads models, evaluates fake factors, and makes plots
 from __future__ import annotations
 import logging
 import hashlib
-import re
 from contextlib import contextmanager
-from pathlib import Path
-from typing import Literal, Tuple, Iterable
 from copy import deepcopy
-import pandas as pd
-import numpy as np
-import torch
-import torch as t
-import torch.nn.functional as F
+import correctionlib as cr
+from pathlib import Path
+import re
+from typing import Literal, Tuple, Iterable
+
 import matplotlib.pyplot as plt
 import matplotlib
-import yaml
-from tap import Tap
 import mplhep as hep
+import numpy as np
+import pandas as pd
+from tap import Tap
+from tayloranalysis import extend_model as _ta_extend
+import torch
+import torch as t
+import yaml
+
 from classes.Logging import setup_logging
-from classes.NeuralNetworks import RealNVP, RealNVP_NN, AffineCoupling, MLP, ConditionalRealNVP, BinaryClassifier
-import correctionlib as cr
+from classes.NeuralNetworks import RealNVP, BinaryClassifier
 from classes.Dataclasses import ModelConfig
 from classes.Collection import load_model_config, load_flow, load_conditional_flow, evaluate_pdf, compute_eventwise_fake_factors, get_my_data_qcd
 from classes.Collection import evaluate_density_ratio_binary_classifier, compute_eventwise_fake_factors_binary_classifier
-from classes.Collection import load_config, load_grouped_wjets_njets_router, load_grouped_qcd_njets_router
+from classes.Collection import load_config, load_grouped_qcd_njets_router
 from classes.Plotting import CMS_CHANNEL_TITLE, CMS_LABEL, CMS_LUMI_TITLE, CMS_NJETS_TITLE, reorder_for_rowwise_legend, adjust_ylim_for_legend
-from tayloranalysis import extend_model as _ta_extend
+
 
 matplotlib.rcParams.update({
     'font.size': 16,
