@@ -55,8 +55,8 @@ class Args(Tap):
     classifier_training_tag: str = ''  # Optional classifier training folder suffix after 'training_'. Empty -> pick most recent.
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
     plot_training_diagnostics: bool = False   # Plot training loss / learning-rate / time-per-epoch curves.
-    plot_nf_sampling: bool = True           # Plot NF-sampled vs data histograms in training variables.
-    plot_ff_results: bool = False             # Plot fake-factor comparison stacks for each njets category.
+    plot_nf_sampling: bool = False           # Plot NF-sampled vs data histograms in training variables.
+    plot_ff_results: bool = True             # Plot fake-factor comparison stacks for each njets category.
     plot_ar_data_with_clipping: bool = False  # Plot AR data with both kept and excluded events (by clipping mask).
     plot_taylor_coefficients: bool = False   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
     plot_complete_variables: bool = False
@@ -2246,21 +2246,37 @@ def run_plots_for_njets_category(category_name, njets_title):
         f"Starting {category_name}: {len(data_complete_njets)} input events, {len(data_preselected)} after preselection"
     )
 
-    data_AR = AR(data_preselected)
-    data_AR = data_AR[data_AR.OS == True]
+    # ----- Anti-DR -----
+
+    data_AR_tau1 = AR_tau1(data_preselected)
+    data_AR_tau1 = data_AR_tau1[data_AR_tau1.OS == True]
+    data_AR_OS_tau1 = data_AR_tau1[(data_AR_tau1.process == 0)].copy()
+
+    data_AR_tau2 = AR_tau2(data_preselected)
+    data_AR_tau2 = data_AR_tau2[data_AR_tau2.OS == True]
+    data_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == 0)].copy()
+
     data_SR = SR(data_preselected)
 
-    data_AR_OS = data_AR[(data_AR.process == 0)].copy()
-    data_AR_like_qcd = AR_like_qcd(data_preselected)
-    data_SR_like_qcd = SR_like_qcd(data_preselected)
 
-    data_AR_like_SS_qcd = data_AR_like_qcd[(data_AR_like_qcd.process == 0) & (data_AR_like_qcd.SS == True)]
-    data_SR_like_SS_qcd = data_SR_like_qcd[(data_SR_like_qcd.process == 0) & (data_SR_like_qcd.SS == True)]
+    # ----- DR -----
+
+    data_AR_like_tau1 = AR_like_tau1(data_preselected)
+    data_AR_like_tau2 = AR_like_tau2(data_preselected)
+    data_SR_like = SR_like(data_preselected)
+
+    data_AR_like_SS_tau1 = data_AR_like_tau1[(data_AR_like_tau1.process == 0) & (data_AR_like_tau1.SS == True)]
+    data_SR_like_SS_tau1 = data_SR_like[(data_SR_like.process == 0) & (data_SR_like.SS == True)]
+    data_AR_like_SS_tau2 = data_AR_like_tau2[(data_AR_like_tau2.process == 0) & (data_AR_like_tau2.SS == True)]
+    data_SR_like_SS_tau2 = data_SR_like[(data_SR_like.process == 0) & (data_SR_like.SS == True)]
 
     required_samples = {
-        'AR_like_SS_qcd': data_AR_like_SS_qcd,
-        'SR_like_SS_qcd': data_SR_like_SS_qcd,
+        'AR_like_SS_tau1': data_AR_like_SS_tau1,
+        'SR_like_SS_tau1': data_SR_like_SS_tau1,
+        'AR_like_SS_tau2': data_AR_like_SS_tau2,
+        'SR_like_SS_tau2': data_SR_like_SS_tau2,
     }
+
     empty_required = [name for name, sample in required_samples.items() if sample.empty]
     if empty_required:
         logger.warning('Skipping %s because required samples are empty: %s', category_name, ', '.join(empty_required))
@@ -2268,24 +2284,32 @@ def run_plots_for_njets_category(category_name, njets_title):
 
     data_SR_OS = data_SR[(data_SR.OS == True)]
 
-    #global_ff_wjets = len(data_SR_like_OS_wjets) / len(data_AR_like_OS_wjets)
-    global_ff_qcd = len(data_SR_like_SS_qcd) / len(data_AR_like_SS_qcd)
+    global_ff_tau1 = len(data_SR_like_SS_tau1) / len(data_AR_like_SS_tau1)
+    global_ff_tau2 = len(data_SR_like_SS_tau2) / len(data_AR_like_SS_tau2)
 
 
     logger.info(
-        "Prepared %s: AR(OS)=%d, SR(OS)=%d, QCD FF=%.4f",
+        "Prepared %s for Tau 1: AR(OS)=%d, SR(OS)=%d, QCD FF=%.4f",
         category_name,
-        len(data_AR_OS),
+        len(data_AR_OS_tau1),
         len(data_SR_OS[(data_SR_OS.process == 0)]),
-        global_ff_qcd,
+        global_ff_tau1,
     )
-
+    logger.info(
+        "Prepared %s for Tau 2: AR(OS)=%d, SR(OS)=%d, QCD FF=%.4f",
+        category_name,
+        len(data_AR_OS_tau2),
+        len(data_SR_OS[(data_SR_OS.process == 0)]),
+        global_ff_tau2,
+    )
+    
+    #todo: hier wirds kompliziert: Vergleich mit et, weil beide tau müssen da gleichzeitig rein?
     data_AR_OS_nf, ar_os_clipping_mask = normalizing_flow_ff(
-        data_AR_OS,
+        data_AR_OS_tau1,
         variables,
-        model_AR_like_qcd,
-        model_SR_like_qcd,
-        global_ff_qcd,
+        model_AR_like_tau1,
+        model_SR_like_tau1,
+        global_ff_tau1,
         device,
         plotting=True,
         plot_dir=category_plot_dir,
