@@ -51,12 +51,11 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 class Args(Tap):
     model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'single_nf'  # Training mode to load: grouped NF split by njets, single inclusive NF, or conditional NF with njets as input.
-    ff_estimator: Literal['nf', 'binary_classifier'] = 'nf'  # FF backend: use NF models or SR/AR binary-classifier models.
     classifier_training_tag: str = ''  # Optional classifier training folder suffix after 'training_'. Empty -> pick most recent.
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
     plot_training_diagnostics: bool = False   # Plot training loss / learning-rate / time-per-epoch curves.
-    plot_nf_sampling: bool = False           # Plot NF-sampled vs data histograms in training variables.
-    plot_ff_results: bool = True             # Plot fake-factor comparison stacks for each njets category.
+    plot_nf_sampling: bool = True           # Plot NF-sampled vs data histograms in training variables.
+    plot_ff_results: bool = False             # Plot fake-factor comparison stacks for each njets category.
     plot_ar_data_with_clipping: bool = False  # Plot AR data with both kept and excluded events (by clipping mask).
     plot_taylor_coefficients: bool = False   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
     plot_complete_variables: bool = False
@@ -71,6 +70,7 @@ class Args(Tap):
 # Runtime context (initialized in `initialize_runtime_context()` and consumed by plotting functions)
 cfg_path = load_config('/work/tapp/TauFF/NF4FF/Normalizing_Flow_tt/configs/config_path.yaml')
 args = Args().parse_args()
+
 variables = []
 dim = 0
 training_variables_tag = ''
@@ -81,24 +81,6 @@ mode_dir = ''
 include_njets_feature = False
 resolved_tag = ''
 
-classifier_features_wjets = None
-classifier_features_qcd = None
-prior_ar_over_sr_wjets = None
-prior_ar_over_sr_qcd = None
-correction_model_wjets_dr = None
-correction_model_wjets_antidr = None
-correction_features_wjets_dr = None
-correction_features_wjets_antidr = None
-correction_prior_ar_over_sr_wjets_dr = None
-correction_prior_ar_over_sr_wjets_antidr = None
-
-chk_pth_model_AR_like_wjets = ''
-chk_pth_model_SR_like_wjets = ''
-chk_pth_model_AR_like_qcd = ''
-chk_pth_model_SR_like_qcd = ''
-
-model_AR_like_wjets = None
-model_SR_like_wjets = None
 model_AR_like_qcd = None
 model_SR_like_qcd = None
 
@@ -802,10 +784,7 @@ def normalizing_flow_ff(
     device,
     plotting=True,
     plot_dir="plots",
-    include_njets=True,
-    ff_estimator: str = 'nf',
-    prior_ar_over_sr_qcd: float | None = None,
-    classifier_features_qcd: list[str] | None = None,
+    include_njets=True
 ):
     """
     Computes eventwise fake factors for W+jets and QCD, and returns
@@ -833,31 +812,17 @@ def normalizing_flow_ff(
 
     input_variables = (['njets'] + variables) if include_njets else list(variables)
 
-    if ff_estimator == 'binary_classifier':
-        qcd_features = classifier_features_qcd if classifier_features_qcd is not None else list(variables)
-        prior_ar_over_sr_qcd = 1.0 if prior_ar_over_sr_qcd is None else float(prior_ar_over_sr_qcd)
 
-        df_pt_qcd = get_my_data_qcd(df, qcd_features).to_torch().to(device)
-        ratio_qcd = evaluate_density_ratio_binary_classifier(
-            model_AR_like_qcd,
-            df_pt_qcd.X,
-            prior_ar_over_sr=prior_ar_over_sr_qcd,
-        )
-        ff_full_qcd, _, global_ff_cor_qcd, clip_mask_qcd, clip_value_qcd = compute_eventwise_fake_factors_binary_classifier(
-            ratio_qcd,
-            global_ff_qcd,
-        )
-    else:
-        # --- QCD FF ---
-        # Evaluate QCD PDFs on the same full df (before any W+jets filtering)
-        df_pt_qcd = get_my_data_qcd(df, input_variables).to_torch().to(device)
+    # --- QCD FF ---
+    # Evaluate QCD PDFs on the same full df (before any W+jets filtering)
+    df_pt_qcd = get_my_data_qcd(df, input_variables).to_torch().to(device)
 
-        pdf_AR_like_qcd = evaluate_pdf(model_AR_like_qcd, df_pt_qcd.X)
-        pdf_SR_like_qcd = evaluate_pdf(model_SR_like_qcd, df_pt_qcd.X)
+    pdf_AR_like_qcd = evaluate_pdf(model_AR_like_qcd, df_pt_qcd.X)
+    pdf_SR_like_qcd = evaluate_pdf(model_SR_like_qcd, df_pt_qcd.X)
 
-        ff_full_qcd, _, global_ff_cor_qcd, clip_mask_qcd, clip_value_qcd = compute_eventwise_fake_factors(
-            pdf_AR_like_qcd, pdf_SR_like_qcd, global_ff_qcd
-        )
+    ff_full_qcd, _, global_ff_cor_qcd, clip_mask_qcd, clip_value_qcd = compute_eventwise_fake_factors(
+        pdf_AR_like_qcd, pdf_SR_like_qcd, global_ff_qcd
+    )
 
     # Keep per-process clipping/correction independent.
     # `compute_eventwise_fake_factors` already applies each process-specific
@@ -874,7 +839,7 @@ def normalizing_flow_ff(
 
     logger.info(
         "%s clipping acceptance: QCD=%.4f, joint=%.4f",
-        'Classifier' if ff_estimator == 'binary_classifier' else 'NF',
+        'NF',
         float(np.mean(clip_mask_qcd)),
         float(np.mean(combined_mask)),
     )
@@ -1022,8 +987,6 @@ def mask_preselection_tight_binary_classifier(df):
 
 
 def mask_preselection_for_estimator(df):
-    if args.ff_estimator == 'binary_classifier':
-        return mask_preselection_tight_binary_classifier(df)
     return mask_preselection_tight(df)
 
 def mask_DR(df):
@@ -1173,92 +1136,60 @@ def initialize_runtime_context() -> None:
         'conditional_nf':      'conditional_njets_input',
     }
     mode_dir = _MODE_DIR[args.model_mode]
-    include_njets_feature = args.model_mode in ('grouped_njets_split', 'conditional_nf')
+    include_njets_feature = args.model_mode in ('grouped_njets_split', 'conditional_nf')    
 
-    classifier_features_qcd = None
-    prior_ar_over_sr_qcd = None
+    resolved_tag = resolve_training_tag(variables, mode_dir)
+    logger.info('Using training tag: %s (exact computed: %s)', resolved_tag, training_variables_tag)
+
+    chk_pth_model_AR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau1/all/AR-like/latest'
+    chk_pth_model_SR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau1/all/SR-like/latest'
+    chk_pth_model_AR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau2/all/AR-like/latest'
+    chk_pth_model_SR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau2/all/SR-like/latest'
+
+    config_AR_like_tau1 = load_saved_model_config(chk_pth_model_AR_like_tau1, config_path)
+    config_SR_like_tau1 = load_saved_model_config(chk_pth_model_SR_like_tau1, config_path)
+    config_AR_like_tau2 = load_saved_model_config(chk_pth_model_AR_like_tau2, config_path)
+    config_SR_like_tau2 = load_saved_model_config(chk_pth_model_SR_like_tau2, config_path)
     
-
-    if args.ff_estimator == 'binary_classifier':
-        include_njets_feature = False
-        classifier_base = Path('Training_results_new') / 'binary_classifier'
-        classifier_prefix = f'training_hl{args.classifier_hidden_layers}_'
-        logger.info('Searching classifier trainings with prefix: %s', classifier_prefix)
-        resolved_tag = args.classifier_training_tag or resolve_latest_training_tag(str(classifier_base), prefix=classifier_prefix)
-        logger.info('Using binary-classifier training tag: %s', resolved_tag)
-
-        chk_pth_model_AR_like_wjets = f'Training_results_new/binary_classifier/training_{resolved_tag}/Wjets/all/SR_AR_classifier/latest'
-        chk_pth_model_SR_like_wjets = chk_pth_model_AR_like_wjets
-        chk_pth_model_AR_like_qcd = f'Training_results_new/binary_classifier/training_{resolved_tag}/QCD/all/SR_AR_classifier/latest'
-        chk_pth_model_SR_like_qcd = chk_pth_model_AR_like_qcd
-
-        model_AR_like_wjets, classifier_features_wjets, prior_ar_over_sr_wjets = load_binary_classifier_checkpoint(
-            chk_pth_model_AR_like_wjets,
+    logger.info('Loading models from RNVP checkpoints:')
+    if args.model_mode == 'grouped_njets_split':
+        model_AR_like_tau1 = load_grouped_qcd_njets_router(
+            checkpoint_dir=chk_pth_model_AR_like_tau1,
+            config_path=config_path,
+            variables=variables,
             device=device,
         )
-        model_SR_like_wjets = model_AR_like_wjets
-        model_AR_like_qcd, classifier_features_qcd, prior_ar_over_sr_qcd = load_binary_classifier_checkpoint(
-            chk_pth_model_AR_like_qcd,
+        model_SR_like_tau1 = load_grouped_qcd_njets_router(
+            checkpoint_dir=chk_pth_model_SR_like_tau1,
+            config_path=config_path,
+            variables=variables,
             device=device,
         )
-        model_SR_like_qcd = model_AR_like_qcd
-
-    elif args.ff_estimator == 'nf':
-        resolved_tag = resolve_training_tag(variables, mode_dir)
-        logger.info('Using training tag: %s (exact computed: %s)', resolved_tag, training_variables_tag)
-
-        chk_pth_model_AR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau1/all/AR-like/latest'
-        chk_pth_model_SR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau1/all/SR-like/latest'
-        chk_pth_model_AR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau2/all/AR-like/latest'
-        chk_pth_model_SR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau2/all/SR-like/latest'
-
-        config_AR_like_tau1 = load_saved_model_config(chk_pth_model_AR_like_tau1, config_path)
-        config_SR_like_tau1 = load_saved_model_config(chk_pth_model_SR_like_tau1, config_path)
-        config_AR_like_tau2 = load_saved_model_config(chk_pth_model_AR_like_tau2, config_path)
-        config_SR_like_tau2 = load_saved_model_config(chk_pth_model_SR_like_tau2, config_path)
-        
-        logger.info('Loading models from RNVP checkpoints:')
-        if args.model_mode == 'grouped_njets_split':
-            model_AR_like_tau1 = load_grouped_qcd_njets_router(
-                checkpoint_dir=chk_pth_model_AR_like_tau1,
-                config_path=config_path,
-                variables=variables,
-                device=device,
-            )
-            model_SR_like_tau1 = load_grouped_qcd_njets_router(
-                checkpoint_dir=chk_pth_model_SR_like_tau1,
-                config_path=config_path,
-                variables=variables,
-                device=device,
-            )
-            model_AR_like_tau2 = load_grouped_qcd_njets_router(
-                checkpoint_dir=chk_pth_model_AR_like_tau2,
-                config_path=config_path,
-                variables=variables,
-                device=device,
-            )
-            model_SR_like_tau2 = load_grouped_qcd_njets_router(
-                checkpoint_dir=chk_pth_model_SR_like_tau2,
-                config_path=config_path,
-                variables=variables,
-                device=device,
-            )
-        elif args.model_mode == 'conditional_nf':
-            model_AR_like_tau1 = load_conditional_flow(dim=dim, cfg=config_AR_like_tau1, checkpoint_path=f'{chk_pth_model_AR_like_tau1}/model_checkpoint.pth', device=device)
-            model_SR_like_tau1 = load_conditional_flow(dim=dim, cfg=config_SR_like_tau1, checkpoint_path=f'{chk_pth_model_SR_like_tau1}/model_checkpoint.pth', device=device)
-            model_AR_like_tau2 = load_conditional_flow(dim=dim, cfg=config_AR_like_tau2, checkpoint_path=f'{chk_pth_model_AR_like_tau2}/model_checkpoint.pth', device=device)
-            model_SR_like_tau2 = load_conditional_flow(dim=dim, cfg=config_SR_like_tau2, checkpoint_path=f'{chk_pth_model_SR_like_tau2}/model_checkpoint.pth', device=device)
-        elif args.model_mode == 'single_nf':
-            model_AR_like_tau1 = load_flow(dim=dim, cfg=config_AR_like_tau1, checkpoint_path=f'{chk_pth_model_AR_like_tau1}/model_checkpoint.pth', device=device)
-            model_SR_like_tau1 = load_flow(dim=dim, cfg=config_SR_like_tau1, checkpoint_path=f'{chk_pth_model_SR_like_tau1}/model_checkpoint.pth', device=device)
-            model_AR_like_tau2 = load_flow(dim=dim, cfg=config_AR_like_tau2, checkpoint_path=f'{chk_pth_model_AR_like_tau2}/model_checkpoint.pth', device=device)
-            model_SR_like_tau2 = load_flow(dim=dim, cfg=config_SR_like_tau2, checkpoint_path=f'{chk_pth_model_SR_like_tau2}/model_checkpoint.pth', device=device)
-        else:
-            raise ValueError(f'Unknown model mode: {args.model_mode}. Supported: "grouped_njets_split", "conditional_nf", "single_nf".')
+        model_AR_like_tau2 = load_grouped_qcd_njets_router(
+            checkpoint_dir=chk_pth_model_AR_like_tau2,
+            config_path=config_path,
+            variables=variables,
+            device=device,
+        )
+        model_SR_like_tau2 = load_grouped_qcd_njets_router(
+            checkpoint_dir=chk_pth_model_SR_like_tau2,
+            config_path=config_path,
+            variables=variables,
+            device=device,
+        )
+    elif args.model_mode == 'conditional_nf':
+        model_AR_like_tau1 = load_conditional_flow(dim=dim, cfg=config_AR_like_tau1, checkpoint_path=f'{chk_pth_model_AR_like_tau1}/model_checkpoint.pth', device=device)
+        model_SR_like_tau1 = load_conditional_flow(dim=dim, cfg=config_SR_like_tau1, checkpoint_path=f'{chk_pth_model_SR_like_tau1}/model_checkpoint.pth', device=device)
+        model_AR_like_tau2 = load_conditional_flow(dim=dim, cfg=config_AR_like_tau2, checkpoint_path=f'{chk_pth_model_AR_like_tau2}/model_checkpoint.pth', device=device)
+        model_SR_like_tau2 = load_conditional_flow(dim=dim, cfg=config_SR_like_tau2, checkpoint_path=f'{chk_pth_model_SR_like_tau2}/model_checkpoint.pth', device=device)
+    elif args.model_mode == 'single_nf':
+        model_AR_like_tau1 = load_flow(dim=dim, cfg=config_AR_like_tau1, checkpoint_path=f'{chk_pth_model_AR_like_tau1}/model_checkpoint.pth', device=device)
+        model_SR_like_tau1 = load_flow(dim=dim, cfg=config_SR_like_tau1, checkpoint_path=f'{chk_pth_model_SR_like_tau1}/model_checkpoint.pth', device=device)
+        model_AR_like_tau2 = load_flow(dim=dim, cfg=config_AR_like_tau2, checkpoint_path=f'{chk_pth_model_AR_like_tau2}/model_checkpoint.pth', device=device)
+        model_SR_like_tau2 = load_flow(dim=dim, cfg=config_SR_like_tau2, checkpoint_path=f'{chk_pth_model_SR_like_tau2}/model_checkpoint.pth', device=device)
     else:
-        raise ValueError(f'Unknown FF estimator: {args.ff_estimator}. Supported: "nf", "binary_classifier".')
-    
-    
+        raise ValueError(f'Unknown model mode: {args.model_mode}. Supported: "grouped_njets_split", "conditional_nf", "single_nf".')
+
     
     # Step 3: load data and plotting labels/binning
     data_complete = pd.read_feather(f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather')
@@ -1288,11 +1219,7 @@ def initialize_runtime_context() -> None:
 
 
     # Step 4: prepare output directories and optional training diagnostics
-    if args.ff_estimator == 'binary_classifier':
-        correction_mode_dir = 'with_corrections' if args.apply_wjets_binary_correction else 'without_corrections'
-        plot_root_dir = Path(cfg_path['plots']) / 'binary_classifier' / correction_mode_dir / f"training_{resolved_tag}"
-    else:
-        plot_root_dir = Path(cfg_path['plots']) / mode_dir / f"training_{resolved_tag}"
+    plot_root_dir = Path(cfg_path['plots']) / mode_dir / f"training_{resolved_tag}"
     
     plot_root_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Plot output root: {plot_root_dir}")
@@ -1303,11 +1230,7 @@ def initialize_runtime_context() -> None:
         ('Tau 2 AR-like', chk_pth_model_AR_like_tau2),
         ('Tau 2 SR-like', chk_pth_model_SR_like_tau2),
     ]
-    if args.ff_estimator == 'binary_classifier':
-        training_log_specs = [
-            ('Tau 1 SR/AR classifier', chk_pth_model_AR_like_tau1),
-            ('Tau 2 SR/AR classifier', chk_pth_model_AR_like_tau2),
-        ]
+    
     if args.plot_training_diagnostics:
         plot_training_histories(training_log_specs, plot_root_dir / 'training_diagnostics')
 
@@ -2236,7 +2159,7 @@ def run_plots_for_njets_category(category_name, njets_title):
     data_preselected = mask_preselection_for_estimator(data_complete_njets)
 
     # ----- plot NF sampling -----
-    if args.plot_nf_sampling and args.ff_estimator == 'nf':
+    if args.plot_nf_sampling:
         plot_nf_sampling_training_variables(category_name, njets_title, data_preselected)
     if not args.plot_ff_results:
         return
@@ -2313,223 +2236,11 @@ def run_plots_for_njets_category(category_name, njets_title):
         device,
         plotting=True,
         plot_dir=category_plot_dir,
-        include_njets=include_njets_feature,
-        ff_estimator=args.ff_estimator,
-        prior_ar_over_sr_qcd=prior_ar_over_sr_qcd,
-        classifier_features_qcd=classifier_features_qcd,
+        include_njets=include_njets_feature
         )
 
     if args.embedding == 'embedding':
-        data_diboson_AR_OS = data_AR[((data_AR.process == 2) | (data_AR.process == 3))]
-        data_DY_AR_OS = data_AR[(data_AR.process == 4) | (data_AR.process == 5)]
-        data_ST_AR_OS = data_AR[(data_AR.process == 6) | (data_AR.process == 7)]
-        data_ttbar_L_AR_OS = data_AR[(data_AR.process == 9)]
-        data_embedding_AR_OS = data_AR[(data_AR.process == 10)]
-
-        data_diboson_AR_OS_nf, _ = normalizing_flow_ff(data_diboson_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_qcd=classifier_features_qcd)
-        data_DY_AR_OS_nf, _ = normalizing_flow_ff(data_DY_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_qcd=classifier_features_qcd)
-        data_ST_AR_OS_nf, _ = normalizing_flow_ff(data_ST_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_qcd=classifier_features_qcd)
-        data_ttbar_L_AR_OS_nf, _ = normalizing_flow_ff(data_ttbar_L_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_qcd=classifier_features_qcd)
-        data_embedding_AR_OS_nf, _ = normalizing_flow_ff(data_embedding_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_qcd=classifier_features_qcd)
-
-        data_events = data_SR_OS[(data_SR_OS.process == 0)]
-        data_diboson_SR_OS = data_SR_OS[(data_SR_OS.process == 2) | (data_SR_OS.process == 3)]
-        data_DY_SR_OS = data_SR_OS[(data_SR_OS.process == 4) | (data_SR_OS.process == 5)]
-        data_ST_SR_OS = data_SR_OS[(data_SR_OS.process == 6) | (data_SR_OS.process == 7)]
-        data_ttbar_L_SR_OS = data_SR_OS[(data_SR_OS.process == 9)]
-        data_embedding_SR_OS = data_SR_OS[(data_SR_OS.process == 10)]
-
-        #data_AR_OS_classic = total_ff_corrected(data_AR_OS)
-        #data_diboson_AR_OS_classic = total_ff_corrected(data_diboson_AR_OS)
-        #data_DY_AR_OS_classic = total_ff_corrected(data_DY_AR_OS)
-        #data_ST_AR_OS_classic = total_ff_corrected(data_ST_AR_OS)
-        #data_ttbar_L_AR_OS_classic = total_ff_corrected(data_ttbar_L_AR_OS)
-        #data_embedding_AR_OS_classic = total_ff_corrected(data_embedding_AR_OS)
-
-        total_variables = len(list_variables)
-        for index, (var, bins, xlabel) in enumerate(zip(list_variables, list_bins, list_xlabels), start=1):
-            
-            if should_log_plot_progress(index, total_variables):
-                logger.info(
-                    "Plotting %s: %d/%d variables (%s)",
-                    category_name,
-                    index,
-                    total_variables,
-                    var,
-                )
-
-            #counts_ff_data_classic, bin_edges = np.histogram(data_AR_OS_classic[var], weights=data_AR_OS_classic['corrected_ff'], bins=bins)
-            #counts_ff_data_classic2, _ = np.histogram(data_AR_OS_classic[var], weights=data_AR_OS_classic['corrected_ff']**2, bins=bins)
-
-            #counts_ff_diboson_classic, _ = np.histogram(data_diboson_AR_OS_classic[var], weights=data_diboson_AR_OS_classic.weight * data_diboson_AR_OS_classic['corrected_ff'], bins=bins)
-            #counts_ff_diboson_classic2, _ = np.histogram(data_diboson_AR_OS_classic[var], weights=(data_diboson_AR_OS_classic.weight * data_diboson_AR_OS_classic['corrected_ff'])**2, bins=bins)
-            #counts_ff_DY_classic, _ = np.histogram(data_DY_AR_OS_classic[var], weights=data_DY_AR_OS_classic.weight * data_DY_AR_OS_classic['corrected_ff'], bins=bins)
-            #counts_ff_DY_classic2, _ = np.histogram(data_DY_AR_OS_classic[var], weights=(data_DY_AR_OS_classic.weight * data_DY_AR_OS_classic['corrected_ff'])**2, bins=bins)
-            #counts_ff_ST_classic, _ = np.histogram(data_ST_AR_OS_classic[var], weights=data_ST_AR_OS_classic.weight * data_ST_AR_OS_classic['corrected_ff'], bins=bins)
-            #counts_ff_ST_classic2, _ = np.histogram(data_ST_AR_OS_classic[var], weights=(data_ST_AR_OS_classic.weight * data_ST_AR_OS_classic['corrected_ff'])**2, bins=bins)
-            #counts_ff_ttbar_L_classic, _ = np.histogram(data_ttbar_L_AR_OS_classic[var], weights=data_ttbar_L_AR_OS_classic.weight * data_ttbar_L_AR_OS_classic['corrected_ff'], bins=bins)
-            #counts_ff_ttbar_L_classic2, _ = np.histogram(data_ttbar_L_AR_OS_classic[var], weights=(data_ttbar_L_AR_OS_classic.weight * data_ttbar_L_AR_OS_classic['corrected_ff'])**2, bins=bins)
-            #counts_ff_embedding_classic, _ = np.histogram(data_embedding_AR_OS_classic[var], weights=data_embedding_AR_OS_classic.weight * data_embedding_AR_OS_classic['corrected_ff'], bins=bins)
-            #counts_ff_embedding_classic2, _ = np.histogram(data_embedding_AR_OS_classic[var], weights=(data_embedding_AR_OS_classic.weight * data_embedding_AR_OS_classic['corrected_ff'])**2, bins=bins)
-
-            #counts_FF_classic = counts_ff_data_classic - counts_ff_diboson_classic - counts_ff_DY_classic - counts_ff_ST_classic - counts_ff_ttbar_L_classic - counts_ff_embedding_classic
-
-            counts_ff_data, bin_edges = np.histogram(data_AR_OS_nf[var], bins=bins)#, weights=data_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_data2, _ = np.histogram(data_AR_OS_nf[var], bins=bins)#, weights=data_AR_OS_nf['ff_nf']**2, bins=bins)
-
-            counts_ff_diboson, _ = np.histogram(data_diboson_AR_OS_nf[var], weights=data_diboson_AR_OS_nf.weight, bins=bins)# * data_diboson_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_diboson2, _ = np.histogram(data_diboson_AR_OS_nf[var], weights=data_diboson_AR_OS_nf.weight, bins=bins)# * data_diboson_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_DY, _ = np.histogram(data_DY_AR_OS_nf[var], weights=data_DY_AR_OS_nf.weight, bins=bins)# * data_DY_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_DY2, _ = np.histogram(data_DY_AR_OS_nf[var], weights=data_DY_AR_OS_nf.weight, bins=bins)# * data_DY_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_ST, _ = np.histogram(data_ST_AR_OS_nf[var], weights=data_ST_AR_OS_nf.weight, bins=bins)# * data_ST_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_ST2, _ = np.histogram(data_ST_AR_OS_nf[var], weights=data_ST_AR_OS_nf.weight, bins=bins)# * data_ST_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_ttbar_L, _ = np.histogram(data_ttbar_L_AR_OS_nf[var], weights=data_ttbar_L_AR_OS_nf.weight, bins=bins)# * data_ttbar_L_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_ttbar_L2, _ = np.histogram(data_ttbar_L_AR_OS_nf[var], weights=data_ttbar_L_AR_OS_nf.weight, bins=bins)# * data_ttbar_L_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_embedding, _ = np.histogram(data_embedding_AR_OS_nf[var], weights=data_embedding_AR_OS_nf.weight, bins=bins)# * data_embedding_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_embedding2, _ = np.histogram(data_embedding_AR_OS_nf[var], weights=data_embedding_AR_OS_nf.weight, bins=bins)# * data_embedding_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_FF = counts_ff_data - counts_ff_diboson - counts_ff_DY - counts_ff_ST - counts_ff_ttbar_L - counts_ff_embedding
-
-            counts_diboson, _ = np.histogram(data_diboson_SR_OS[var], weights=data_diboson_SR_OS.weight, bins=bins)
-            counts_diboson2, _ = np.histogram(data_diboson_SR_OS[var], weights=data_diboson_SR_OS.weight**2, bins=bins)
-            counts_DY, _ = np.histogram(data_DY_SR_OS[var], weights=data_DY_SR_OS.weight, bins=bins)
-            counts_DY2, _ = np.histogram(data_DY_SR_OS[var], weights=data_DY_SR_OS.weight**2, bins=bins)
-            counts_ST, _ = np.histogram(data_ST_SR_OS[var], weights=data_ST_SR_OS.weight, bins=bins)
-            counts_ST2, _ = np.histogram(data_ST_SR_OS[var], weights=data_ST_SR_OS.weight**2, bins=bins)
-            counts_ttbar_L, _ = np.histogram(data_ttbar_L_SR_OS[var], weights=data_ttbar_L_SR_OS.weight, bins=bins)
-            counts_ttbar_L2, _ = np.histogram(data_ttbar_L_SR_OS[var], weights=data_ttbar_L_SR_OS.weight**2, bins=bins)
-            counts_embedding, _ = np.histogram(data_embedding_SR_OS[var], weights=data_embedding_SR_OS.weight, bins=bins)
-            counts_embedding2, _ = np.histogram(data_embedding_SR_OS[var], weights=data_embedding_SR_OS.weight**2, bins=bins)
-
-            counts_data, _ = np.histogram(data_events[var], bins=bins)
-
-            bin_widths = np.diff(bins)
-            bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
-
-            fig, ax = plt.subplots(
-                3, 1,
-                figsize=(9,9),
-                sharex=True,
-                gridspec_kw={'height_ratios': [4,1,0.2], 'hspace': 0.05},
-                constrained_layout=True
-            )
-
-            CMS_CHANNEL_TITLE(ax)
-            CMS_LUMI_TITLE(ax)
-            CMS_LABEL(ax)
-            CMS_NJETS_TITLE(ax, title=njets_title)
-
-            y_error = np.sqrt(counts_data)
-            x_error = 0.5 * bin_widths
-            num = np.sqrt(
-                counts_ff_data2 + counts_ff_diboson2 + counts_ff_ttbar_L2 +
-                counts_ff_embedding2 + counts_ff_ST2 + counts_ff_DY2 +
-                counts_diboson2 + counts_ttbar_L2 + counts_embedding2 +
-                counts_DY2 + counts_ST2
-            )
-
-            den = (
-                counts_FF + counts_diboson + counts_ttbar_L +
-                counts_embedding + counts_ST + counts_DY
-            )
-
-            y_error_stat = np.divide(num, den, out=np.zeros_like(num), where=den != 0)
-
-            """
-            num_classic = np.sqrt(
-                counts_ff_data_classic2 + counts_ff_diboson_classic2 +
-                counts_ff_ttbar_L_classic2 + counts_ff_embedding_classic2 +
-                counts_ff_ST_classic2 + counts_ff_DY_classic2 +
-                counts_diboson2 + counts_ttbar_L2 + counts_embedding2 +
-                counts_DY2 + counts_ST2
-            )
-
-            den_classic = (
-                counts_FF_classic + counts_diboson + counts_ttbar_L +
-                counts_embedding + counts_ST + counts_DY
-            )
-
-            y_error_stat_classic = np.divide(
-                num_classic,
-                den_classic,
-                out=np.zeros_like(num_classic),
-                where=den_classic != 0
-            )
-            """ 
-            stack_components = [
-                (counts_diboson, "#94a4a2", 'Diboson'),
-                (counts_ttbar, '#832db6', r'$t\bar{t} \to \tau$'),
-                (counts_ST, "#717581", r"Single t"),
-                (counts_DY, '#3f90da', r'$Z \to \ell \ell$'),
-                (counts_FF, "#a96b59", r'Jet $\rightarrow \tau_h$'),
-                (counts_embedding, '#ffa90e', r'$\tau$ embedded'),
-            ]
-            counts_stack_total = draw_stacked_stepfill(ax[0], bin_edges, stack_components)
-            ax[0].stairs(counts_stack_total, bin_edges, color='black', linewidth=0.7)
-
-            ax[0].errorbar(bin_centers, counts_data, yerr=y_error, xerr=x_error, fmt='o', color='black', label='Data', markersize=6, elinewidth=1.2, capsize=0)
-            ax[0].set_ylabel("Events")
-            handles, labels = ax[0].get_legend_handles_labels()
-            handles = handles[::-1]
-            labels = labels[::-1]
-            handles, labels = reorder_for_rowwise_legend(handles, labels, ncol=4)
-            ax[0].legend(handles, labels, title=' ', title_fontsize=20, loc='upper right', ncol=4, frameon=False)
-            adjust_ylim_for_legend(ax[0])
-            ax[0].tick_params(direction='in', top=True, right=True)
-
-            ax[1].errorbar(
-                bin_centers,
-                np.divide(counts_data, den, out=np.zeros_like(counts_data, dtype=float), where=den != 0),
-                xerr=x_error,
-                yerr=np.divide(y_error, counts_data, out=np.zeros_like(counts_data, dtype=float), where=counts_data != 0),
-                fmt='o',
-                color='black',
-                markersize=6,
-                label=(r'NN $\F_\text{F}$' if args.ff_estimator == 'binary_classifier' else r'NF $F_\text{F}$')
-            )
-            ax[1].fill_between(bin_centers, 1 - y_error_stat, 1 + y_error_stat, color="gray", alpha=0.3, step='mid', label="Stat. Unc.")
-            ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
-            ax[1].set_ylabel("Data / Model")
-            ax[1].set_ylim([args.ratio_ylim_min, args.ratio_ylim_max])
-            ax[1].grid(True, linestyle=':', alpha=0.7)
-            ax[1].tick_params(direction='in', top=True, right=True)
-            ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
-            
-            ax[2].axis('off')
-            """
-            ax[3].errorbar(
-                bin_centers,
-                np.divide(counts_data, den_classic, out=np.zeros_like(counts_data, dtype=float), where=den_classic != 0),
-                xerr=x_error,
-                yerr=np.divide(y_error, counts_data, out=np.zeros_like(counts_data, dtype=float), where=counts_data != 0),
-                fmt='o',
-                color='black',
-                markersize=6,
-                label=r'Cor class $F_\text{F}$ '
-            )
-            ax[3].fill_between(bin_centers, 1 - y_error_stat_classic, 1 + y_error_stat_classic, color="gray", alpha=0.3, step='mid', label="Stat. Unc.")
-            ax[3].axhline(1, color='red', linestyle='--', linewidth=1.5)
-            ax[3].set_ylabel("Data / Model")
-            ax[3].set_ylim([args.ratio_ylim_min, args.ratio_ylim_max])
-            ax[3].grid(True, linestyle=':', alpha=0.7)
-            ax[3].tick_params(direction='in', top=True, right=True)
-            ax[3].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
-            ax[3].set_xlabel(xlabel)
-            """
-            fig.savefig(category_plot_dir / f'{var}.png')
-            fig.savefig(category_plot_dir / f'{var}.pdf')
-            plt.close(fig)
-
-            # Plot AR data with clipping information if requested
-            if args.plot_ar_data_with_clipping:
-                plot_ar_data_with_clipping_info(
-                    var=var,
-                    bins=bins,
-                    xlabel=xlabel,
-                    data_ar_os_full=data_AR_OS,
-                    clipping_mask=ar_os_clipping_mask,
-                    njets_title=njets_title,
-                    output_dir=category_plot_dir,
-                )
+        logger.info("Todo: To be implemented. Please use the 'no_embedding' option for now.")
 
     elif args.embedding == 'no_embedding':
         process_map = load_config(cfg_path['process_map_no_emb'])
@@ -2540,10 +2251,10 @@ def run_plots_for_njets_category(category_name, njets_title):
         data_ST_AR_OS = data_AR[(data_AR.process == process_map["ST_J"]) | (data_AR.process == process_map["ST_L"]) | (data_AR.process == process_map["ST_T"])]
         data_ttbar_AR_OS = data_AR[(data_AR.process == process_map["ttbar_J"]) | (data_AR.process == process_map["ttbar_L"]) | (data_AR.process == process_map["ttbar_T"])]
 
-        data_diboson_AR_OS_nf, _ = normalizing_flow_ff(data_diboson_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_qcd=classifier_features_qcd)
-        data_DY_AR_OS_nf, _ = normalizing_flow_ff(data_DY_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_qcd=classifier_features_qcd)
-        data_ST_AR_OS_nf, _ = normalizing_flow_ff(data_ST_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_qcd=classifier_features_qcd)
-        data_ttbar_AR_OS_nf, _ = normalizing_flow_ff(data_ttbar_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_qcd=classifier_features_qcd)
+        data_diboson_AR_OS_nf, _ = normalizing_flow_ff(data_diboson_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
+        data_DY_AR_OS_nf, _ = normalizing_flow_ff(data_DY_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
+        data_ST_AR_OS_nf, _ = normalizing_flow_ff(data_ST_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
+        data_ttbar_AR_OS_nf, _ = normalizing_flow_ff(data_ttbar_AR_OS, variables, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
 
         data_events = data_SR_OS[(data_SR_OS.process == process_map["data"])]
         data_diboson_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["diboson_J"]) | (data_SR_OS.process == process_map["diboson_L"]) | (data_SR_OS.process == process_map["diboson_T"])]
@@ -2691,7 +2402,7 @@ def run_plots_for_njets_category(category_name, njets_title):
                 fmt='o',
                 color='black',
                 markersize=6,
-                label=(r'NN $F_\text{F}$' if args.ff_estimator == 'binary_classifier' else r'NF $F_\text{F}$')
+                label=(r'NF $F_\text{F}$')
             )
             ax[1].fill_between(bin_centers, 1 - y_error_stat, 1 + y_error_stat, color="gray", alpha=0.3, step='mid', label="Stat. Unc.")
             ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
@@ -2749,10 +2460,6 @@ def run_taylor_plots_if_requested() -> None:
     if not args.plot_taylor_coefficients:
         return
 
-    if args.ff_estimator == 'binary_classifier':
-        logger.warning('Skipping Taylor plots: only supported for NF models.')
-        return
-
     plot_nf_taylor_analysis(plot_root_dir / 'taylor_analysis')
     plot_nf_taylor_analysis_output(plot_root_dir / 'taylor_analysis')
     plot_nf_second_order_covariance(plot_root_dir / 'taylor_analysis')
@@ -2768,7 +2475,7 @@ def run_all_njets_categories() -> None:
 
     for category_name, njets_title in njets_categories:
         logger.info(f"Queueing plot production for {category_name}")
-        if args.plot_ff_results or (args.plot_nf_sampling and args.ff_estimator == 'nf'):
+        if args.plot_ff_results or args.plot_nf_sampling:
             run_plots_for_njets_category(category_name, njets_title)
 
 
