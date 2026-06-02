@@ -53,11 +53,11 @@ class Args(Tap):
     model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'single_nf'  # Training mode to load: grouped NF split by njets, single inclusive NF, or conditional NF with njets as input.
     classifier_training_tag: str = ''  # Optional classifier training folder suffix after 'training_'. Empty -> pick most recent.
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
-    plot_training_diagnostics: bool = False   # Plot training loss / learning-rate / time-per-epoch curves.
-    plot_nf_sampling: bool = False           # Plot NF-sampled vs data histograms in training variables.
-    plot_ff_results: bool = False             # Plot fake-factor comparison stacks for each njets category.
-    plot_ar_data_with_clipping: bool = False  # Plot AR data with both kept and excluded events (by clipping mask).
-    plot_taylor_coefficients: bool = False   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
+    plot_training_diagnostics: bool = True   # Plot training loss / learning-rate / time-per-epoch curves.
+    plot_nf_sampling: bool = True           # Plot NF-sampled vs data histograms in training variables.
+    plot_ff_results: bool = True             # Plot fake-factor comparison stacks for each njets category.
+    plot_ar_data_with_clipping: bool = True  # Plot AR data with both kept and excluded events (by clipping mask).
+    plot_taylor_coefficients: bool = True   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
     plot_complete_variables: bool = True
     ratio_ylim_min: float = 0.5  # Lower y-limit for ratio panels.
     ratio_ylim_max: float = 1.5  # Upper y-limit for ratio panels.
@@ -2368,32 +2368,32 @@ def run_plots_for_njets_category(category_name, njets_title):
             counts_ff_data_tau1, bin_edges = np.histogram(data_AR_OS_nf_tau1[var], weights=data_AR_OS_nf_tau1['ff_nf_tau1'], bins=bins)
             counts_ff_data2_tau1, _ = np.histogram(data_AR_OS_nf_tau1[var], weights=data_AR_OS_nf_tau1['ff_nf_tau1']**2, bins=bins)
 
-            counts_ff_diboson_tau1, _ = np.histogram(data_diboson_AR_OS_nf_tau1[var], weights=data_diboson_AR_OS_nf_tau1.weight, bins=bins)# * data_diboson_AR_OS_nf['ff_nf'], bins=bins)
+            counts_ff_diboson_tau1, _ = np.histogram(data_diboson_AR_OS_nf_tau1[var], weights=data_diboson_AR_OS_nf_tau1.weight * data_diboson_AR_OS_nf_tau1['ff_nf_tau1'], bins=bins)
             counts_ff_diboson2_tau1, _ = np.histogram(data_diboson_AR_OS_nf_tau1[var], weights=data_diboson_AR_OS_nf_tau1.weight**2, bins=bins)# * data_diboson_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_DY_tau1, _ = np.histogram(data_DY_AR_OS_nf_tau1[var], weights=data_DY_AR_OS_nf_tau1.weight, bins=bins)# * data_DY_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_DY2_tau1, _ = np.histogram(data_DY_AR_OS_nf_tau1[var], weights=data_DY_AR_OS_nf_tau1.weight**2, bins=bins)# * data_DY_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_ST_tau1, _ = np.histogram(data_ST_AR_OS_nf_tau1[var], weights=data_ST_AR_OS_nf_tau1.weight, bins=bins)# * data_ST_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_ST2_tau1, _ = np.histogram(data_ST_AR_OS_nf_tau1[var], weights=data_ST_AR_OS_nf_tau1.weight**2, bins=bins)# * data_ST_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_ttbar_tau1, _ = np.histogram(data_ttbar_AR_OS_nf_tau1[var], weights=data_ttbar_AR_OS_nf_tau1.weight, bins=bins)# * data_ttbar_L_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_ttbar2_tau1, _ = np.histogram(data_ttbar_AR_OS_nf_tau1[var], weights=data_ttbar_AR_OS_nf_tau1.weight**2, bins=bins)# * data_ttbar_L_AR_OS_nf['ff_nf'])**2, bins=bins)
+            counts_ff_DY_tau1, _ = np.histogram(data_DY_AR_OS_nf_tau1[var], weights=data_DY_AR_OS_nf_tau1.weight * data_DY_AR_OS_nf_tau1['ff_nf_tau1'], bins=bins)
+            counts_ff_DY2_tau1, _ = np.histogram(data_DY_AR_OS_nf_tau1[var], weights=(data_DY_AR_OS_nf_tau1.weight * data_DY_AR_OS_nf_tau1['ff_nf_tau1'])**2, bins=bins)
+            counts_ff_ST_tau1, _ = np.histogram(data_ST_AR_OS_nf_tau1[var], weights=data_ST_AR_OS_nf_tau1.weight * data_ST_AR_OS_nf_tau1['ff_nf_tau1'], bins=bins)
+            counts_ff_ST2_tau1, _ = np.histogram(data_ST_AR_OS_nf_tau1[var], weights=(data_ST_AR_OS_nf_tau1.weight * data_ST_AR_OS_nf_tau1['ff_nf_tau1'])**2, bins=bins)
+            counts_ff_ttbar_tau1, _ = np.histogram(data_ttbar_AR_OS_nf_tau1[var], weights=data_ttbar_AR_OS_nf_tau1.weight * data_ttbar_AR_OS_nf_tau1['ff_nf_tau1'], bins=bins)
+            counts_ff_ttbar2_tau1, _ = np.histogram(data_ttbar_AR_OS_nf_tau1[var], weights=(data_ttbar_AR_OS_nf_tau1.weight * data_ttbar_AR_OS_nf_tau1['ff_nf_tau1'])**2, bins=bins)
             counts_FF_tau1 = counts_ff_data_tau1 - counts_ff_diboson_tau1 - counts_ff_DY_tau1 - counts_ff_ST_tau1 - counts_ff_ttbar_tau1
 
             # ----- counts FF tau2 -----
             counts_ff_data_tau2, bin_edges = np.histogram(data_AR_OS_nf_tau2[var], weights=data_AR_OS_nf_tau2['ff_nf_tau2'], bins=bins)
             counts_ff_data2_tau2, _ = np.histogram(data_AR_OS_nf_tau2[var], weights=data_AR_OS_nf_tau2['ff_nf_tau2']**2, bins=bins)
 
-            counts_ff_diboson_tau2, _ = np.histogram(data_diboson_AR_OS_nf_tau2[var], weights=data_diboson_AR_OS_nf_tau2.weight, bins=bins)# * data_diboson_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_diboson2_tau2, _ = np.histogram(data_diboson_AR_OS_nf_tau2[var], weights=data_diboson_AR_OS_nf_tau2.weight**2, bins=bins)# * data_diboson_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_DY_tau2, _ = np.histogram(data_DY_AR_OS_nf_tau2[var], weights=data_DY_AR_OS_nf_tau2.weight, bins=bins)# * data_DY_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_DY2_tau2, _ = np.histogram(data_DY_AR_OS_nf_tau2[var], weights=data_DY_AR_OS_nf_tau2.weight**2, bins=bins)# * data_DY_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_ST_tau2, _ = np.histogram(data_ST_AR_OS_nf_tau2[var], weights=data_ST_AR_OS_nf_tau2.weight, bins=bins)# * data_ST_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_ST2_tau2, _ = np.histogram(data_ST_AR_OS_nf_tau2[var], weights=data_ST_AR_OS_nf_tau2.weight**2, bins=bins)# * data_ST_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_ttbar_tau2, _ = np.histogram(data_ttbar_AR_OS_nf_tau2[var], weights=data_ttbar_AR_OS_nf_tau2.weight, bins=bins)# * data_ttbar_L_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_ttbar2_tau2, _ = np.histogram(data_ttbar_AR_OS_nf_tau2[var], weights=data_ttbar_AR_OS_nf_tau2.weight**2, bins=bins)# * data_ttbar_L_AR_OS_nf['ff_nf'])**2, bins=bins)
+            counts_ff_diboson_tau2, _ = np.histogram(data_diboson_AR_OS_nf_tau2[var], weights=data_diboson_AR_OS_nf_tau2.weight * data_diboson_AR_OS_nf_tau2['ff_nf_tau2'], bins=bins)
+            counts_ff_diboson2_tau2, _ = np.histogram(data_diboson_AR_OS_nf_tau2[var], weights=(data_diboson_AR_OS_nf_tau2.weight * data_diboson_AR_OS_nf_tau2['ff_nf_tau2'])**2, bins=bins)
+            counts_ff_DY_tau2, _ = np.histogram(data_DY_AR_OS_nf_tau2[var], weights=data_DY_AR_OS_nf_tau2.weight * data_DY_AR_OS_nf_tau2['ff_nf_tau2'], bins=bins)
+            counts_ff_DY2_tau2, _ = np.histogram(data_DY_AR_OS_nf_tau2[var], weights=(data_DY_AR_OS_nf_tau2.weight * data_DY_AR_OS_nf_tau2['ff_nf_tau2'])**2, bins=bins)
+            counts_ff_ST_tau2, _ = np.histogram(data_ST_AR_OS_nf_tau2[var], weights=data_ST_AR_OS_nf_tau2.weight * data_ST_AR_OS_nf_tau2['ff_nf_tau2'], bins=bins)
+            counts_ff_ST2_tau2, _ = np.histogram(data_ST_AR_OS_nf_tau2[var], weights=(data_ST_AR_OS_nf_tau2.weight * data_ST_AR_OS_nf_tau2['ff_nf_tau2'])**2, bins=bins)
+            counts_ff_ttbar_tau2, _ = np.histogram(data_ttbar_AR_OS_nf_tau2[var], weights=data_ttbar_AR_OS_nf_tau2.weight * data_ttbar_AR_OS_nf_tau2['ff_nf_tau2'], bins=bins)
+            counts_ff_ttbar2_tau2, _ = np.histogram(data_ttbar_AR_OS_nf_tau2[var], weights=(data_ttbar_AR_OS_nf_tau2.weight * data_ttbar_AR_OS_nf_tau2['ff_nf_tau2'])**2, bins=bins)
             counts_FF_tau2 = counts_ff_data_tau2 - counts_ff_diboson_tau2 - counts_ff_DY_tau2 - counts_ff_ST_tau2 - counts_ff_ttbar_tau2
 
             # ----- total FF, with factor 0.5 assuming both FF are weighted equally -----
-            counts_FF = 0.5 * (counts_FF_tau1 + counts_FF_tau2)
+            counts_FF = 0.5*(counts_FF_tau1 + counts_FF_tau2)
 
             # ----- counts SR -----
             counts_diboson, _ = np.histogram(data_diboson_SR_OS[var], weights=data_diboson_SR_OS.weight, bins=bins)

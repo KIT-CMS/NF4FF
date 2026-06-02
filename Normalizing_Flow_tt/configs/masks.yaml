@@ -1,13 +1,11 @@
 # Effective definition used in code (the second duplicate in the old implementation).
 mask_preselection_tight:
+  - eta_1 <= 2.3
+  - eta_2 <= 2.3
   - pt_1 >= 40
   - pt_2 >= 40
   - (tau_decaymode_2 == 0) | (tau_decaymode_2 == 1) | (tau_decaymode_2 == 10) | (tau_decaymode_2 == 11)
 
-mask_preselection_tight_binary_classifier:
-  - pt_1 >= 40
-  - pt_2 >= 40
-  - (tau_decaymode_2 == 0) | (tau_decaymode_2 == 1) | (tau_decaymode_2 == 10) | (tau_decaymode_2 == 11)
 
 # Determination Region
 mask_DR:

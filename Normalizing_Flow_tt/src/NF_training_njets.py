@@ -39,7 +39,7 @@ t.set_num_threads(8)
 cfg_path = load_config('/work/tapp/TauFF/NF4FF/Normalizing_Flow_tt/configs/config_path.yaml')
 
 # ----- global training parameters -----
-PATIENCE = 30
+PATIENCE = 50
 
 # ----- how to handle njets -----
 TRAINING_MODEL_GROUPED = 'grouped_njets_split' #train three flows -> njet=0, njet=1, njet>=2; input: variables only, but separate density for each njets category
@@ -120,7 +120,7 @@ def build_training_variables_tag(variables: list[str]) -> str:
 # ----- shared helpers -----
 
 def mask_preselection_loose(df):
-    #mask_eta = (df.eta_1 <= 2.1) & (df.eta_2 <= 2.3)
+    mask_eta = (df.eta_1 <= 2.3) & (df.eta_2 <= 2.3)
     mask_pt = (df.pt_1 >= 40) & (df.pt_2 >= 40)
     mask_tau_decay_mode = (
         (df.tau_decaymode_2 == 0)
