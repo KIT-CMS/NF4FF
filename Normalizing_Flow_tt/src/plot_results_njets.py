@@ -55,10 +55,10 @@ class Args(Tap):
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
     plot_training_diagnostics: bool = False   # Plot training loss / learning-rate / time-per-epoch curves.
     plot_nf_sampling: bool = False           # Plot NF-sampled vs data histograms in training variables.
-    plot_ff_results: bool = True             # Plot fake-factor comparison stacks for each njets category.
+    plot_ff_results: bool = False             # Plot fake-factor comparison stacks for each njets category.
     plot_ar_data_with_clipping: bool = False  # Plot AR data with both kept and excluded events (by clipping mask).
     plot_taylor_coefficients: bool = False   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
-    plot_complete_variables: bool = False
+    plot_complete_variables: bool = True
     ratio_ylim_min: float = 0.5  # Lower y-limit for ratio panels.
     ratio_ylim_max: float = 1.5  # Upper y-limit for ratio panels.
 
@@ -1327,7 +1327,7 @@ def plot_nf_sampling_training_variables(category_name: str, njets_title: str, da
 
     panel_specs = [
         ("Tau 1 AR-like", tau1_ar_data, model_AR_like_tau1, '#d62728'),
-        ("Tau 2 AR-like", tau2_ar_data, model_AR_like_tau2, '#2ca02c'), #todo Farbe
+        ("Tau 2 AR-like", tau2_ar_data, model_AR_like_tau2, '#2ca02c'),
         ("Tau 1 SR-like", sr_data, model_SR_like_tau1, '#ff7f0e'),
         ("Tau 2 SR-like", sr_data, model_SR_like_tau2, '#1f77b4'),
     ]
@@ -1716,14 +1716,21 @@ def plot_nf_taylor_analysis(output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     data_pre = mask_preselection_for_estimator(data_complete)
-    qcd_ar = AR_like_qcd(data_pre)
-    qcd_ar = qcd_ar[(qcd_ar.process == 0) & (qcd_ar.SS == True)].copy()
-    qcd_sr = SR_like_qcd(data_pre)
-    qcd_sr = qcd_sr[(qcd_sr.process == 0) & (qcd_sr.SS == True)].copy()
+    tau1_ar = AR_like_tau1(data_pre)
+    tau2_ar = AR_like_tau2(data_pre)
+    tau1_ar = tau1_ar[(tau1_ar.process == 0) & (tau1_ar.SS == True)].copy()
+    tau2_ar = tau2_ar[(tau2_ar.process == 0) & (tau2_ar.SS == True)].copy()
+
+    tau1_sr = SR_like(data_pre)
+    tau2_sr = SR_like(data_pre)
+    tau1_sr = tau1_sr[(tau1_sr.process == 0) & (tau1_sr.SS == True)].copy()    
+    tau2_sr = tau2_sr[(tau2_sr.process == 0) & (tau2_sr.SS == True)].copy()
 
     panel_specs = [
-        ('QCD AR-like',   qcd_ar,   model_AR_like_qcd,   '#d62728'),
-        ('QCD SR-like',   qcd_sr,   model_SR_like_qcd,   '#ff7f0e'),
+        ('Tau1 AR-like',   tau1_ar,   model_AR_like_tau1,   '#d62728'),
+        ('Tau2 AR-like',   tau2_ar,   model_AR_like_tau2,   '#2ca02c'),
+        ('Tau1 SR-like',   tau1_sr,   model_SR_like_tau1,   '#ff7f0e'),
+        ('Tau2 SR-like',   tau2_sr,   model_SR_like_tau2,   '#1f77b4'),
     ]
 
     fig, axes = plt.subplots(2, 2, figsize=(18, 14))
@@ -1840,14 +1847,21 @@ def plot_nf_taylor_analysis_output(output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     data_pre = mask_preselection_for_estimator(data_complete)
-    qcd_ar = AR_like_qcd(data_pre)
-    qcd_ar = qcd_ar[(qcd_ar.process == 0) & (qcd_ar.SS == True)].copy()
-    qcd_sr = SR_like_qcd(data_pre)
-    qcd_sr = qcd_sr[(qcd_sr.process == 0) & (qcd_sr.SS == True)].copy()
+    tau1_ar = AR_like_tau1(data_pre)
+    tau2_ar = AR_like_tau2(data_pre)
+    tau1_ar = tau1_ar[(tau1_ar.process == 0) & (tau1_ar.SS == True)].copy()
+    tau2_ar = tau2_ar[(tau2_ar.process == 0) & (tau2_ar.SS == True)].copy()
+
+    tau1_sr = SR_like(data_pre)
+    tau2_sr = SR_like(data_pre)
+    tau1_sr = tau1_sr[(tau1_sr.process == 0) & (tau1_sr.SS == True)].copy()    
+    tau2_sr = tau2_sr[(tau2_sr.process == 0) & (tau2_sr.SS == True)].copy()
 
     panel_specs = [
-        ('QCD AR-like',   qcd_ar,   model_AR_like_qcd,   '#d62728'),
-        ('QCD SR-like',   qcd_sr,   model_SR_like_qcd,   '#ff7f0e'),
+        ('Tau1 AR-like',   tau1_ar,   model_AR_like_tau1,   '#d62728'),
+        ('Tau2 AR-like',   tau2_ar,   model_AR_like_tau2,   '#2ca02c'),
+        ('Tau1 SR-like',   tau1_sr,   model_SR_like_tau1,   '#ff7f0e'),
+        ('Tau2 SR-like',   tau2_sr,   model_SR_like_tau2,   '#1f77b4'),
     ]
 
     fig, axes = plt.subplots(2, 2, figsize=(18, 14))
@@ -1962,16 +1976,22 @@ def plot_nf_second_order_covariance(output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     data_pre = mask_preselection_for_estimator(data_complete)
-    qcd_ar = AR_like_qcd(data_pre)
-    qcd_ar = qcd_ar[(qcd_ar.process == 0) & (qcd_ar.SS == True)].copy()
-    qcd_sr = SR_like_qcd(data_pre)
-    qcd_sr = qcd_sr[(qcd_sr.process == 0) & (qcd_sr.SS == True)].copy()
+    tau1_ar = AR_like_tau1(data_pre)
+    tau2_ar = AR_like_tau2(data_pre)
+    tau1_ar = tau1_ar[(tau1_ar.process == 0) & (tau1_ar.SS == True)].copy()
+    tau2_ar = tau2_ar[(tau2_ar.process == 0) & (tau2_ar.SS == True)].copy()
+
+    tau1_sr = SR_like(data_pre)
+    tau2_sr = SR_like(data_pre)
+    tau1_sr = tau1_sr[(tau1_sr.process == 0) & (tau1_sr.SS == True)].copy()    
+    tau2_sr = tau2_sr[(tau2_sr.process == 0) & (tau2_sr.SS == True)].copy()
 
     panel_specs = [
-        ('QCD AR-like',   qcd_ar,   model_AR_like_qcd),
-        ('QCD SR-like',   qcd_sr,   model_SR_like_qcd),
+        ('Tau1 AR-like',   tau1_ar,   model_AR_like_tau1),
+        ('Tau2 AR-like',   tau2_ar,   model_AR_like_tau2),
+        ('Tau1 SR-like',   tau1_sr,   model_SR_like_tau1),
+        ('Tau2 SR-like',   tau2_sr,   model_SR_like_tau2),
     ]
-
     fig, axes = plt.subplots(2, 2, figsize=(18, 14))
     flat_axes = axes.flatten()
 
