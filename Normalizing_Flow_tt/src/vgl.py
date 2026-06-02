@@ -1,36 +1,29 @@
-'''
-loads models, evaluates fake factors, and makes plots
-'''
-
 from __future__ import annotations
 import logging
 import hashlib
-from contextlib import contextmanager
-from copy import deepcopy
-import correctionlib as cr
-from pathlib import Path
 import re
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Literal, Tuple, Iterable
-
-import matplotlib.pyplot as plt
-import matplotlib
-import mplhep as hep
-import numpy as np
+from copy import deepcopy
 import pandas as pd
-from tap import Tap
-from tayloranalysis import extend_model as _ta_extend
+import numpy as np
 import torch
 import torch as t
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
+import matplotlib
 import yaml
-
-from classes.Logging import setup_logging
-from classes.NeuralNetworks import RealNVP, BinaryClassifier
+from tap import Tap
+from CustomLogging import setup_logging
+from classes.NeuralNetworks import RealNVP, RealNVP_NN, AffineCoupling, MLP, ConditionalRealNVP, BinaryClassifier
+import correctionlib as cr
 from classes.Dataclasses import ModelConfig
-from classes.Collection import load_model_config, load_flow, load_conditional_flow, evaluate_pdf, compute_eventwise_fake_factors, get_my_data_qcd
+from classes.Collection import load_model_config, load_flow, load_conditional_flow, evaluate_pdf, compute_eventwise_fake_factors, get_my_data_qcd, get_my_data_wjets
 from classes.Collection import evaluate_density_ratio_binary_classifier, compute_eventwise_fake_factors_binary_classifier
-from classes.Collection import load_config, load_grouped_qcd_njets_router
+from classes.Collection import load_config, load_grouped_wjets_njets_router, load_grouped_qcd_njets_router
 from classes.Plotting import CMS_CHANNEL_TITLE, CMS_LABEL, CMS_LUMI_TITLE, CMS_NJETS_TITLE, reorder_for_rowwise_legend, adjust_ylim_for_legend
-
+from tayloranalysis import extend_model as _ta_extend
 
 matplotlib.rcParams.update({
     'font.size': 16,
@@ -50,36 +43,55 @@ matplotlib.rcParams.update({
 logger = setup_logging(logger=logging.getLogger(__name__))
 
 class Args(Tap):
-    model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'single_nf'  # Training mode to load: grouped NF split by njets, single inclusive NF, or conditional NF with njets as input.
+    model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'conditional_nf'  # Training mode to load: grouped NF split by njets, single inclusive NF, or conditional NF with njets as input.
+    ff_estimator: Literal['nf', 'binary_classifier'] = 'nf'  # FF backend: use NF models or SR/AR binary-classifier models.
     classifier_training_tag: str = ''  # Optional classifier training folder suffix after 'training_'. Empty -> pick most recent.
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
+    apply_wjets_binary_correction: bool = True  # Apply Wjets event-wise antiDR/DR correction in binary-classifier mode.
+    classifier_corrections_training_tag: str = ''  # Optional Wjets correction training folder suffix in binary_classifier_corrections. Empty -> pick most recent.
+    classifier_corrections_hidden_layers: int = -1  # Wjets correction model hidden layers; -1 means reuse `classifier_hidden_layers`.
     plot_training_diagnostics: bool = False   # Plot training loss / learning-rate / time-per-epoch curves.
-    plot_nf_sampling: bool = False           # Plot NF-sampled vs data histograms in training variables.
+    plot_nf_sampling: bool = False            # Plot NF-sampled vs data histograms in training variables.
     plot_ff_results: bool = True             # Plot fake-factor comparison stacks for each njets category.
     plot_ar_data_with_clipping: bool = False  # Plot AR data with both kept and excluded events (by clipping mask).
-    plot_taylor_coefficients: bool = False   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
+    plot_taylor_coefficients: bool = True   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
     plot_complete_variables: bool = False
     ratio_ylim_min: float = 0.75  # Lower y-limit for ratio panels.
     ratio_ylim_max: float = 1.25  # Upper y-limit for ratio panels.
 
-    taus = 1 #[1, 2] #[1, 2, 12] # list of tau fakes
-    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
-    var: Literal["variables_5", "variables_8"] = "variables_5"
-
 
 # Runtime context (initialized in `initialize_runtime_context()` and consumed by plotting functions)
-cfg_path = load_config('/work/tapp/TauFF/NF4FF/Normalizing_Flow_tt/configs/config_path.yaml')
-args = Args().parse_args()
-
+args = None
 variables = []
 dim = 0
 training_variables_tag = ''
 variables_with_njets = []
 device = None
-config_path = cfg_path['config_NF']
+config_path = "../configs/config_NF.yaml"
 mode_dir = ''
 include_njets_feature = False
 resolved_tag = ''
+
+classifier_features_wjets = None
+classifier_features_qcd = None
+prior_ar_over_sr_wjets = None
+prior_ar_over_sr_qcd = None
+correction_model_wjets_dr = None
+correction_model_wjets_antidr = None
+correction_features_wjets_dr = None
+correction_features_wjets_antidr = None
+correction_prior_ar_over_sr_wjets_dr = None
+correction_prior_ar_over_sr_wjets_antidr = None
+
+chk_pth_model_AR_like_wjets = ''
+chk_pth_model_SR_like_wjets = ''
+chk_pth_model_AR_like_qcd = ''
+chk_pth_model_SR_like_qcd = ''
+
+model_AR_like_wjets = None
+model_SR_like_wjets = None
+model_AR_like_qcd = None
+model_SR_like_qcd = None
 
 data_complete = None
 list_variables = []
@@ -90,7 +102,7 @@ list_bins = []
 main_plot_bins_by_variable = {}
 sampling_plot_bins_by_variable = {}
 plot_root_dir = Path('plots')
-MASKS_CONFIG_PATH = Path('/work/tapp/TauFF/NF4FF/Normalizing_Flow_tt/configs/masks.yaml')
+MASKS_CONFIG_PATH = Path('../configs/masks.yaml')
 MASKS_CONFIG: dict[str, list[str]] = {}
 
 # ------------ functions ----------
@@ -158,7 +170,7 @@ def _build_training_variables_prefix(variables: list[str]) -> str:
     return f"vars{len(variables)}_{readable_tail}"
 
 
-def resolve_training_tag(variables: list[str], mode_dir: str, base_dir: str = cfg_path['NF_results']) -> str:
+def resolve_training_tag(variables: list[str], mode_dir: str, base_dir: str = 'Training_results_new') -> str:
     """
     Glob for a training folder whose name starts with 'training_<prefix>'
     (ignoring the trailing hash).  Returns the folder-name suffix that follows
@@ -661,7 +673,7 @@ def plot_pdf_distributions(
     CMS_CHANNEL_TITLE([ax])
     CMS_LUMI_TITLE([ax])
     CMS_LABEL([ax])
-    CMS_NJETS_TITLE([ax], title=r"$\mathrm{N_{jets}} \geq 0$")
+    CMS_NJETS_TITLE([ax], title=r"$N_{jets} \geq 0$")
 
     # ---------------------------------------------------------
     # Output filenames
@@ -680,44 +692,88 @@ def plot_pdf_distributions(
 
 
 def plot_ff_clipping_histogram(
+    ff_full_wjets: np.ndarray,
+    clip_mask_wjets: np.ndarray,
+    clip_value_wjets: float,
     ff_full_qcd: np.ndarray,
     clip_mask_qcd: np.ndarray,
     clip_value_qcd: float,
+    wjets_clipped_percent: float,
     qcd_clipped_percent: float,
     plot_dir: str | Path,
+    ff_full_wjets_uncorrected: np.ndarray | None = None,
+    clip_mask_wjets_uncorrected: np.ndarray | None = None,
 ) -> None:
 
 
     """Plot and save the FF clipping diagnostic histogram (`hist_FF.png`)."""
     bins = np.logspace(-3, 1, 61)
+    ff_kept_wjets = ff_full_wjets[clip_mask_wjets]
+    ff_clipped_wjets = ff_full_wjets[~clip_mask_wjets]
     ff_kept_qcd = ff_full_qcd[clip_mask_qcd]
     ff_clipped_qcd = ff_full_qcd[~clip_mask_qcd]
 
-    fig, ax = plt.subplots(1, 1, figsize=(8, 7))
+    fig, ax = plt.subplots(2, 1, figsize=(8, 7))
 
-    ax.hist(ff_kept_qcd, bins=bins, label="QCD FF (kept)", color="#b9ac70", alpha=0.9)
-    ax.hist(ff_clipped_qcd, bins=bins, label="QCD FF (clipped)", color="#b9ac70", alpha=0.25)
-    ax.axvline(clip_value_qcd, color="black", linestyle="--", linewidth=1.4, label=fr"QCD clip ({clip_value_qcd:.2f})")
-    ax.set_xscale("log")
-    ax.set_yscale('log')
-    ax.set_xlim(1e-3, 1e1)
-    ax.set_ylabel("Events")
-    ax.set_xlabel("Eventwise FF")
-    ax.text(
+    if ff_full_wjets_uncorrected is not None and clip_mask_wjets_uncorrected is not None:
+        ff_kept_wjets_uncorrected = ff_full_wjets_uncorrected[clip_mask_wjets_uncorrected]
+        ax[0].hist(ff_kept_wjets_uncorrected, bins=bins, label="W+jets FF (no correction)", color="#e76300", alpha=0.45)
+        ax[0].hist(ff_kept_wjets, bins=bins, label="W+jets FF (with correction)", color="#e76300", alpha=0.9)
+        ax[0].hist(ff_clipped_wjets, bins=bins, label="W+jets FF clipped (with correction)", color="#e76300", alpha=0.18)
+    else:
+        ax[0].hist(ff_kept_wjets, bins=bins, label="W+jets FF (kept)", color="#e76300", alpha=0.9)
+        ax[0].hist(ff_clipped_wjets, bins=bins, label="W+jets FF (clipped)", color="#e76300", alpha=0.25)
+
+    ax[0].axvline(clip_value_wjets, color="black", linestyle="--", linewidth=1.4, label=fr"W+jets clip ({clip_value_wjets:.2f})")
+    ax[0].set_xscale("log")
+    ax[0].set_yscale('log')
+    ax[0].set_xlim(1e-4, 1e2)
+    ax[0].set_ylabel("Events")
+    ax[0].set_title("W+jets eventwise FF", pad=30)
+    adjust_ylim_for_legend(ax[0], spacing=0.12)
+    ax[0].text(0.05, 0.95, "",
+        transform=ax[0].transAxes,
+        va='top')
+
+    ax[0].text(
         0.98,
         0.94,
-        f"Clipped: {qcd_clipped_percent:.2f}%",
-        transform=ax.transAxes,
+        f"Clipped: {wjets_clipped_percent:.2f}%",
+        transform=ax[0].transAxes,
         ha='right',
         va='top',
         fontsize=10,
     )
-    ymin, ymax = ax.get_ylim()
-    ax.set_ylim(ymin, ymax * 1.2)  # add 20% headroom
+    ymin, ymax = ax[0].get_ylim()
+    ax[0].set_ylim(ymin, ymax * 1.2)  # add 20% headroom
+    CMS_CHANNEL_TITLE([ax[0]])
+    CMS_LUMI_TITLE([ax[0]])
+    CMS_LABEL([ax[0]])
+    CMS_NJETS_TITLE([ax[0]], title=r"$N_{jets} \geq 0$")
 
-   
-    handles1, labels1 = ax.get_legend_handles_labels()
-    fig.legend(handles1, labels1,
+    ax[1].hist(ff_kept_qcd, bins=bins, label="QCD FF (kept)", color="#b9ac70", alpha=0.9)
+    ax[1].hist(ff_clipped_qcd, bins=bins, label="QCD FF (clipped)", color="#b9ac70", alpha=0.25)
+    ax[1].axvline(clip_value_qcd, color="black", linestyle="--", linewidth=1.4, label=fr"QCD clip ({clip_value_qcd:.2f})")
+    ax[1].set_xscale("log")
+    ax[1].set_yscale('log')
+    ax[1].set_xlim(1e-3, 1e1)
+    ax[1].set_ylabel("Events")
+    ax[1].set_xlabel("Eventwise FF")
+    ax[1].text(
+        0.98,
+        0.94,
+        f"Clipped: {qcd_clipped_percent:.2f}%",
+        transform=ax[1].transAxes,
+        ha='right',
+        va='top',
+        fontsize=10,
+    )
+    ymin, ymax = ax[1].get_ylim()
+    ax[1].set_ylim(ymin, ymax * 1.2)  # add 20% headroom
+
+    handles0, labels0 = ax[0].get_legend_handles_labels()
+    handles1, labels1 = ax[1].get_legend_handles_labels()
+    fig.legend(handles0 + handles1, labels0 + labels1,
                loc='upper center', bbox_to_anchor=(0.5, 1.0),
                ncol=3, frameon=False, fontsize=9)
 
@@ -734,9 +790,21 @@ def total_ff_corrected(df):
     frac = ff['process_fractions']
 
 
+    ff_wjets = ff['Wjets_fake_factors']
     ff_qcd = ff['QCD_fake_factors']
+    ff_ttbar = ff['ttbar_fake_factors']
 
     corr = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors/workdir/ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz')
+
+
+    df["wjets_classic_ff"] = ff_wjets.evaluate(
+        df.pt_2.values,
+        df.njets.values,
+        df.pt_1.values,
+        "nominal",
+    )
+
+
 
     df['qcd_classic_ff'] = ff_qcd.evaluate(
         df.pt_2.values,
@@ -744,6 +812,21 @@ def total_ff_corrected(df):
         "nominal",
     )
 
+    df['ttbar_classic_ff'] = ff_ttbar.evaluate(
+        df.pt_2.values,
+        df.njets.values,
+        "nominal",
+    )
+
+    df["wjets_corrected_classic_ff"] = df["wjets_classic_ff"] * evaluate_compound_ff_correction(
+        corr,
+        "Wjets_compound_correction",
+        df,
+    ) * corr["Wjets_DR_SR_correction"].evaluate(
+        df.pt_tt,
+        df.njets,
+        "nominal",
+    )
 
     df["qcd_corrected_classic_ff"] = df["qcd_classic_ff"] * evaluate_compound_ff_correction(
         corr,
@@ -755,6 +838,19 @@ def total_ff_corrected(df):
         "nominal",
     )
 
+    df["ttbar_corrected_classic_ff"] = df["ttbar_classic_ff"] * evaluate_compound_ff_correction(
+        corr,
+        "ttbar_compound_correction",
+        df,
+    )
+
+    df['process_fraction_wjets'] = frac.evaluate(
+        'Wjets',
+        df.mt_1.values,
+        df.njets.values,
+        'nominal'
+    )
+
     df['process_fraction_qcd'] = frac.evaluate(
         'QCD',
         df.mt_1.values,
@@ -762,24 +858,43 @@ def total_ff_corrected(df):
         'nominal'
     )
 
-    df['corrected_ff'] = df['process_fraction_qcd'] * df['qcd_corrected_classic_ff']
+    df['process_fraction_ttbar'] = frac.evaluate(
+        'ttbar',
+        df.mt_1.values,
+        df.njets.values,
+        'nominal'
+    )
+
+    df['corrected_ff'] = df['process_fraction_wjets'] * df['wjets_corrected_classic_ff'] + df['process_fraction_qcd'] * df['qcd_corrected_classic_ff'] + df['process_fraction_ttbar'] * df['ttbar_corrected_classic_ff']
 
     return df.copy()
 
 def normalizing_flow_ff(
-    df1,
-    df2,
+    df,
     variables,
-    model_AR_like_tau1,
-    model_SR_like_tau1,
-    model_AR_like_tau2,
-    model_SR_like_tau2,
-    global_ff_tau1,
-    global_ff_tau2,
+    model_AR_like_wjets,
+    model_SR_like_wjets,
+    global_ff_wjets,
+    model_AR_like_qcd,
+    model_SR_like_qcd,
+    global_ff_qcd,
     device,
     plotting=True,
     plot_dir="plots",
-    include_njets=True
+    include_njets=True,
+    ff_estimator: str = 'nf',
+    prior_ar_over_sr_wjets: float | None = None,
+    prior_ar_over_sr_qcd: float | None = None,
+    classifier_features_wjets: list[str] | None = None,
+    classifier_features_qcd: list[str] | None = None,
+    correction_model_wjets_dr=None,
+    correction_model_wjets_antidr=None,
+    correction_prior_ar_over_sr_wjets_dr: float | None = None,
+    correction_prior_ar_over_sr_wjets_antidr: float | None = None,
+    correction_features_wjets_dr: list[str] | None = None,
+    correction_features_wjets_antidr: list[str] | None = None,
+    correction_global_ff_wjets_dr: float | None = None,
+    correction_global_ff_wjets_antidr: float | None = None,
 ):
     """
     Computes eventwise fake factors for W+jets and QCD, and returns
@@ -798,115 +913,173 @@ def normalizing_flow_ff(
         df : pandas DataFrame with added columns:
              'ff_nf_wjets', 'ff_nf_qcd'
     """
-    df1 = df1.copy()
-    if df1.empty:
-        df1['ff_nf_tau1'] = pd.Series(dtype=float)
-        df1['ff_nf'] = pd.Series(dtype=float)
-        return df1
-    
-    df2 = df2.copy()
-    if df2.empty:
-        df2['ff_nf_tau2'] = pd.Series(dtype=float)
-        df2['ff_nf'] = pd.Series(dtype=float)
-        return df2
+    df = df.copy()
+    if df.empty:
+        df['ff_nf_wjets'] = pd.Series(dtype=float)
+        df['ff_nf_qcd'] = pd.Series(dtype=float)
+        df['ff_nf'] = pd.Series(dtype=float)
+        return df
 
     input_variables = (['njets'] + variables) if include_njets else list(variables)
-    
-    # --- FF ---
-    # Evaluate tau1 PDFs
-    df_pt_tau1 = get_my_data_qcd(df1, input_variables).to_torch().to(device)
+    ff_full_wjets_uncorrected = None
+    clip_mask_wjets_uncorrected = None
 
-    pdf_AR_like_tau1 = evaluate_pdf(model_AR_like_tau1, df_pt_tau1.X)
-    pdf_SR_like_tau1 = evaluate_pdf(model_SR_like_tau1, df_pt_tau1.X)
+    if ff_estimator == 'binary_classifier':
+        wjets_features = classifier_features_wjets if classifier_features_wjets is not None else list(variables)
+        qcd_features = classifier_features_qcd if classifier_features_qcd is not None else list(variables)
+        prior_ar_over_sr_wjets = 1.0 if prior_ar_over_sr_wjets is None else float(prior_ar_over_sr_wjets)
+        prior_ar_over_sr_qcd = 1.0 if prior_ar_over_sr_qcd is None else float(prior_ar_over_sr_qcd)
 
-    ff_full_tau1, _, global_ff_cor_tau1, clip_mask_tau1, clip_value_tau1 = compute_eventwise_fake_factors(
-        pdf_AR_like_tau1, pdf_SR_like_tau1, global_ff_tau1
-    )
+        df_pt_wjets = get_my_data_wjets(df, wjets_features).to_torch().to(device)
+        ratio_wjets = evaluate_density_ratio_binary_classifier(
+            model_AR_like_wjets,
+            df_pt_wjets.X,
+            prior_ar_over_sr=prior_ar_over_sr_wjets,
+        )
+        ff_full_wjets, _, global_ff_cor_wjets, clip_mask_wjets, clip_value_wjets = compute_eventwise_fake_factors_binary_classifier(
+            ratio_wjets,
+            global_ff_wjets,
+        )
+        ff_full_wjets_uncorrected = ff_full_wjets.copy()
+        clip_mask_wjets_uncorrected = clip_mask_wjets.copy()
 
-    # Evaluate tau2 PDFs
-    df_pt_tau2 = get_my_data_qcd(df2, input_variables).to_torch().to(device)
+        if (
+            correction_model_wjets_dr is not None
+            and correction_model_wjets_antidr is not None
+            and correction_global_ff_wjets_dr is not None
+            and correction_global_ff_wjets_antidr is not None
+            and correction_global_ff_wjets_dr > 0
+            and correction_global_ff_wjets_antidr > 0
+        ):
+            corr_dr_features = correction_features_wjets_dr if correction_features_wjets_dr is not None else wjets_features
+            corr_antidr_features = correction_features_wjets_antidr if correction_features_wjets_antidr is not None else wjets_features
+            corr_prior_dr = 1.0 if correction_prior_ar_over_sr_wjets_dr is None else float(correction_prior_ar_over_sr_wjets_dr)
+            corr_prior_antidr = 1.0 if correction_prior_ar_over_sr_wjets_antidr is None else float(correction_prior_ar_over_sr_wjets_antidr)
 
-    pdf_AR_like_tau2 = evaluate_pdf(model_AR_like_tau2, df_pt_tau2.X)
-    pdf_SR_like_tau2 = evaluate_pdf(model_SR_like_tau2, df_pt_tau2.X)
+            df_pt_wjets_corr_dr = get_my_data_wjets(df, corr_dr_features).to_torch().to(device)
+            ratio_wjets_corr_dr = evaluate_density_ratio_binary_classifier(
+                correction_model_wjets_dr,
+                df_pt_wjets_corr_dr.X,
+                prior_ar_over_sr=corr_prior_dr,
+            )
+            ff_wjets_corr_dr, _, _, _, _ = compute_eventwise_fake_factors_binary_classifier(
+                ratio_wjets_corr_dr,
+                float(correction_global_ff_wjets_dr),
+            )
 
-    ff_full_tau2, _, global_ff_cor_tau2, clip_mask_tau2, clip_value_tau2 = compute_eventwise_fake_factors(
-        pdf_AR_like_tau2, pdf_SR_like_tau2, global_ff_tau2
-    )
+            df_pt_wjets_corr_antidr = get_my_data_wjets(df, corr_antidr_features).to_torch().to(device)
+            ratio_wjets_corr_antidr = evaluate_density_ratio_binary_classifier(
+                correction_model_wjets_antidr,
+                df_pt_wjets_corr_antidr.X,
+                prior_ar_over_sr=corr_prior_antidr,
+            )
+            ff_wjets_corr_antidr, _, _, _, _ = compute_eventwise_fake_factors_binary_classifier(
+                ratio_wjets_corr_antidr,
+                float(correction_global_ff_wjets_antidr),
+            )
 
-    
+            with np.errstate(divide='ignore', invalid='ignore'):
+                wjets_corr_ratio = ff_wjets_corr_antidr / ff_wjets_corr_dr
+            valid_corr_ratio = np.isfinite(wjets_corr_ratio) & (ff_wjets_corr_dr > 0)
+            wjets_corr_ratio = np.where(valid_corr_ratio, wjets_corr_ratio, 1.0)
+
+            ff_full_wjets = ff_full_wjets * wjets_corr_ratio
+            clip_mask_wjets = clip_mask_wjets & np.isfinite(ff_full_wjets) & (ff_full_wjets <= clip_value_wjets)
+
+        df_pt_qcd = get_my_data_qcd(df, qcd_features).to_torch().to(device)
+        ratio_qcd = evaluate_density_ratio_binary_classifier(
+            model_AR_like_qcd,
+            df_pt_qcd.X,
+            prior_ar_over_sr=prior_ar_over_sr_qcd,
+        )
+        ff_full_qcd, _, global_ff_cor_qcd, clip_mask_qcd, clip_value_qcd = compute_eventwise_fake_factors_binary_classifier(
+            ratio_qcd,
+            global_ff_qcd,
+        )
+    else:
+        # --- W+jets: evaluate PDFs on the full df ---
+        df_pt_wjets = get_my_data_wjets(df, input_variables).to_torch().to(device)
+
+        pdf_AR_like_wjets = evaluate_pdf(model_AR_like_wjets, df_pt_wjets.X)
+        pdf_SR_like_wjets = evaluate_pdf(model_SR_like_wjets, df_pt_wjets.X)
+
+        ff_full_wjets, _, global_ff_cor_wjets, clip_mask_wjets, clip_value_wjets = compute_eventwise_fake_factors(
+            pdf_AR_like_wjets, pdf_SR_like_wjets, global_ff_wjets
+        )
+
+        # --- QCD FF ---
+        # Evaluate QCD PDFs on the same full df (before any W+jets filtering)
+        df_pt_qcd = get_my_data_qcd(df, input_variables).to_torch().to(device)
+
+        pdf_AR_like_qcd = evaluate_pdf(model_AR_like_qcd, df_pt_qcd.X)
+        pdf_SR_like_qcd = evaluate_pdf(model_SR_like_qcd, df_pt_qcd.X)
+
+        ff_full_qcd, _, global_ff_cor_qcd, clip_mask_qcd, clip_value_qcd = compute_eventwise_fake_factors(
+            pdf_AR_like_qcd, pdf_SR_like_qcd, global_ff_qcd
+        )
 
     # Keep per-process clipping/correction independent.
     # `compute_eventwise_fake_factors` already applies each process-specific
     # global correction. A second combined correction can strongly over-scale FFs.
+    combined_mask = clip_mask_wjets & clip_mask_qcd
 
-    if not np.any(clip_mask_tau1):
+    if not np.any(combined_mask):
         logger.warning("No events survive joint FF clipping; returning empty dataframe.")
         df = df.iloc[0:0].copy()
-        #df['ff_nf_tau1'] = pd.Series(dtype=float)
-        #df['ff_nf'] = pd.Series(dtype=float)
-        return df
-    
-    if not np.any(clip_mask_tau2):
-        logger.warning("No events survive joint FF clipping; returning empty dataframe.")
-        df = df.iloc[0:0].copy()
-        #df['ff_nf_tau2'] = pd.Series(dtype=float)
-        #df['ff_nf'] = pd.Series(dtype=float)
+        df['ff_nf_wjets'] = pd.Series(dtype=float)
+        df['ff_nf_qcd'] = pd.Series(dtype=float)
+        df['ff_nf'] = pd.Series(dtype=float)
         return df
 
     logger.info(
-        "%s clipping acceptance: tau1=%.4f, tau2=%.4f",
-        'NF',
-        float(np.mean(clip_mask_tau1)),
-        float(np.mean(clip_mask_tau2)),
+        "%s clipping acceptance: Wjets=%.4f, QCD=%.4f, joint=%.4f",
+        'Classifier' if ff_estimator == 'binary_classifier' else 'NF',
+        float(np.mean(clip_mask_wjets)),
+        float(np.mean(clip_mask_qcd)),
+        float(np.mean(combined_mask)),
     )
 
-    tau1_clipped_percent = 100.0 * (1.0 - float(np.mean(clip_mask_tau1)))
-    tau2_clipped_percent = 100.0 * (1.0 - float(np.mean(clip_mask_tau2)))
+    wjets_clipped_percent = 100.0 * (1.0 - float(np.mean(clip_mask_wjets)))
+    qcd_clipped_percent = 100.0 * (1.0 - float(np.mean(clip_mask_qcd)))
+    joint_clipped_percent = 100.0 * (1.0 - float(np.mean(combined_mask)))
 
-    # ----- Factor 0.5 to avoid over-scaling when combining two taus' FFs in the final product -----
-    df1 = df1[clip_mask_tau1].copy()
-    df1['ff_nf_tau1'] = 0.5*ff_full_tau1[clip_mask_tau1]
-
-    df2 = df2[clip_mask_tau2].copy()
-    df2['ff_nf_tau2'] = 0.5*ff_full_tau2[clip_mask_tau2]
+    df = df[combined_mask].copy()
+    df['ff_nf_wjets'] = ff_full_wjets[combined_mask]
+    df['ff_nf_qcd'] = ff_full_qcd[combined_mask]
 
     # --- plotting ---
     if plotting:
         plot_ff_clipping_histogram(
-            ff_full_qcd=ff_full_tau1,
-            clip_mask_qcd=clip_mask_tau1,
-            clip_value_qcd=clip_value_tau1,
-            qcd_clipped_percent=tau1_clipped_percent,
-            plot_dir=plot_dir,)
-        
-        plot_pdf_distributions(
-            model_AR=model_AR_like_tau1,
-            model_SR=model_SR_like_tau1,
-            X_events=df_pt_tau1.X.cpu().numpy(),
-            plot_dir=Path(plot_dir) / "tau1_PDFs",
-            title_suffix="(Tau1 features)",
-            clip_mask=~clip_mask_tau1,
+            ff_full_wjets=ff_full_wjets,
+            clip_mask_wjets=clip_mask_wjets,
+            clip_value_wjets=clip_value_wjets,
+            ff_full_qcd=ff_full_qcd,
+            clip_mask_qcd=clip_mask_qcd,
+            clip_value_qcd=clip_value_qcd,
+            wjets_clipped_percent=wjets_clipped_percent,
+            qcd_clipped_percent=qcd_clipped_percent,
+            plot_dir=plot_dir,
+            ff_full_wjets_uncorrected=ff_full_wjets_uncorrected,
+            clip_mask_wjets_uncorrected=clip_mask_wjets_uncorrected,
         )
-
-        plot_ff_clipping_histogram(
-            ff_full_qcd=ff_full_tau2,
-            clip_mask_qcd=clip_mask_tau2,
-            clip_value_qcd=clip_value_tau2,
-            qcd_clipped_percent=tau2_clipped_percent,
-            plot_dir=plot_dir,)
-        
         plot_pdf_distributions(
-            model_AR=model_AR_like_tau2,
-            model_SR=model_SR_like_tau2,
-            X_events=df_pt_tau2.X.cpu().numpy(),
-            plot_dir=Path(plot_dir) / "tau2_PDFs",
-            title_suffix="(Tau2 features)",
-            clip_mask=~clip_mask_tau2,
+            model_AR=model_AR_like_wjets,
+            model_SR=model_SR_like_wjets,
+            X_events=df_pt_wjets.X.cpu().numpy(),
+            plot_dir=Path(plot_dir) / "Wjets_PDFs",
+            title_suffix="(W+jets features)",
+            clip_mask=~clip_mask_wjets,
+        )
+        plot_pdf_distributions(
+            model_AR=model_AR_like_qcd,
+            model_SR=model_SR_like_qcd,
+            X_events=df_pt_qcd.X.cpu().numpy(),
+            plot_dir=Path(plot_dir) / "QCD_PDFs",
+            title_suffix="(QCD features)",
+            clip_mask=~clip_mask_qcd,
         )
 
     # --- assemble combined NF fake factor (process-fraction weighted) ---
-    """
-    classic FF:
     _ff_file = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors/workdir/ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz')
     _corr_file = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors/workdir/ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz')
 
@@ -933,8 +1106,8 @@ def normalizing_flow_ff(
         + df['process_fraction_qcd'] * df['ff_nf_qcd']
         + df['process_fraction_ttbar'] * df['ttbar_corrected_classic_ff']
     )
-    """
-    return df1, df2, clip_mask_tau1, clip_mask_tau2
+
+    return df, combined_mask
 
 
 @contextmanager
@@ -974,12 +1147,11 @@ def load_masks_config(path: str | Path = MASKS_CONFIG_PATH) -> dict[str, list[st
         raw = yaml.safe_load(handle) or {}
 
     masks = raw.get('masks', raw)
-
     if not isinstance(masks, dict):
         raise ValueError(f'Invalid masks config format in {config_path}: expected a mapping at root or under "masks"')
 
     normalized: dict[str, list[str]] = {}
-    for name, expressions in masks.items():        
+    for name, expressions in masks.items():
         if isinstance(expressions, str):
             normalized[name] = [expressions]
             continue
@@ -987,7 +1159,7 @@ def load_masks_config(path: str | Path = MASKS_CONFIG_PATH) -> dict[str, list[st
             normalized[name] = expressions
             continue
         raise ValueError(f'Invalid expression list for mask "{name}" in {config_path}')
-    
+
     logger.info('Loaded %d masks from %s', len(normalized), config_path)
     return normalized
 
@@ -999,18 +1171,32 @@ def _build_mask_from_config(df: pd.DataFrame, mask_name: str) -> pd.Series:
         MASKS_CONFIG = load_masks_config()
 
     expressions = MASKS_CONFIG.get(mask_name)
-
     if not expressions:
         raise KeyError(f'Mask "{mask_name}" not found in {MASKS_CONFIG_PATH}')
 
     combined_expression = ' & '.join(f'({expr})' for expr in expressions)
     mask = df.eval(combined_expression, engine='python')
-    result = mask.fillna(False).astype(bool)
-    return result
+    return mask.fillna(False).astype(bool)
 
 
 def _apply_config_mask(df: pd.DataFrame, mask_name: str) -> pd.DataFrame:
     return df[_build_mask_from_config(df, mask_name)].copy()
+
+def mask_DR_wjets(df):                  # without SS/OS conditions !!!!!!!!!!!!11
+    return _apply_config_mask(df, 'mask_DR_wjets')
+
+
+def mask_antiDR_wjets(df):              # without SS/OS conditions !!!!!!!!!!!!11
+    return _apply_config_mask(df, 'mask_antiDR_wjets')
+
+def mask_DR_qcd(df):
+    return _apply_config_mask(df, 'mask_DR_qcd')
+
+def AR_like_qcd(df):
+    return _apply_config_mask(df, 'AR_like_qcd')
+
+def SR_like_qcd(df):
+    return _apply_config_mask(df, 'SR_like_qcd')
 
 def mask_preselection_tight(df):
     return _apply_config_mask(df, 'mask_preselection_tight')
@@ -1021,29 +1207,21 @@ def mask_preselection_tight_binary_classifier(df):
 
 
 def mask_preselection_for_estimator(df):
+    if args.ff_estimator == 'binary_classifier':
+        return mask_preselection_tight_binary_classifier(df)
     return mask_preselection_tight(df)
-
-def mask_DR(df):
-    return _apply_config_mask(df, 'mask_DR')
-
-def AR_like_tau1(df):
-    return _apply_config_mask(df, 'AR_like_tau1')
-
-def AR_like_tau2(df):
-    return _apply_config_mask(df, 'AR_like_tau2')
-
-def SR_like(df):
-    return _apply_config_mask(df, 'SR_like')
-
-def AR_tau1(df):                 # without SS/OS conditions !!!!!!!!!!!!11
-    return _apply_config_mask(df, 'AR_tau1')
-
-def AR_tau2(df):                 # without SS/OS conditions !!!!!!!!!!!!11
-    return _apply_config_mask(df, 'AR_tau2')
 
 def SR(df):                 # without SS/OS conditions !!!!!!!!!!!!11
     return _apply_config_mask(df, 'SR')
 
+def AR(df):                 # without SS/OS conditions !!!!!!!!!!!!11
+    return _apply_config_mask(df, 'AR')
+
+def SR_like_wjets(df):
+    return _apply_config_mask(df, 'SR_like_wjets')
+
+def AR_like_wjets(df):
+    return _apply_config_mask(df, 'AR_like_wjets')
 
 # ----------- other utils -----------
 
@@ -1141,27 +1319,27 @@ def initialize_runtime_context() -> None:
     global args, variables, dim, training_variables_tag, variables_with_njets, device
     global mode_dir, include_njets_feature, resolved_tag
     global MASKS_CONFIG
-    global classifier_features_qcd
-    global chk_pth_model_AR_like_tau1, chk_pth_model_AR_like_tau2, chk_pth_model_SR_like_tau1, chk_pth_model_SR_like_tau2
-    global model_AR_like_tau1, model_AR_like_tau2, model_SR_like_tau1, model_SR_like_tau2
+    global classifier_features_wjets, classifier_features_qcd
+    global prior_ar_over_sr_wjets, prior_ar_over_sr_qcd
+    global correction_model_wjets_dr, correction_model_wjets_antidr
+    global correction_features_wjets_dr, correction_features_wjets_antidr
+    global correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr
+    global chk_pth_model_AR_like_wjets, chk_pth_model_SR_like_wjets
+    global chk_pth_model_AR_like_qcd, chk_pth_model_SR_like_qcd
+    global model_AR_like_wjets, model_SR_like_wjets, model_AR_like_qcd, model_SR_like_qcd
     global data_complete, list_variables, labels, labels_short, list_xlabels, list_bins
     global main_plot_bins_by_variable, sampling_plot_bins_by_variable, plot_root_dir
 
-
-
     # Step 1: parse runtime arguments and core variable list
-    with open(cfg_path['variables'], 'r') as f:
-        variables = yaml.safe_load(f)[args.var]
+    with open('../configs/training_variables.yaml', 'r') as f:
+        variables = yaml.safe_load(f)['variables']
 
-    cfg_set = load_config(cfg_path['config_settings'])
-
+    args = Args(explicit_bool=True).parse_args()
     dim = len(variables)
     training_variables_tag = build_training_variables_tag(variables)
     variables_with_njets = ['njets'] + variables
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     MASKS_CONFIG = load_masks_config(MASKS_CONFIG_PATH)
-
-    
 
     # Step 2: resolve model mode and load model checkpoints
     _MODE_DIR = {
@@ -1170,101 +1348,163 @@ def initialize_runtime_context() -> None:
         'conditional_nf':      'conditional_njets_input',
     }
     mode_dir = _MODE_DIR[args.model_mode]
-    include_njets_feature = args.model_mode in ('grouped_njets_split', 'conditional_nf')    
+    include_njets_feature = args.model_mode in ('grouped_njets_split', 'conditional_nf')
 
-    resolved_tag = resolve_training_tag(variables, mode_dir)
-    logger.info('Using training tag: %s (exact computed: %s)', resolved_tag, training_variables_tag)
+    classifier_features_wjets = None
+    classifier_features_qcd = None
+    prior_ar_over_sr_wjets = None
+    prior_ar_over_sr_qcd = None
+    correction_model_wjets_dr = None
+    correction_model_wjets_antidr = None
+    correction_features_wjets_dr = None
+    correction_features_wjets_antidr = None
+    correction_prior_ar_over_sr_wjets_dr = None
+    correction_prior_ar_over_sr_wjets_antidr = None
 
-    chk_pth_model_AR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau1/all/AR-like/latest'
-    chk_pth_model_SR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau1/all/SR-like/latest'
-    chk_pth_model_AR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau2/all/AR-like/latest'
-    chk_pth_model_SR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau2/all/SR-like/latest'
+    if args.ff_estimator == 'binary_classifier':
+        include_njets_feature = False
+        classifier_base = Path('Training_results_new') / 'binary_classifier'
+        classifier_prefix = f'training_hl{args.classifier_hidden_layers}_'
+        logger.info('Searching classifier trainings with prefix: %s', classifier_prefix)
+        resolved_tag = args.classifier_training_tag or resolve_latest_training_tag(str(classifier_base), prefix=classifier_prefix)
+        logger.info('Using binary-classifier training tag: %s', resolved_tag)
 
-    config_AR_like_tau1 = load_saved_model_config(chk_pth_model_AR_like_tau1, config_path)
-    config_SR_like_tau1 = load_saved_model_config(chk_pth_model_SR_like_tau1, config_path)
-    config_AR_like_tau2 = load_saved_model_config(chk_pth_model_AR_like_tau2, config_path)
-    config_SR_like_tau2 = load_saved_model_config(chk_pth_model_SR_like_tau2, config_path)
-    
-    logger.info('Loading models from RNVP checkpoints:')
-    if args.model_mode == 'grouped_njets_split':
-        model_AR_like_tau1 = load_grouped_qcd_njets_router(
-            checkpoint_dir=chk_pth_model_AR_like_tau1,
-            config_path=config_path,
-            variables=variables,
+        chk_pth_model_AR_like_wjets = f'Training_results_new/binary_classifier/training_{resolved_tag}/Wjets/all/SR_AR_classifier/latest'
+        chk_pth_model_SR_like_wjets = chk_pth_model_AR_like_wjets
+        chk_pth_model_AR_like_qcd = f'Training_results_new/binary_classifier/training_{resolved_tag}/QCD/all/SR_AR_classifier/latest'
+        chk_pth_model_SR_like_qcd = chk_pth_model_AR_like_qcd
+
+        model_AR_like_wjets, classifier_features_wjets, prior_ar_over_sr_wjets = load_binary_classifier_checkpoint(
+            chk_pth_model_AR_like_wjets,
             device=device,
         )
-        model_SR_like_tau1 = load_grouped_qcd_njets_router(
-            checkpoint_dir=chk_pth_model_SR_like_tau1,
-            config_path=config_path,
-            variables=variables,
+        model_SR_like_wjets = model_AR_like_wjets
+        model_AR_like_qcd, classifier_features_qcd, prior_ar_over_sr_qcd = load_binary_classifier_checkpoint(
+            chk_pth_model_AR_like_qcd,
             device=device,
         )
-        model_AR_like_tau2 = load_grouped_qcd_njets_router(
-            checkpoint_dir=chk_pth_model_AR_like_tau2,
-            config_path=config_path,
-            variables=variables,
-            device=device,
-        )
-        model_SR_like_tau2 = load_grouped_qcd_njets_router(
-            checkpoint_dir=chk_pth_model_SR_like_tau2,
-            config_path=config_path,
-            variables=variables,
-            device=device,
-        )
-    elif args.model_mode == 'conditional_nf':
-        model_AR_like_tau1 = load_conditional_flow(dim=dim, cfg=config_AR_like_tau1, checkpoint_path=f'{chk_pth_model_AR_like_tau1}/model_checkpoint.pth', device=device)
-        model_SR_like_tau1 = load_conditional_flow(dim=dim, cfg=config_SR_like_tau1, checkpoint_path=f'{chk_pth_model_SR_like_tau1}/model_checkpoint.pth', device=device)
-        model_AR_like_tau2 = load_conditional_flow(dim=dim, cfg=config_AR_like_tau2, checkpoint_path=f'{chk_pth_model_AR_like_tau2}/model_checkpoint.pth', device=device)
-        model_SR_like_tau2 = load_conditional_flow(dim=dim, cfg=config_SR_like_tau2, checkpoint_path=f'{chk_pth_model_SR_like_tau2}/model_checkpoint.pth', device=device)
-    elif args.model_mode == 'single_nf':
-        model_AR_like_tau1 = load_flow(dim=dim, cfg=config_AR_like_tau1, checkpoint_path=f'{chk_pth_model_AR_like_tau1}/model_checkpoint.pth', device=device)
-        model_SR_like_tau1 = load_flow(dim=dim, cfg=config_SR_like_tau1, checkpoint_path=f'{chk_pth_model_SR_like_tau1}/model_checkpoint.pth', device=device)
-        model_AR_like_tau2 = load_flow(dim=dim, cfg=config_AR_like_tau2, checkpoint_path=f'{chk_pth_model_AR_like_tau2}/model_checkpoint.pth', device=device)
-        model_SR_like_tau2 = load_flow(dim=dim, cfg=config_SR_like_tau2, checkpoint_path=f'{chk_pth_model_SR_like_tau2}/model_checkpoint.pth', device=device)
+        model_SR_like_qcd = model_AR_like_qcd
+
+        if args.apply_wjets_binary_correction:
+            correction_base = Path('Training_results_new') / 'binary_classifier_corrections'
+            correction_hidden_layers = args.classifier_hidden_layers if args.classifier_corrections_hidden_layers < 0 else args.classifier_corrections_hidden_layers
+            correction_prefix = f'training_hl{correction_hidden_layers}_'
+            logger.info('Searching correction trainings with prefix: %s', correction_prefix)
+            resolved_correction_tag = args.classifier_corrections_training_tag or resolve_latest_training_tag(
+                str(correction_base),
+                prefix=correction_prefix,
+            )
+            logger.info('Using binary-classifier correction training tag: %s', resolved_correction_tag)
+
+            chk_pth_corr_wjets_dr, chk_pth_corr_wjets_antidr = correction_classifier_paths(resolved_correction_tag)
+            correction_model_wjets_dr, correction_features_wjets_dr, correction_prior_ar_over_sr_wjets_dr = load_binary_classifier_checkpoint(
+                chk_pth_corr_wjets_dr,
+                device=device,
+            )
+            correction_model_wjets_antidr, correction_features_wjets_antidr, correction_prior_ar_over_sr_wjets_antidr = load_binary_classifier_checkpoint(
+                chk_pth_corr_wjets_antidr,
+                device=device,
+            )
+        else:
+            logger.info('Wjets binary antiDR/DR correction disabled via args.apply_wjets_binary_correction=False')
+
     else:
-        raise ValueError(f'Unknown model mode: {args.model_mode}. Supported: "grouped_njets_split", "conditional_nf", "single_nf".')
+        resolved_tag = resolve_training_tag(variables, mode_dir)
+        logger.info('Using training tag: %s (exact computed: %s)', resolved_tag, training_variables_tag)
 
-    
+        chk_pth_model_AR_like_wjets = f'Training_results_new/{mode_dir}/training_{resolved_tag}/Wjets/all/AR-like/latest'
+        chk_pth_model_SR_like_wjets = f'Training_results_new/{mode_dir}/training_{resolved_tag}/Wjets/all/SR-like/latest'
+        chk_pth_model_AR_like_qcd = f'Training_results_new/{mode_dir}/training_{resolved_tag}/QCD/all/AR-like/latest'
+        chk_pth_model_SR_like_qcd = f'Training_results_new/{mode_dir}/training_{resolved_tag}/QCD/all/SR-like/latest'
+
+        config_AR_like_wjets = load_saved_model_config(chk_pth_model_AR_like_wjets, config_path)
+        config_SR_like_wjets = load_saved_model_config(chk_pth_model_SR_like_wjets, config_path)
+        config_AR_like_qcd = load_saved_model_config(chk_pth_model_AR_like_qcd, config_path)
+        config_SR_like_qcd = load_saved_model_config(chk_pth_model_SR_like_qcd, config_path)
+
+        if args.model_mode == 'grouped_njets_split':
+            model_AR_like_wjets = load_grouped_wjets_njets_router(
+                checkpoint_dir=chk_pth_model_AR_like_wjets,
+                config_path=config_path,
+                variables=variables,
+                device=device,
+            )
+            model_SR_like_wjets = load_grouped_wjets_njets_router(
+                checkpoint_dir=chk_pth_model_SR_like_wjets,
+                config_path=config_path,
+                variables=variables,
+                device=device,
+            )
+            model_AR_like_qcd = load_grouped_qcd_njets_router(
+                checkpoint_dir=chk_pth_model_AR_like_qcd,
+                config_path=config_path,
+                variables=variables,
+                device=device,
+            )
+            model_SR_like_qcd = load_grouped_qcd_njets_router(
+                checkpoint_dir=chk_pth_model_SR_like_qcd,
+                config_path=config_path,
+                variables=variables,
+                device=device,
+            )
+        elif args.model_mode == 'conditional_nf':
+            model_AR_like_wjets = load_conditional_flow(dim=dim, cfg=config_AR_like_wjets, checkpoint_path=f'{chk_pth_model_AR_like_wjets}/model_checkpoint.pth', device=device)
+            model_SR_like_wjets = load_conditional_flow(dim=dim, cfg=config_SR_like_wjets, checkpoint_path=f'{chk_pth_model_SR_like_wjets}/model_checkpoint.pth', device=device)
+            model_AR_like_qcd = load_conditional_flow(dim=dim, cfg=config_AR_like_qcd, checkpoint_path=f'{chk_pth_model_AR_like_qcd}/model_checkpoint.pth', device=device)
+            model_SR_like_qcd = load_conditional_flow(dim=dim, cfg=config_SR_like_qcd, checkpoint_path=f'{chk_pth_model_SR_like_qcd}/model_checkpoint.pth', device=device)
+        else:
+            model_AR_like_wjets = load_flow(dim=dim, cfg=config_AR_like_wjets, checkpoint_path=f'{chk_pth_model_AR_like_wjets}/model_checkpoint.pth', device=device)
+            model_SR_like_wjets = load_flow(dim=dim, cfg=config_SR_like_wjets, checkpoint_path=f'{chk_pth_model_SR_like_wjets}/model_checkpoint.pth', device=device)
+            model_AR_like_qcd = load_flow(dim=dim, cfg=config_AR_like_qcd, checkpoint_path=f'{chk_pth_model_AR_like_qcd}/model_checkpoint.pth', device=device)
+            model_SR_like_qcd = load_flow(dim=dim, cfg=config_SR_like_qcd, checkpoint_path=f'{chk_pth_model_SR_like_qcd}/model_checkpoint.pth', device=device)
+
     # Step 3: load data and plotting labels/binning
-    data_complete = pd.read_feather(f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather')
-    
+    data_complete = pd.read_feather('../../data/data_complete.feather')
+
     if args.plot_complete_variables:
-        list_variables = cfg_set['variables']
-        list_variables.remove('q_1')
-        list_variables.remove('q_2')
-        list_variables.remove('event')
-        list_variables.remove('metphi')
+        list_variables = [
+            "pt_1", "pt_2", "eta_1", "eta_2", "jpt_1", "jpt_2", "jeta_1", "jeta_2",
+            "m_fastmtt", "pt_fastmtt", "met", "njets", "mt_tot", "m_vis",
+            "pt_tt", "pt_vis", "mjj", "pt_dijet", "pt_ttjj", "deltaEta_jj", "deltaR_jj",
+            "deltaR_ditaupair", "deltaR_1j1", "deltaR_1j2", "nbtag", "mt_1", "mt_2", "iso_1", "iso_2",
+            "deltaR_2j1", "deltaR_2j2", "deltaR_12j1", "deltaR_12j2", "deltaEta_1j1",
+            "deltaEta_1j2", "deltaEta_2j1", "deltaEta_2j2", "deltaEta_12j1", "deltaEta_12j2", 'tau_decaymode_1', 'tau_decaymode_2',
+            "mass_1", "mass_2",
+        ]
     else:
-        list_variables = variables
+        list_variables = ['pt_1', 'pt_2', 'm_vis', 'deltaR_ditaupair', 'pt_vis', 'pt_tt', 'm_fastmtt', 'eta_1', 'eta_2', 'met', 'mt_1', 'mt_2']
 
-
-    with open(cfg_path['labels'], 'r') as f:
-        labels = yaml.safe_load(f)['tt']
-    with open(cfg_path['labels_short'], 'r') as f:
-        labels_short = yaml.safe_load(f)['tt']
-    
-    list_xlabels = [labels[k] for k in list_variables]    
+    with open('../configs/labels.yaml', 'r') as f:
+        labels = yaml.safe_load(f)['et']
+    with open('../configs/labels_short.yaml', 'r') as f:
+        labels_short = yaml.safe_load(f)['et']
+    list_xlabels = [labels[k] for k in list_variables]
 
     bins_by_variable = _build_main_bins_by_variable()
     list_bins = [np.asarray(bins_by_variable[var]) for var in list_variables]
     main_plot_bins_by_variable = {var: np.asarray(bins_by_variable[var]) for var in list_variables}
     sampling_plot_bins_by_variable = _build_sampling_bins_from_main(main_plot_bins_by_variable, max_scale=2.0)
 
-
-
     # Step 4: prepare output directories and optional training diagnostics
-    plot_root_dir = Path(cfg_path['plots']) / mode_dir / f"training_{resolved_tag}"
-    
+    if args.ff_estimator == 'binary_classifier':
+        correction_mode_dir = 'with_corrections' if args.apply_wjets_binary_correction else 'without_corrections'
+        plot_root_dir = Path('plots') / 'binary_classifier' / correction_mode_dir / f"training_{resolved_tag}"
+    else:
+        plot_root_dir = Path('plots') / mode_dir / f"training_{resolved_tag}"
     plot_root_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Plot output root: {plot_root_dir}")
+    logger.info("Plot output root: %s", plot_root_dir)
 
     training_log_specs = [
-        ('Tau 1 AR-like', chk_pth_model_AR_like_tau1),
-        ('Tau 1 SR-like', chk_pth_model_SR_like_tau1),
-        ('Tau 2 AR-like', chk_pth_model_AR_like_tau2),
-        ('Tau 2 SR-like', chk_pth_model_SR_like_tau2),
+        ('Wjets AR-like', chk_pth_model_AR_like_wjets),
+        ('Wjets SR-like', chk_pth_model_SR_like_wjets),
+        ('QCD AR-like', chk_pth_model_AR_like_qcd),
+        ('QCD SR-like', chk_pth_model_SR_like_qcd),
     ]
-    
+    if args.ff_estimator == 'binary_classifier':
+        training_log_specs = [
+            ('Wjets SR/AR classifier', chk_pth_model_AR_like_wjets),
+            ('QCD SR/AR classifier', chk_pth_model_AR_like_qcd),
+        ]
     if args.plot_training_diagnostics:
         plot_training_histories(training_log_specs, plot_root_dir / 'training_diagnostics')
 
@@ -1316,39 +1556,30 @@ def plot_nf_sampling_training_variables(category_name: str, njets_title: str, da
     sampling_plot_dir = plot_root_dir / 'nf_sampling_validation' / category_name
     sampling_plot_dir.mkdir(parents=True, exist_ok=True)
 
-    tau1_ar_data = AR_like_tau1(data_preselected)
-    tau1_ar_data = tau1_ar_data[(tau1_ar_data.process == 0) & (tau1_ar_data.SS == True)].copy()
+    wjets_ar_data = AR_like_wjets(data_preselected)
+    wjets_ar_data = wjets_ar_data[(wjets_ar_data.process == 0) & (wjets_ar_data.OS == True)].copy()
+    wjets_sr_data = SR_like_wjets(data_preselected)
+    wjets_sr_data = wjets_sr_data[(wjets_sr_data.process == 0) & (wjets_sr_data.OS == True)].copy()
 
-    tau2_ar_data = AR_like_tau2(data_preselected)
-    tau2_ar_data = tau2_ar_data[(tau2_ar_data.process == 0) & (tau2_ar_data.SS == True)].copy()
-
-    sr_data = SR_like(data_preselected)
-    sr_data = sr_data[(sr_data.process == 0) & (sr_data.SS == True)].copy()
+    qcd_ar_data = AR_like_qcd(data_preselected)
+    qcd_ar_data = qcd_ar_data[(qcd_ar_data.process == 0) & (qcd_ar_data.SS == True)].copy()
+    qcd_sr_data = SR_like_qcd(data_preselected)
+    qcd_sr_data = qcd_sr_data[(qcd_sr_data.process == 0) & (qcd_sr_data.SS == True)].copy()
 
     panel_specs = [
-        ("Tau 1 AR-like", tau1_ar_data, model_AR_like_tau1, '#d62728'),
-        ("Tau 2 AR-like", tau2_ar_data, model_AR_like_tau2, '#2ca02c'), #todo Farbe
-        ("Tau 1 SR-like", sr_data, model_SR_like_tau1, '#ff7f0e'),
-        ("Tau 2 SR-like", sr_data, model_SR_like_tau2, '#1f77b4'),
+        ('Wjets AR-like', wjets_ar_data, model_AR_like_wjets, '#1f77b4'),
+        ('Wjets SR-like', wjets_sr_data, model_SR_like_wjets, '#17becf'),
+        ('QCD AR-like', qcd_ar_data, model_AR_like_qcd, '#d62728'),
+        ('QCD SR-like', qcd_sr_data, model_SR_like_qcd, '#ff7f0e'),
     ]
-    
-    
-    n_samples = 10_000
 
-    # ----- one plot vor every variable -----
+    n_samples = 10_000
     for var in variables:
-        fig, axes = plt.subplots(2, 2, figsize=(19.2, 14.4), sharex=False, sharey=False)
+        fig, axes = plt.subplots(2, 2, figsize=(12, 9), sharex=False, sharey=False)
         flat_axes = axes.flatten()
         fixed_bins = sampling_plot_bins_by_variable.get(var)
 
-        # ----- in each plot: one plot of each region ------
         for axis, (title, data_df, model, color) in zip(flat_axes, panel_specs):
-
-            CMS_CHANNEL_TITLE(axis)
-            CMS_LUMI_TITLE(axis)
-            CMS_LABEL(axis)
-            CMS_NJETS_TITLE(axis, title=njets_title)
-
             if data_df.empty:
                 axis.text(0.5, 0.5, 'No data events', ha='center', va='center', transform=axis.transAxes)
                 axis.set_title(title)
@@ -1397,7 +1628,7 @@ def plot_nf_sampling_training_variables(category_name: str, njets_title: str, da
                     if bins.size < 10:
                         bins = np.linspace(float(combined.min()), float(combined.max()), 31)
 
-            n_sample,_ ,_ = axis.hist(
+            axis.hist(
                 sampled_values,
                 bins=bins,
                 density=True,
@@ -1406,7 +1637,7 @@ def plot_nf_sampling_training_variables(category_name: str, njets_title: str, da
                 color=color,
                 label=f'NF sampled ({n_samples})',
             )
-            n_data,_ ,_ = axis.hist(
+            axis.hist(
                 data_values,
                 bins=bins,
                 density=True,
@@ -1415,19 +1646,18 @@ def plot_nf_sampling_training_variables(category_name: str, njets_title: str, da
                 color='black',
                 label=f'Data ({len(data_values)})',
             )
-            
-            axis.set_title(title, fontsize=25, pad=10)
+
+            axis.set_title(title)
             axis.set_xlabel(labels.get(var, var))
             axis.set_ylabel('Density')
             axis.set_yscale('log')
             axis.grid(True, linestyle=':', alpha=0.35)
-            axis.legend(frameon=False, loc='upper right', bbox_to_anchor=(1.0, 0.9))
+            axis.legend(frameon=False, loc='best')
             axis.set_xlim(float(bins[0]), float(bins[-1]))
-            axis.set_ylim(top=5*np.max([np.max(n_sample), np.max(n_data)]))
 
         fig.suptitle(
             f'NF sampled vs data ({category_name}, {njets_title})\nTraining variable: {labels.get(var, var)}',
-            fontsize=28,
+            fontsize=16,
             y=1.01,
         )
         fig.tight_layout()
@@ -1716,12 +1946,18 @@ def plot_nf_taylor_analysis(output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     data_pre = mask_preselection_for_estimator(data_complete)
+    wjets_ar = AR_like_wjets(data_pre)
+    wjets_ar = wjets_ar[(wjets_ar.process == 0) & (wjets_ar.OS == True)].copy()
+    wjets_sr = SR_like_wjets(data_pre)
+    wjets_sr = wjets_sr[(wjets_sr.process == 0) & (wjets_sr.OS == True)].copy()
     qcd_ar = AR_like_qcd(data_pre)
     qcd_ar = qcd_ar[(qcd_ar.process == 0) & (qcd_ar.SS == True)].copy()
     qcd_sr = SR_like_qcd(data_pre)
     qcd_sr = qcd_sr[(qcd_sr.process == 0) & (qcd_sr.SS == True)].copy()
 
     panel_specs = [
+        ('Wjets AR-like', wjets_ar, model_AR_like_wjets, '#1f77b4'),
+        ('Wjets SR-like', wjets_sr, model_SR_like_wjets, '#17becf'),
         ('QCD AR-like',   qcd_ar,   model_AR_like_qcd,   '#d62728'),
         ('QCD SR-like',   qcd_sr,   model_SR_like_qcd,   '#ff7f0e'),
     ]
@@ -1840,12 +2076,18 @@ def plot_nf_taylor_analysis_output(output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     data_pre = mask_preselection_for_estimator(data_complete)
+    wjets_ar = AR_like_wjets(data_pre)
+    wjets_ar = wjets_ar[(wjets_ar.process == 0) & (wjets_ar.OS == True)].copy()
+    wjets_sr = SR_like_wjets(data_pre)
+    wjets_sr = wjets_sr[(wjets_sr.process == 0) & (wjets_sr.OS == True)].copy()
     qcd_ar = AR_like_qcd(data_pre)
     qcd_ar = qcd_ar[(qcd_ar.process == 0) & (qcd_ar.SS == True)].copy()
     qcd_sr = SR_like_qcd(data_pre)
     qcd_sr = qcd_sr[(qcd_sr.process == 0) & (qcd_sr.SS == True)].copy()
 
     panel_specs = [
+        ('Wjets AR-like', wjets_ar, model_AR_like_wjets, '#1f77b4'),
+        ('Wjets SR-like', wjets_sr, model_SR_like_wjets, '#17becf'),
         ('QCD AR-like',   qcd_ar,   model_AR_like_qcd,   '#d62728'),
         ('QCD SR-like',   qcd_sr,   model_SR_like_qcd,   '#ff7f0e'),
     ]
@@ -1962,12 +2204,18 @@ def plot_nf_second_order_covariance(output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     data_pre = mask_preselection_for_estimator(data_complete)
+    wjets_ar = AR_like_wjets(data_pre)
+    wjets_ar = wjets_ar[(wjets_ar.process == 0) & (wjets_ar.OS == True)].copy()
+    wjets_sr = SR_like_wjets(data_pre)
+    wjets_sr = wjets_sr[(wjets_sr.process == 0) & (wjets_sr.OS == True)].copy()
     qcd_ar = AR_like_qcd(data_pre)
     qcd_ar = qcd_ar[(qcd_ar.process == 0) & (qcd_ar.SS == True)].copy()
     qcd_sr = SR_like_qcd(data_pre)
     qcd_sr = qcd_sr[(qcd_sr.process == 0) & (qcd_sr.SS == True)].copy()
 
     panel_specs = [
+        ('Wjets AR-like', wjets_ar, model_AR_like_wjets),
+        ('Wjets SR-like', wjets_sr, model_SR_like_wjets),
         ('QCD AR-like',   qcd_ar,   model_AR_like_qcd),
         ('QCD SR-like',   qcd_sr,   model_SR_like_qcd),
     ]
@@ -2092,7 +2340,6 @@ def plot_ar_data_with_clipping_info(
     clipping_mask: np.ndarray,
     njets_title: str,
     output_dir: Path,
-    tau_label: str,
 ) -> None:
     """
     Plot AR data showing both kept and excluded events (by clipping mask).
@@ -2179,364 +2426,340 @@ def plot_ar_data_with_clipping_info(
     ax_ratio.grid(True, linestyle=':', alpha=0.6)
     ax_ratio.tick_params(direction='in', top=True, right=True)
     
-    fig.savefig(output_dir / f'{var}_ar_clipping_{tau_label}.png', dpi=150)
-    fig.savefig(output_dir / f'{var}_ar_clipping_{tau_label}.pdf')
+    fig.savefig(output_dir / f'{var}_ar_clipping.png', dpi=150)
+    fig.savefig(output_dir / f'{var}_ar_clipping.pdf')
     plt.close(fig)
 
 
 def run_plots_for_njets_category(category_name, njets_title):
-    hep.style.use(hep.style.CMS)  # Use CMS style for all plots in this category
-
     category_plot_dir = plot_root_dir / category_name
     category_plot_dir.mkdir(parents=True, exist_ok=True)
 
     data_complete_njets = select_njets_category(data_complete, category_name)
     data_preselected = mask_preselection_for_estimator(data_complete_njets)
 
-    # ----- plot NF sampling -----
-    if args.plot_nf_sampling:
+    if args.plot_nf_sampling and args.ff_estimator == 'nf':
         plot_nf_sampling_training_variables(category_name, njets_title, data_preselected)
     if not args.plot_ff_results:
         return
 
-    # ----- prepare data for FF estimation -----
     logger.info(
-        f"Starting {category_name}: {len(data_complete_njets)} input events, {len(data_preselected)} after preselection"
+        "Starting %s: %d input events, %d after preselection",
+        category_name,
+        len(data_complete_njets),
+        len(data_preselected),
     )
 
-    # ----- Anti-DR -----
-
-    data_AR_tau1 = AR_tau1(data_preselected)
-    data_AR_tau1 = data_AR_tau1[data_AR_tau1.OS == True]
-    data_AR_OS_tau1 = data_AR_tau1[(data_AR_tau1.process == 0)].copy()
-
-    data_AR_tau2 = AR_tau2(data_preselected)
-    data_AR_tau2 = data_AR_tau2[data_AR_tau2.OS == True]
-    data_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == 0)].copy()
-
+    data_AR = AR(data_preselected)
+    data_AR = data_AR[data_AR.OS == True]
     data_SR = SR(data_preselected)
-    data_SR_OS = data_SR[(data_SR.OS == True)]
 
+    data_AR_OS = data_AR[(data_AR.process == 0)].copy()
+    data_AR_like_wjets = AR_like_wjets(data_preselected)
+    data_SR_like_wjets = SR_like_wjets(data_preselected)
+    data_AR_like_qcd = AR_like_qcd(data_preselected)
+    data_SR_like_qcd = SR_like_qcd(data_preselected)
 
-    # ----- DR -----
+    data_AR_like_OS_wjets = data_AR_like_wjets[(data_AR_like_wjets.process == 0) & (data_AR_like_wjets.OS == True)]
+    data_SR_like_OS_wjets = data_SR_like_wjets[(data_SR_like_wjets.process == 0) & (data_SR_like_wjets.OS == True)]
 
-    data_AR_like_tau1 = AR_like_tau1(data_preselected)
-    data_AR_like_tau2 = AR_like_tau2(data_preselected)
-    data_SR_like = SR_like(data_preselected)
-
-    data_AR_like_SS_tau1 = data_AR_like_tau1[(data_AR_like_tau1.process == 0) & (data_AR_like_tau1.SS == True)]
-    data_SR_like_SS_tau1 = data_SR_like[(data_SR_like.process == 0) & (data_SR_like.SS == True)]
-    data_AR_like_SS_tau2 = data_AR_like_tau2[(data_AR_like_tau2.process == 0) & (data_AR_like_tau2.SS == True)]
-    data_SR_like_SS_tau2 = data_SR_like[(data_SR_like.process == 0) & (data_SR_like.SS == True)]
+    data_AR_like_SS_qcd = data_AR_like_qcd[(data_AR_like_qcd.process == 0) & (data_AR_like_qcd.SS == True)]
+    data_SR_like_SS_qcd = data_SR_like_qcd[(data_SR_like_qcd.process == 0) & (data_SR_like_qcd.SS == True)]
 
     required_samples = {
-        'AR_like_SS_tau1': data_AR_like_SS_tau1,
-        'SR_like_SS_tau1': data_SR_like_SS_tau1,
-        'AR_like_SS_tau2': data_AR_like_SS_tau2,
-        'SR_like_SS_tau2': data_SR_like_SS_tau2,
+        'AR_like_OS_wjets': data_AR_like_OS_wjets,
+        'SR_like_OS_wjets': data_SR_like_OS_wjets,
+        'AR_like_SS_qcd': data_AR_like_SS_qcd,
+        'SR_like_SS_qcd': data_SR_like_SS_qcd,
     }
-
     empty_required = [name for name, sample in required_samples.items() if sample.empty]
     if empty_required:
         logger.warning('Skipping %s because required samples are empty: %s', category_name, ', '.join(empty_required))
         return
 
-    
+    data_SR_OS = data_SR[(data_SR.OS == True)]
 
-    global_ff_tau1 = len(data_SR_like_SS_tau1) / len(data_AR_like_SS_tau1)
-    global_ff_tau2 = len(data_SR_like_SS_tau2) / len(data_AR_like_SS_tau2)
+    global_ff_wjets = len(data_SR_like_OS_wjets) / len(data_AR_like_OS_wjets)
+    global_ff_qcd = len(data_SR_like_SS_qcd) / len(data_AR_like_SS_qcd)
 
+    global_ff_wjets_dr_correction = global_ff_wjets
+    global_ff_wjets_antidr_correction = None
+    if args.ff_estimator == 'binary_classifier' and args.apply_wjets_binary_correction and correction_model_wjets_dr is not None and correction_model_wjets_antidr is not None:
+        data_antidr_wjets = mask_antiDR_wjets(data_preselected)
+        data_AR_like_OS_wjets_antidr = data_antidr_wjets[
+            (data_antidr_wjets.id_tau_vsJet_VLoose_2 > 0.5)
+            & (data_antidr_wjets.id_tau_vsJet_Tight_2 < 0.5)
+            & (data_antidr_wjets.process == 0)
+            & (data_antidr_wjets.OS == True)
+        ]
+        data_SR_like_OS_wjets_antidr = data_antidr_wjets[
+            (data_antidr_wjets.id_tau_vsJet_Tight_2 > 0.5)
+            & (data_antidr_wjets.process == 0)
+            & (data_antidr_wjets.OS == True)
+        ]
+        if len(data_AR_like_OS_wjets_antidr) > 0 and len(data_SR_like_OS_wjets_antidr) > 0:
+            global_ff_wjets_antidr_correction = len(data_SR_like_OS_wjets_antidr) / len(data_AR_like_OS_wjets_antidr)
+        else:
+            logger.warning(
+                'Skipping Wjets antiDR/DR FF correction in %s because antiDR SR/AR sample is empty.',
+                category_name,
+            )
 
     logger.info(
-        "Prepared %s for Tau 1: AR(OS)=%d, SR(OS)=%d, QCD FF=%.4f",
+        "Prepared %s: AR(OS)=%d, SR(OS)=%d, Wjets FF=%.4f, QCD FF=%.4f",
         category_name,
-        len(data_AR_OS_tau1),
+        len(data_AR_OS),
         len(data_SR_OS[(data_SR_OS.process == 0)]),
-        global_ff_tau1,
-    )
-    logger.info(
-        "Prepared %s for Tau 2: AR(OS)=%d, SR(OS)=%d, QCD FF=%.4f",
-        category_name,
-        len(data_AR_OS_tau2),
-        len(data_SR_OS[(data_SR_OS.process == 0)]),
-        global_ff_tau2,
+        global_ff_wjets,
+        global_ff_qcd,
     )
 
-    #todo: hier wirds kompliziert: Vergleich mit et, weil beide tau müssen da gleichzeitig rein?
-    data_AR_OS_nf_tau1, data_AR_OS_nf_tau2, ar_os_clipping_mask_tau1, ar_os_clipping_mask_tau2 = normalizing_flow_ff(
-        data_AR_OS_tau1,
-        data_AR_OS_tau2,
+    data_AR_OS_nf, ar_os_clipping_mask = normalizing_flow_ff(
+        data_AR_OS,
         variables,
-        model_AR_like_tau1,
-        model_SR_like_tau1,
-        model_AR_like_tau2,
-        model_SR_like_tau2,
-        global_ff_tau1,
-        global_ff_tau2,
+        model_AR_like_wjets,
+        model_SR_like_wjets,
+        global_ff_wjets,
+        model_AR_like_qcd,
+        model_SR_like_qcd,
+        global_ff_qcd,
         device,
         plotting=True,
         plot_dir=category_plot_dir,
-        include_njets=include_njets_feature
+        include_njets=include_njets_feature,
+        ff_estimator=args.ff_estimator,
+        prior_ar_over_sr_wjets=prior_ar_over_sr_wjets,
+        prior_ar_over_sr_qcd=prior_ar_over_sr_qcd,
+        classifier_features_wjets=classifier_features_wjets,
+        classifier_features_qcd=classifier_features_qcd,
+        correction_model_wjets_dr=correction_model_wjets_dr,
+        correction_model_wjets_antidr=correction_model_wjets_antidr,
+        correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr,
+        correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr,
+        correction_features_wjets_dr=correction_features_wjets_dr,
+        correction_features_wjets_antidr=correction_features_wjets_antidr,
+        correction_global_ff_wjets_dr=global_ff_wjets_dr_correction,
+        correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction,
+    )
+
+    data_diboson_AR_OS = data_AR[((data_AR.process == 2) | (data_AR.process == 3))]
+    data_DY_AR_OS = data_AR[(data_AR.process == 4) | (data_AR.process == 5)]
+    data_ST_AR_OS = data_AR[(data_AR.process == 6) | (data_AR.process == 7)]
+    data_ttbar_L_AR_OS = data_AR[(data_AR.process == 9)]
+    data_embedding_AR_OS = data_AR[(data_AR.process == 10)]
+
+    data_diboson_AR_OS_nf, _ = normalizing_flow_ff(data_diboson_AR_OS, variables, model_AR_like_wjets, model_SR_like_wjets, global_ff_wjets, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_wjets=prior_ar_over_sr_wjets, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_wjets=classifier_features_wjets, classifier_features_qcd=classifier_features_qcd, correction_model_wjets_dr=correction_model_wjets_dr, correction_model_wjets_antidr=correction_model_wjets_antidr, correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr, correction_features_wjets_dr=correction_features_wjets_dr, correction_features_wjets_antidr=correction_features_wjets_antidr, correction_global_ff_wjets_dr=global_ff_wjets_dr_correction, correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction)
+    data_DY_AR_OS_nf, _ = normalizing_flow_ff(data_DY_AR_OS, variables, model_AR_like_wjets, model_SR_like_wjets, global_ff_wjets, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_wjets=prior_ar_over_sr_wjets, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_wjets=classifier_features_wjets, classifier_features_qcd=classifier_features_qcd, correction_model_wjets_dr=correction_model_wjets_dr, correction_model_wjets_antidr=correction_model_wjets_antidr, correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr, correction_features_wjets_dr=correction_features_wjets_dr, correction_features_wjets_antidr=correction_features_wjets_antidr, correction_global_ff_wjets_dr=global_ff_wjets_dr_correction, correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction)
+    data_ST_AR_OS_nf, _ = normalizing_flow_ff(data_ST_AR_OS, variables, model_AR_like_wjets, model_SR_like_wjets, global_ff_wjets, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_wjets=prior_ar_over_sr_wjets, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_wjets=classifier_features_wjets, classifier_features_qcd=classifier_features_qcd, correction_model_wjets_dr=correction_model_wjets_dr, correction_model_wjets_antidr=correction_model_wjets_antidr, correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr, correction_features_wjets_dr=correction_features_wjets_dr, correction_features_wjets_antidr=correction_features_wjets_antidr, correction_global_ff_wjets_dr=global_ff_wjets_dr_correction, correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction)
+    data_ttbar_L_AR_OS_nf, _ = normalizing_flow_ff(data_ttbar_L_AR_OS, variables, model_AR_like_wjets, model_SR_like_wjets, global_ff_wjets, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_wjets=prior_ar_over_sr_wjets, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_wjets=classifier_features_wjets, classifier_features_qcd=classifier_features_qcd, correction_model_wjets_dr=correction_model_wjets_dr, correction_model_wjets_antidr=correction_model_wjets_antidr, correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr, correction_features_wjets_dr=correction_features_wjets_dr, correction_features_wjets_antidr=correction_features_wjets_antidr, correction_global_ff_wjets_dr=global_ff_wjets_dr_correction, correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction)
+    data_embedding_AR_OS_nf, _ = normalizing_flow_ff(data_embedding_AR_OS, variables, model_AR_like_wjets, model_SR_like_wjets, global_ff_wjets, model_AR_like_qcd, model_SR_like_qcd, global_ff_qcd, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, ff_estimator=args.ff_estimator, prior_ar_over_sr_wjets=prior_ar_over_sr_wjets, prior_ar_over_sr_qcd=prior_ar_over_sr_qcd, classifier_features_wjets=classifier_features_wjets, classifier_features_qcd=classifier_features_qcd, correction_model_wjets_dr=correction_model_wjets_dr, correction_model_wjets_antidr=correction_model_wjets_antidr, correction_prior_ar_over_sr_wjets_dr=correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr=correction_prior_ar_over_sr_wjets_antidr, correction_features_wjets_dr=correction_features_wjets_dr, correction_features_wjets_antidr=correction_features_wjets_antidr, correction_global_ff_wjets_dr=global_ff_wjets_dr_correction, correction_global_ff_wjets_antidr=global_ff_wjets_antidr_correction)
+
+    data_events = data_SR_OS[(data_SR_OS.process == 0)]
+    data_diboson_SR_OS = data_SR_OS[(data_SR_OS.process == 2) | (data_SR_OS.process == 3)]
+    data_DY_SR_OS = data_SR_OS[(data_SR_OS.process == 4) | (data_SR_OS.process == 5)]
+    data_ST_SR_OS = data_SR_OS[(data_SR_OS.process == 6) | (data_SR_OS.process == 7)]
+    data_ttbar_L_SR_OS = data_SR_OS[(data_SR_OS.process == 9)]
+    data_embedding_SR_OS = data_SR_OS[(data_SR_OS.process == 10)]
+
+    data_AR_OS_classic = total_ff_corrected(data_AR_OS)
+    data_diboson_AR_OS_classic = total_ff_corrected(data_diboson_AR_OS)
+    data_DY_AR_OS_classic = total_ff_corrected(data_DY_AR_OS)
+    data_ST_AR_OS_classic = total_ff_corrected(data_ST_AR_OS)
+    data_ttbar_L_AR_OS_classic = total_ff_corrected(data_ttbar_L_AR_OS)
+    data_embedding_AR_OS_classic = total_ff_corrected(data_embedding_AR_OS)
+
+    total_variables = len(list_variables)
+    for index, (var, bins, xlabel) in enumerate(zip(list_variables, list_bins, list_xlabels), start=1):
+        if should_log_plot_progress(index, total_variables):
+            logger.info(
+                "Plotting %s: %d/%d variables (%s)",
+                category_name,
+                index,
+                total_variables,
+                var,
+            )
+
+        counts_ff_data_classic, bin_edges = np.histogram(data_AR_OS_classic[var], weights=data_AR_OS_classic['corrected_ff'], bins=bins)
+        counts_ff_data_classic2, _ = np.histogram(data_AR_OS_classic[var], weights=data_AR_OS_classic['corrected_ff']**2, bins=bins)
+
+        counts_ff_diboson_classic, _ = np.histogram(data_diboson_AR_OS_classic[var], weights=data_diboson_AR_OS_classic.weight * data_diboson_AR_OS_classic['corrected_ff'], bins=bins)
+        counts_ff_diboson_classic2, _ = np.histogram(data_diboson_AR_OS_classic[var], weights=(data_diboson_AR_OS_classic.weight * data_diboson_AR_OS_classic['corrected_ff'])**2, bins=bins)
+        counts_ff_DY_classic, _ = np.histogram(data_DY_AR_OS_classic[var], weights=data_DY_AR_OS_classic.weight * data_DY_AR_OS_classic['corrected_ff'], bins=bins)
+        counts_ff_DY_classic2, _ = np.histogram(data_DY_AR_OS_classic[var], weights=(data_DY_AR_OS_classic.weight * data_DY_AR_OS_classic['corrected_ff'])**2, bins=bins)
+        counts_ff_ST_classic, _ = np.histogram(data_ST_AR_OS_classic[var], weights=data_ST_AR_OS_classic.weight * data_ST_AR_OS_classic['corrected_ff'], bins=bins)
+        counts_ff_ST_classic2, _ = np.histogram(data_ST_AR_OS_classic[var], weights=(data_ST_AR_OS_classic.weight * data_ST_AR_OS_classic['corrected_ff'])**2, bins=bins)
+        counts_ff_ttbar_L_classic, _ = np.histogram(data_ttbar_L_AR_OS_classic[var], weights=data_ttbar_L_AR_OS_classic.weight * data_ttbar_L_AR_OS_classic['corrected_ff'], bins=bins)
+        counts_ff_ttbar_L_classic2, _ = np.histogram(data_ttbar_L_AR_OS_classic[var], weights=(data_ttbar_L_AR_OS_classic.weight * data_ttbar_L_AR_OS_classic['corrected_ff'])**2, bins=bins)
+        counts_ff_embedding_classic, _ = np.histogram(data_embedding_AR_OS_classic[var], weights=data_embedding_AR_OS_classic.weight * data_embedding_AR_OS_classic['corrected_ff'], bins=bins)
+        counts_ff_embedding_classic2, _ = np.histogram(data_embedding_AR_OS_classic[var], weights=(data_embedding_AR_OS_classic.weight * data_embedding_AR_OS_classic['corrected_ff'])**2, bins=bins)
+
+        counts_FF_classic = counts_ff_data_classic - counts_ff_diboson_classic - counts_ff_DY_classic - counts_ff_ST_classic - counts_ff_ttbar_L_classic - counts_ff_embedding_classic
+
+        counts_ff_data, bin_edges = np.histogram(data_AR_OS_nf[var], weights=data_AR_OS_nf['ff_nf'], bins=bins)
+        counts_ff_data2, _ = np.histogram(data_AR_OS_nf[var], weights=data_AR_OS_nf['ff_nf']**2, bins=bins)
+
+        counts_ff_diboson, _ = np.histogram(data_diboson_AR_OS_nf[var], weights=data_diboson_AR_OS_nf.weight * data_diboson_AR_OS_nf['ff_nf'], bins=bins)
+        counts_ff_diboson2, _ = np.histogram(data_diboson_AR_OS_nf[var], weights=(data_diboson_AR_OS_nf.weight * data_diboson_AR_OS_nf['ff_nf'])**2, bins=bins)
+        counts_ff_DY, _ = np.histogram(data_DY_AR_OS_nf[var], weights=data_DY_AR_OS_nf.weight * data_DY_AR_OS_nf['ff_nf'], bins=bins)
+        counts_ff_DY2, _ = np.histogram(data_DY_AR_OS_nf[var], weights=(data_DY_AR_OS_nf.weight * data_DY_AR_OS_nf['ff_nf'])**2, bins=bins)
+        counts_ff_ST, _ = np.histogram(data_ST_AR_OS_nf[var], weights=data_ST_AR_OS_nf.weight * data_ST_AR_OS_nf['ff_nf'], bins=bins)
+        counts_ff_ST2, _ = np.histogram(data_ST_AR_OS_nf[var], weights=(data_ST_AR_OS_nf.weight * data_ST_AR_OS_nf['ff_nf'])**2, bins=bins)
+        counts_ff_ttbar_L, _ = np.histogram(data_ttbar_L_AR_OS_nf[var], weights=data_ttbar_L_AR_OS_nf.weight * data_ttbar_L_AR_OS_nf['ff_nf'], bins=bins)
+        counts_ff_ttbar_L2, _ = np.histogram(data_ttbar_L_AR_OS_nf[var], weights=(data_ttbar_L_AR_OS_nf.weight * data_ttbar_L_AR_OS_nf['ff_nf'])**2, bins=bins)
+        counts_ff_embedding, _ = np.histogram(data_embedding_AR_OS_nf[var], weights=data_embedding_AR_OS_nf.weight * data_embedding_AR_OS_nf['ff_nf'], bins=bins)
+        counts_ff_embedding2, _ = np.histogram(data_embedding_AR_OS_nf[var], weights=(data_embedding_AR_OS_nf.weight * data_embedding_AR_OS_nf['ff_nf'])**2, bins=bins)
+        counts_FF = counts_ff_data - counts_ff_diboson - counts_ff_DY - counts_ff_ST - counts_ff_ttbar_L - counts_ff_embedding
+
+        counts_diboson, _ = np.histogram(data_diboson_SR_OS[var], weights=data_diboson_SR_OS.weight, bins=bins)
+        counts_diboson2, _ = np.histogram(data_diboson_SR_OS[var], weights=data_diboson_SR_OS.weight**2, bins=bins)
+        counts_DY, _ = np.histogram(data_DY_SR_OS[var], weights=data_DY_SR_OS.weight, bins=bins)
+        counts_DY2, _ = np.histogram(data_DY_SR_OS[var], weights=data_DY_SR_OS.weight**2, bins=bins)
+        counts_ST, _ = np.histogram(data_ST_SR_OS[var], weights=data_ST_SR_OS.weight, bins=bins)
+        counts_ST2, _ = np.histogram(data_ST_SR_OS[var], weights=data_ST_SR_OS.weight**2, bins=bins)
+        counts_ttbar_L, _ = np.histogram(data_ttbar_L_SR_OS[var], weights=data_ttbar_L_SR_OS.weight, bins=bins)
+        counts_ttbar_L2, _ = np.histogram(data_ttbar_L_SR_OS[var], weights=data_ttbar_L_SR_OS.weight**2, bins=bins)
+        counts_embedding, _ = np.histogram(data_embedding_SR_OS[var], weights=data_embedding_SR_OS.weight, bins=bins)
+        counts_embedding2, _ = np.histogram(data_embedding_SR_OS[var], weights=data_embedding_SR_OS.weight**2, bins=bins)
+
+        counts_data, _ = np.histogram(data_events[var], bins=bins)
+
+        bin_widths = np.diff(bins)
+        bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+
+        fig, ax = plt.subplots(
+            4, 1,
+            figsize=(9,9),
+            sharex=True,
+            gridspec_kw={'height_ratios': [4,1,0.2,1], 'hspace': 0.05},
+            constrained_layout=True
         )
 
-    if args.embedding == 'embedding':
-        logger.info("Todo: To be implemented. Please use the 'no_embedding' option for now.")
+        CMS_CHANNEL_TITLE(ax)
+        CMS_LUMI_TITLE(ax)
+        CMS_LABEL(ax)
+        CMS_NJETS_TITLE(ax, title=njets_title)
 
-    elif args.embedding == 'no_embedding':
-        process_map = load_config(cfg_path['process_map_no_emb'])
-        
-        # ----- AR OS tau 1-----
-        data_diboson_AR_OS_tau1 = data_AR_tau1[((data_AR_tau1.process == process_map["diboson_J"]) | (data_AR_tau1.process == process_map["diboson_L"]) | (data_AR_tau1.process == process_map["diboson_T"]))]
-        data_DY_AR_OS_tau1 = data_AR_tau1[(data_AR_tau1.process == process_map["DYjets_J"]) | (data_AR_tau1.process == process_map["DYjets_L"]) | (data_AR_tau1.process == process_map["DYjets_T"])]
-        data_ST_AR_OS_tau1 = data_AR_tau1[(data_AR_tau1.process == process_map["ST_J"]) | (data_AR_tau1.process == process_map["ST_L"]) | (data_AR_tau1.process == process_map["ST_T"])]
-        data_ttbar_AR_OS_tau1 = data_AR_tau1[(data_AR_tau1.process == process_map["ttbar_J"]) | (data_AR_tau1.process == process_map["ttbar_L"]) | (data_AR_tau1.process == process_map["ttbar_T"])]
+        y_error = np.sqrt(counts_data)
+        x_error = 0.5 * bin_widths
+        num = np.sqrt(
+            counts_ff_data2 + counts_ff_diboson2 + counts_ff_ttbar_L2 +
+            counts_ff_embedding2 + counts_ff_ST2 + counts_ff_DY2 +
+            counts_diboson2 + counts_ttbar_L2 + counts_embedding2 +
+            counts_DY2 + counts_ST2
+        )
 
-        # ----- AR OS tau 2-----
-        data_diboson_AR_OS_tau2 = data_AR_tau2[((data_AR_tau2.process == process_map["diboson_J"]) | (data_AR_tau2.process == process_map["diboson_L"]) | (data_AR_tau2.process == process_map["diboson_T"]))]
-        data_DY_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == process_map["DYjets_J"]) | (data_AR_tau2.process == process_map["DYjets_L"]) | (data_AR_tau2.process == process_map["DYjets_T"])]
-        data_ST_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == process_map["ST_J"]) | (data_AR_tau2.process == process_map["ST_L"]) | (data_AR_tau2.process == process_map["ST_T"])]
-        data_ttbar_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == process_map["ttbar_J"]) | (data_AR_tau2.process == process_map["ttbar_L"]) | (data_AR_tau2.process == process_map["ttbar_T"])]
-        
-        # ----- FF -----
-        data_diboson_AR_OS_nf_tau1, data_diboson_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_diboson_AR_OS_tau1, data_diboson_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
-        data_DY_AR_OS_nf_tau1, data_DY_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_DY_AR_OS_tau1, data_DY_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
-        data_ST_AR_OS_nf_tau1, data_ST_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_ST_AR_OS_tau1, data_ST_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
-        data_ttbar_AR_OS_nf_tau1, data_ttbar_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_ttbar_AR_OS_tau1, data_ttbar_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
+        den = (
+            counts_FF + counts_diboson + counts_ttbar_L +
+            counts_embedding + counts_ST + counts_DY
+        )
 
-        # ----- SR OS -----
-        data_events = data_SR_OS[(data_SR_OS.process == process_map["data"])]
-        data_diboson_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["diboson_J"]) | (data_SR_OS.process == process_map["diboson_L"]) | (data_SR_OS.process == process_map["diboson_T"])]
-        data_DY_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["DYjets_J"]) | (data_SR_OS.process == process_map["DYjets_L"]) | (data_SR_OS.process == process_map["DYjets_T"])]
-        data_ST_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["ST_J"]) | (data_SR_OS.process == process_map["ST_L"]) | (data_SR_OS.process == process_map["ST_T"])]
-        data_ttbar_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["ttbar_J"]) | (data_SR_OS.process == process_map["ttbar_L"]) | (data_SR_OS.process == process_map["ttbar_T"])]
+        y_error_stat = np.divide(num, den, out=np.zeros_like(num), where=den != 0)
 
-        #data_AR_OS_classic = total_ff_corrected(data_AR_OS)
-        #data_diboson_AR_OS_classic = total_ff_corrected(data_diboson_AR_OS)
-        #data_DY_AR_OS_classic = total_ff_corrected(data_DY_AR_OS)
-        #data_ST_AR_OS_classic = total_ff_corrected(data_ST_AR_OS)
-        #data_ttbar_L_AR_OS_classic = total_ff_corrected(data_ttbar_L_AR_OS)
-        #data_embedding_AR_OS_classic = total_ff_corrected(data_embedding_AR_OS)
+        num_classic = np.sqrt(
+            counts_ff_data_classic2 + counts_ff_diboson_classic2 +
+            counts_ff_ttbar_L_classic2 + counts_ff_embedding_classic2 +
+            counts_ff_ST_classic2 + counts_ff_DY_classic2 +
+            counts_diboson2 + counts_ttbar_L2 + counts_embedding2 +
+            counts_DY2 + counts_ST2
+        )
 
-        total_variables = len(list_variables)
-        for index, (var, bins, xlabel) in enumerate(zip(list_variables, list_bins, list_xlabels), start=1):
-            if should_log_plot_progress(index, total_variables, 1):
-                logger.info(
-                    "Plotting %s: %d/%d variables (%s)",
-                    category_name,
-                    index,
-                    total_variables,
-                    var,
-                )
+        den_classic = (
+            counts_FF_classic + counts_diboson + counts_ttbar_L +
+            counts_embedding + counts_ST + counts_DY
+        )
 
-            #counts_ff_data_classic, bin_edges = np.histogram(data_AR_OS_classic[var], weights=data_AR_OS_classic['corrected_ff'], bins=bins)
-            #counts_ff_data_classic2, _ = np.histogram(data_AR_OS_classic[var], weights=data_AR_OS_classic['corrected_ff']**2, bins=bins)
+        y_error_stat_classic = np.divide(
+            num_classic,
+            den_classic,
+            out=np.zeros_like(num_classic),
+            where=den_classic != 0
+        )
 
-            #counts_ff_diboson_classic, _ = np.histogram(data_diboson_AR_OS_classic[var], weights=data_diboson_AR_OS_classic.weight * data_diboson_AR_OS_classic['corrected_ff'], bins=bins)
-            #counts_ff_diboson_classic2, _ = np.histogram(data_diboson_AR_OS_classic[var], weights=(data_diboson_AR_OS_classic.weight * data_diboson_AR_OS_classic['corrected_ff'])**2, bins=bins)
-            #counts_ff_DY_classic, _ = np.histogram(data_DY_AR_OS_classic[var], weights=data_DY_AR_OS_classic.weight * data_DY_AR_OS_classic['corrected_ff'], bins=bins)
-            #counts_ff_DY_classic2, _ = np.histogram(data_DY_AR_OS_classic[var], weights=(data_DY_AR_OS_classic.weight * data_DY_AR_OS_classic['corrected_ff'])**2, bins=bins)
-            #counts_ff_ST_classic, _ = np.histogram(data_ST_AR_OS_classic[var], weights=data_ST_AR_OS_classic.weight * data_ST_AR_OS_classic['corrected_ff'], bins=bins)
-            #counts_ff_ST_classic2, _ = np.histogram(data_ST_AR_OS_classic[var], weights=(data_ST_AR_OS_classic.weight * data_ST_AR_OS_classic['corrected_ff'])**2, bins=bins)
-            #counts_ff_ttbar_L_classic, _ = np.histogram(data_ttbar_L_AR_OS_classic[var], weights=data_ttbar_L_AR_OS_classic.weight * data_ttbar_L_AR_OS_classic['corrected_ff'], bins=bins)
-            #counts_ff_ttbar_L_classic2, _ = np.histogram(data_ttbar_L_AR_OS_classic[var], weights=(data_ttbar_L_AR_OS_classic.weight * data_ttbar_L_AR_OS_classic['corrected_ff'])**2, bins=bins)
-            #counts_ff_embedding_classic, _ = np.histogram(data_embedding_AR_OS_classic[var], weights=data_embedding_AR_OS_classic.weight * data_embedding_AR_OS_classic['corrected_ff'], bins=bins)
-            #counts_ff_embedding_classic2, _ = np.histogram(data_embedding_AR_OS_classic[var], weights=(data_embedding_AR_OS_classic.weight * data_embedding_AR_OS_classic['corrected_ff'])**2, bins=bins)
+        stack_components = [
+            (counts_diboson, "#94a4a2", 'Diboson'),
+            (counts_ttbar_L, '#832db6', r'$t\bar{t} \to \tau$'),
+            (counts_ST, "#717581", r"Single t"),
+            (counts_DY, '#3f90da', r'$Z \to \ell \ell$'),
+            (counts_FF, "#a96b59", r'Jet $\rightarrow \tau_h$'),
+            (counts_embedding, '#ffa90e', r'$\tau$ embedded'),
+        ]
+        counts_stack_total = draw_stacked_stepfill(ax[0], bin_edges, stack_components)
+        ax[0].stairs(counts_stack_total, bin_edges, color='black', linewidth=0.7)
 
-            #counts_FF_classic = counts_ff_data_classic - counts_ff_diboson_classic - counts_ff_DY_classic - counts_ff_ST_classic - counts_ff_ttbar_L_classic - counts_ff_embedding_classic
+        ax[0].errorbar(bin_centers, counts_data, yerr=y_error, xerr=x_error, fmt='o', color='black', label='Data', markersize=6, elinewidth=1.2, capsize=0)
+        ax[0].set_ylabel("Events")
+        handles, labels = ax[0].get_legend_handles_labels()
+        handles = handles[::-1]
+        labels = labels[::-1]
+        handles, labels = reorder_for_rowwise_legend(handles, labels, ncol=4)
+        ax[0].legend(handles, labels, title=' ', title_fontsize=20, loc='upper left', ncol=4, frameon=False)
+        adjust_ylim_for_legend(ax[0])
+        ax[0].tick_params(direction='in', top=True, right=True)
 
-            # ----- counts FF tau1 -----
-            counts_ff_data_tau1, bin_edges = np.histogram(data_AR_OS_nf_tau1[var], weights=data_AR_OS_nf_tau1['ff_nf_tau1'], bins=bins)
-            counts_ff_data2_tau1, _ = np.histogram(data_AR_OS_nf_tau1[var], weights=data_AR_OS_nf_tau1['ff_nf_tau1']**2, bins=bins)
+        ax[1].errorbar(
+            bin_centers,
+            np.divide(counts_data, den, out=np.zeros_like(counts_data, dtype=float), where=den != 0),
+            xerr=x_error,
+            yerr=np.divide(y_error, counts_data, out=np.zeros_like(counts_data, dtype=float), where=counts_data != 0),
+            fmt='o',
+            color='black',
+            markersize=6,
+            label=(r'NN $F_\text{F}$' if args.ff_estimator == 'binary_classifier' else r'NF $F_\text{F}$')
+        )
+        ax[1].fill_between(bin_centers, 1 - y_error_stat, 1 + y_error_stat, color="gray", alpha=0.3, step='mid', label="Stat. Unc.")
+        ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
+        ax[1].set_ylabel("Data / Model")
+        ax[1].set_ylim([args.ratio_ylim_min, args.ratio_ylim_max])
+        ax[1].grid(True, linestyle=':', alpha=0.7)
+        ax[1].tick_params(direction='in', top=True, right=True)
+        ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
 
-            counts_ff_diboson_tau1, _ = np.histogram(data_diboson_AR_OS_nf_tau1[var], weights=data_diboson_AR_OS_nf_tau1.weight, bins=bins)# * data_diboson_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_diboson2_tau1, _ = np.histogram(data_diboson_AR_OS_nf_tau1[var], weights=data_diboson_AR_OS_nf_tau1.weight**2, bins=bins)# * data_diboson_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_DY_tau1, _ = np.histogram(data_DY_AR_OS_nf_tau1[var], weights=data_DY_AR_OS_nf_tau1.weight, bins=bins)# * data_DY_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_DY2_tau1, _ = np.histogram(data_DY_AR_OS_nf_tau1[var], weights=data_DY_AR_OS_nf_tau1.weight**2, bins=bins)# * data_DY_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_ST_tau1, _ = np.histogram(data_ST_AR_OS_nf_tau1[var], weights=data_ST_AR_OS_nf_tau1.weight, bins=bins)# * data_ST_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_ST2_tau1, _ = np.histogram(data_ST_AR_OS_nf_tau1[var], weights=data_ST_AR_OS_nf_tau1.weight**2, bins=bins)# * data_ST_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_ttbar_tau1, _ = np.histogram(data_ttbar_AR_OS_nf_tau1[var], weights=data_ttbar_AR_OS_nf_tau1.weight, bins=bins)# * data_ttbar_L_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_ttbar2_tau1, _ = np.histogram(data_ttbar_AR_OS_nf_tau1[var], weights=data_ttbar_AR_OS_nf_tau1.weight**2, bins=bins)# * data_ttbar_L_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_FF_tau1 = counts_ff_data_tau1 - counts_ff_diboson_tau1 - counts_ff_DY_tau1 - counts_ff_ST_tau1 - counts_ff_ttbar_tau1
+        ax[2].axis('off')
 
-            # ----- counts FF tau2 -----
-            counts_ff_data_tau2, bin_edges = np.histogram(data_AR_OS_nf_tau2[var], weights=data_AR_OS_nf_tau2['ff_nf_tau2'], bins=bins)
-            counts_ff_data2_tau2, _ = np.histogram(data_AR_OS_nf_tau2[var], weights=data_AR_OS_nf_tau2['ff_nf_tau2']**2, bins=bins)
+        ax[3].errorbar(
+            bin_centers,
+            np.divide(counts_data, den_classic, out=np.zeros_like(counts_data, dtype=float), where=den_classic != 0),
+            xerr=x_error,
+            yerr=np.divide(y_error, counts_data, out=np.zeros_like(counts_data, dtype=float), where=counts_data != 0),
+            fmt='o',
+            color='black',
+            markersize=6,
+            label=r'Cor class $F_\text{F}$ '
+        )
+        ax[3].fill_between(bin_centers, 1 - y_error_stat_classic, 1 + y_error_stat_classic, color="gray", alpha=0.3, step='mid', label="Stat. Unc.")
+        ax[3].axhline(1, color='red', linestyle='--', linewidth=1.5)
+        ax[3].set_ylabel("Data / Model")
+        ax[3].set_ylim([args.ratio_ylim_min, args.ratio_ylim_max])
+        ax[3].grid(True, linestyle=':', alpha=0.7)
+        ax[3].tick_params(direction='in', top=True, right=True)
+        ax[3].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
+        ax[3].set_xlabel(xlabel)
 
-            counts_ff_diboson_tau2, _ = np.histogram(data_diboson_AR_OS_nf_tau2[var], weights=data_diboson_AR_OS_nf_tau2.weight, bins=bins)# * data_diboson_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_diboson2_tau2, _ = np.histogram(data_diboson_AR_OS_nf_tau2[var], weights=data_diboson_AR_OS_nf_tau2.weight**2, bins=bins)# * data_diboson_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_DY_tau2, _ = np.histogram(data_DY_AR_OS_nf_tau2[var], weights=data_DY_AR_OS_nf_tau2.weight, bins=bins)# * data_DY_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_DY2_tau2, _ = np.histogram(data_DY_AR_OS_nf_tau2[var], weights=data_DY_AR_OS_nf_tau2.weight**2, bins=bins)# * data_DY_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_ST_tau2, _ = np.histogram(data_ST_AR_OS_nf_tau2[var], weights=data_ST_AR_OS_nf_tau2.weight, bins=bins)# * data_ST_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_ST2_tau2, _ = np.histogram(data_ST_AR_OS_nf_tau2[var], weights=data_ST_AR_OS_nf_tau2.weight**2, bins=bins)# * data_ST_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_ff_ttbar_tau2, _ = np.histogram(data_ttbar_AR_OS_nf_tau2[var], weights=data_ttbar_AR_OS_nf_tau2.weight, bins=bins)# * data_ttbar_L_AR_OS_nf['ff_nf'], bins=bins)
-            counts_ff_ttbar2_tau2, _ = np.histogram(data_ttbar_AR_OS_nf_tau2[var], weights=data_ttbar_AR_OS_nf_tau2.weight**2, bins=bins)# * data_ttbar_L_AR_OS_nf['ff_nf'])**2, bins=bins)
-            counts_FF_tau2 = counts_ff_data_tau2 - counts_ff_diboson_tau2 - counts_ff_DY_tau2 - counts_ff_ST_tau2 - counts_ff_ttbar_tau2
+        fig.savefig(category_plot_dir / f'{var}.png')
+        fig.savefig(category_plot_dir / f'{var}.pdf')
+        plt.close(fig)
 
-
-            counts_FF = counts_FF_tau1 + counts_FF_tau2
-            # ----- counts SR -----
-            counts_diboson, _ = np.histogram(data_diboson_SR_OS[var], weights=data_diboson_SR_OS.weight, bins=bins)
-            counts_diboson2, _ = np.histogram(data_diboson_SR_OS[var], weights=data_diboson_SR_OS.weight**2, bins=bins)
-            counts_DY, _ = np.histogram(data_DY_SR_OS[var], weights=data_DY_SR_OS.weight, bins=bins)
-            counts_DY2, _ = np.histogram(data_DY_SR_OS[var], weights=data_DY_SR_OS.weight**2, bins=bins)
-            counts_ST, _ = np.histogram(data_ST_SR_OS[var], weights=data_ST_SR_OS.weight, bins=bins)
-            counts_ST2, _ = np.histogram(data_ST_SR_OS[var], weights=data_ST_SR_OS.weight**2, bins=bins)
-            counts_ttbar, _ = np.histogram(data_ttbar_SR_OS[var], weights=data_ttbar_SR_OS.weight, bins=bins)
-            counts_ttbar2, _ = np.histogram(data_ttbar_SR_OS[var], weights=data_ttbar_SR_OS.weight**2, bins=bins)
-            
-            counts_data, _ = np.histogram(data_events[var], bins=bins)
-
-            bin_widths = np.diff(bins)
-            bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
-
-            fig, ax = plt.subplots(
-                2, 1,
-                figsize=(9,9),
-                sharex=True,
-                gridspec_kw={'height_ratios': [4,1], 'hspace': 0.05},
-                constrained_layout=True
+        # Plot AR data with clipping information if requested
+        if args.plot_ar_data_with_clipping:
+            plot_ar_data_with_clipping_info(
+                var=var,
+                bins=bins,
+                xlabel=xlabel,
+                data_ar_os_full=data_AR_OS,
+                clipping_mask=ar_os_clipping_mask,
+                njets_title=njets_title,
+                output_dir=category_plot_dir,
             )
-
-            CMS_CHANNEL_TITLE(ax)
-            CMS_LUMI_TITLE(ax)
-            CMS_LABEL(ax)
-            CMS_NJETS_TITLE(ax, title=njets_title)
-
-            y_error = np.sqrt(counts_data)
-            x_error = 0.5 * bin_widths
-            num = np.sqrt(
-                counts_ff_data2_tau1 + counts_ff_data2_tau2 +
-                counts_ff_diboson2_tau1 + counts_ff_diboson2_tau2 +
-                counts_ff_ttbar2_tau1 + counts_ff_ttbar2_tau2 +
-                counts_ff_ST2_tau1 + counts_ff_ST2_tau2 +
-                counts_ff_DY2_tau1 + counts_ff_DY2_tau2 +
-                counts_diboson2 + counts_ttbar2 + counts_DY2 + counts_ST2
-            )
-
-            den = (
-                counts_FF + counts_diboson + 
-                counts_ttbar + counts_ST + counts_DY
-            )
-
-            y_error_stat = np.divide(num, den, out=np.zeros_like(num), where=den != 0)
-        
-            """
-            num_classic = np.sqrt(
-                counts_ff_data_classic2 + counts_ff_diboson_classic2 +
-                counts_ff_ttbar_L_classic2 + counts_ff_embedding_classic2 +
-                counts_ff_ST_classic2 + counts_ff_DY_classic2 +
-                counts_diboson2 + counts_ttbar_L2 + counts_embedding2 +
-                counts_DY2 + counts_ST2
-            )
-
-            den_classic = (
-                counts_FF_classic + counts_diboson + counts_ttbar_L +
-                counts_embedding + counts_ST + counts_DY
-            )
-
-            y_error_stat_classic = np.divide(
-                num_classic,
-                den_classic,
-                out=np.zeros_like(num_classic),
-                where=den_classic != 0
-            )
-            """ 
-            stack_components = [
-                (counts_diboson, "#94a4a2", 'Diboson'),
-                (counts_ttbar, '#832db6', r'$t\bar{t} \to \tau$'),
-                (counts_ST, "#717581", r"Single t"),
-                (counts_DY, '#3f90da', r'$Z \to \ell \ell$'),
-                (counts_FF, "#a96b59", r'Jet $\rightarrow \tau_h$'),
-            ]
-            counts_stack_total = draw_stacked_stepfill(ax[0], bin_edges, stack_components)
-            ax[0].stairs(counts_stack_total, bin_edges, color='black', linewidth=0.7)
-
-            ax[0].errorbar(bin_centers, counts_data, yerr=y_error, xerr=x_error, fmt='o', color='black', label='Data', markersize=6, elinewidth=1.2, capsize=0)
-            ax[0].set_ylabel("Events", fontsize=23)
-            handles, labels = ax[0].get_legend_handles_labels()
-            handles = handles[::-1]
-            labels = labels[::-1]
-            handles, labels = reorder_for_rowwise_legend(handles, labels, ncol=3)
-            ax[0].legend(handles, labels, title=' ', loc='upper right', ncol=3, frameon=False, fontsize='x-small')
-            adjust_ylim_for_legend(ax[0])
-            ax[0].tick_params(direction='in', top=True, right=True)
-            #ax[0].ticklabel_format(style='sci', axis='y', scilimits=(3,3))
-
-            ax[1].errorbar(
-                bin_centers,
-                np.divide(counts_data, den, out=np.zeros_like(counts_data, dtype=float), where=den != 0),
-                xerr=x_error,
-                yerr=np.divide(y_error, counts_data, out=np.zeros_like(counts_data, dtype=float), where=counts_data != 0),
-                fmt='o',
-                color='black',
-                markersize=6,
-                label=(r'NF $F_\text{F}$')
-            )
-            ax[1].fill_between(bin_centers, 1 - y_error_stat, 1 + y_error_stat, color="gray", alpha=0.3, step='mid', label="Stat. Unc.")
-            ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
-            ax[1].set_ylabel("Data / Model", fontsize=23, loc='center')
-            ax[1].set_ylim([args.ratio_ylim_min, args.ratio_ylim_max])
-            ax[1].grid(True, linestyle=':', alpha=0.7)
-            ax[1].tick_params(direction='in', top=True, right=True)
-            ax[1].legend(loc='upper left', ncol=2, frameon=False, fontsize='xx-small') #, bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0
-            
-            #ax[2].axis('off')
-            """
-            ax[3].errorbar(
-                bin_centers,
-                np.divide(counts_data, den_classic, out=np.zeros_like(counts_data, dtype=float), where=den_classic != 0),
-                xerr=x_error,
-                yerr=np.divide(y_error, counts_data, out=np.zeros_like(counts_data, dtype=float), where=counts_data != 0),
-                fmt='o',
-                color='black',
-                markersize=6,
-                label=r'Cor class $F_\text{F}$ '
-            )
-            ax[3].fill_between(bin_centers, 1 - y_error_stat_classic, 1 + y_error_stat_classic, color="gray", alpha=0.3, step='mid', label="Stat. Unc.")
-            ax[3].axhline(1, color='red', linestyle='--', linewidth=1.5)
-            ax[3].set_ylabel("Data / Model")
-            ax[3].set_ylim([args.ratio_ylim_min, args.ratio_ylim_max])
-            ax[3].grid(True, linestyle=':', alpha=0.7)
-            ax[3].tick_params(direction='in', top=True, right=True)
-            ax[3].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
-            ax[3].set_xlabel(xlabel)
-            """
-            #fig.supxlabel(xlabel)
-            ax[-1].set_xlabel(xlabel)
-            fig.savefig(category_plot_dir / f'{var}.png')
-            fig.savefig(category_plot_dir / f'{var}.pdf')
-            plt.close(fig)
-
-            # Plot AR data with clipping information if requested
-            if args.plot_ar_data_with_clipping:
-                plot_ar_data_with_clipping_info(
-                    var=var,
-                    bins=bins,
-                    xlabel=xlabel,
-                    data_ar_os_full=data_AR_OS_tau1,
-                    clipping_mask=ar_os_clipping_mask_tau1,
-                    njets_title=njets_title,
-                    output_dir=category_plot_dir,
-                    tau_label='tau_1',
-                )
-                plot_ar_data_with_clipping_info(
-                    var=var,
-                    bins=bins,
-                    xlabel=xlabel,
-                    data_ar_os_full=data_AR_OS_tau2,
-                    clipping_mask=ar_os_clipping_mask_tau2,
-                    njets_title=njets_title,
-                    output_dir=category_plot_dir,
-                    tau_label='tau_2',
-                )
-    else:
-        raise ValueError(f"Invalid taus configuration: {args.embedding}. Expected embedding or no_embedding.")
 
     logger.info("Finished %s: saved plots to %s", category_name, category_plot_dir)
 
 
 def run_taylor_plots_if_requested() -> None:
     if not args.plot_taylor_coefficients:
+        return
+
+    if args.ff_estimator == 'binary_classifier':
+        logger.warning('Skipping Taylor plots: only supported for NF models.')
         return
 
     plot_nf_taylor_analysis(plot_root_dir / 'taylor_analysis')
@@ -2546,15 +2769,15 @@ def run_taylor_plots_if_requested() -> None:
 
 def run_all_njets_categories() -> None:
     njets_categories = [
-        ('njets_0', r'$\mathrm{N_{jets}} = 0$'),
-        ('njets_1', r'$\mathrm{N_{jets}} = 1$'),
-        ('njets_geq_2', r'$\mathrm{N_{jets}} \geq 2$'),
-        ('njets_inclusive', r'$\mathrm{N_{jets}} \geq 0$'),
+        ('njets_0', r'$N_{jets} = 0$'),
+        ('njets_1', r'$N_{jets} = 1$'),
+        ('njets_geq_2', r'$N_{jets} \geq 2$'),
+        ('njets_inclusive', r'$N_{jets} \geq 0$'),
     ]
 
     for category_name, njets_title in njets_categories:
-        logger.info(f"Queueing plot production for {category_name}")
-        if args.plot_ff_results or args.plot_nf_sampling:
+        logger.info("Queueing plot production for %s", category_name)
+        if args.plot_ff_results or (args.plot_nf_sampling and args.ff_estimator == 'nf'):
             run_plots_for_njets_category(category_name, njets_title)
 
 
@@ -2564,17 +2787,14 @@ def main() -> None:
     initialize_runtime_context()
 
     # Step 2: optional model interpretability diagnostics (Taylor analysis)
-    print(" ")
     logger.info('Step 2/4: Running optional Taylor diagnostics')
     run_taylor_plots_if_requested()
 
     # Step 3: produce category-wise plots (0, 1, >=2, inclusive)
-    print(" ")
     logger.info('Step 3/4: Producing njets-category plots')
     run_all_njets_categories()
 
     # Step 4: finalize
-    print(" ")
     logger.info('Step 4/4: Completed all njets plot categories')
 
 

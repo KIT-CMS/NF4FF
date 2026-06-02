@@ -479,7 +479,7 @@ def compute_eventwise_fake_factors(
     global_ff: float,
 ) -> tuple[np.ndarray, np.ndarray, float, np.ndarray, float]:
 
-    # ---- safe ratio
+    # ----- safe ratio -----
     ratio = np.divide(
         pdf_SR,
         np.maximum(pdf_AR, 1e-100),
