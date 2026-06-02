@@ -59,8 +59,8 @@ class Args(Tap):
     plot_ar_data_with_clipping: bool = False  # Plot AR data with both kept and excluded events (by clipping mask).
     plot_taylor_coefficients: bool = False   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
     plot_complete_variables: bool = False
-    ratio_ylim_min: float = 0.75  # Lower y-limit for ratio panels.
-    ratio_ylim_max: float = 1.25  # Upper y-limit for ratio panels.
+    ratio_ylim_min: float = 0.5  # Lower y-limit for ratio panels.
+    ratio_ylim_max: float = 1.5  # Upper y-limit for ratio panels.
 
     taus = 1 #[1, 2] #[1, 2, 12] # list of tau fakes
     embedding: Literal["embedding", "no_embedding"] = "no_embedding"
@@ -865,10 +865,10 @@ def normalizing_flow_ff(
 
     # ----- Factor 0.5 to avoid over-scaling when combining two taus' FFs in the final product -----
     df1 = df1[clip_mask_tau1].copy()
-    df1['ff_nf_tau1'] = 0.5*ff_full_tau1[clip_mask_tau1]
+    df1['ff_nf_tau1'] = ff_full_tau1[clip_mask_tau1]
 
     df2 = df2[clip_mask_tau2].copy()
-    df2['ff_nf_tau2'] = 0.5*ff_full_tau2[clip_mask_tau2]
+    df2['ff_nf_tau2'] = ff_full_tau2[clip_mask_tau2]
 
     # --- plotting ---
     if plotting:
@@ -2372,8 +2372,9 @@ def run_plots_for_njets_category(category_name, njets_title):
             counts_ff_ttbar2_tau2, _ = np.histogram(data_ttbar_AR_OS_nf_tau2[var], weights=data_ttbar_AR_OS_nf_tau2.weight**2, bins=bins)# * data_ttbar_L_AR_OS_nf['ff_nf'])**2, bins=bins)
             counts_FF_tau2 = counts_ff_data_tau2 - counts_ff_diboson_tau2 - counts_ff_DY_tau2 - counts_ff_ST_tau2 - counts_ff_ttbar_tau2
 
+            # ----- total FF, with factor 0.5 assuming both FF are weighted equally -----
+            counts_FF = 0.5 * (counts_FF_tau1 + counts_FF_tau2)
 
-            counts_FF = counts_FF_tau1 + counts_FF_tau2
             # ----- counts SR -----
             counts_diboson, _ = np.histogram(data_diboson_SR_OS[var], weights=data_diboson_SR_OS.weight, bins=bins)
             counts_diboson2, _ = np.histogram(data_diboson_SR_OS[var], weights=data_diboson_SR_OS.weight**2, bins=bins)
@@ -2449,7 +2450,7 @@ def run_plots_for_njets_category(category_name, njets_title):
                 (counts_FF, "#a96b59", r'Jet $\rightarrow \tau_h$'),
             ]
             counts_stack_total = draw_stacked_stepfill(ax[0], bin_edges, stack_components)
-            ax[0].stairs(counts_stack_total, bin_edges, color='black', linewidth=0.7)
+            #ax[0].stairs(counts_stack_total, bin_edges, color='black', linewidth=0.7)
 
             ax[0].errorbar(bin_centers, counts_data, yerr=y_error, xerr=x_error, fmt='o', color='black', label='Data', markersize=6, elinewidth=1.2, capsize=0)
             ax[0].set_ylabel("Events", fontsize=23)
