@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 import correctionlib as cr
 from pathlib import Path
+import os   
 import re
 from typing import Literal, Tuple, Iterable
 
@@ -58,7 +59,7 @@ class Args(Tap):
     plot_ff_results: bool = True             # Plot fake-factor comparison stacks for each njets category.
     plot_ar_data_with_clipping: bool = True  # Plot AR data with both kept and excluded events (by clipping mask).
     plot_taylor_coefficients: bool = True   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
-    plot_complete_variables: bool = True
+    plot_complete_variables: bool = False
     ratio_ylim_min: float = 0.5  # Lower y-limit for ratio panels.
     ratio_ylim_max: float = 1.5  # Upper y-limit for ratio panels.
 
@@ -2187,20 +2188,24 @@ def plot_ar_data_with_clipping_info(
         linewidth=0.7,
     )
 
-    ax_main.set_ylabel("Events")
-    ax_main.legend(loc='upper right', frameon=False, fontsize=12)
+    ax_main.set_ylabel("Events", fontsize=20)
+    ax_main.legend(loc='upper right', frameon=False, fontsize=18)
     ax_main.tick_params(direction='in', top=True, right=True)
+    ax_main.set_ylim(top = 1.3 * max(counts_complete))
 
     ax_ratio.stairs(excluded_fraction, bins, color='black', linewidth=1.4)
     ax_ratio.axhline(0.0, color='gray', linestyle=':', linewidth=1.0)
     ax_ratio.set_ylim(0.0, 1.0)
-    ax_ratio.set_ylabel("Excluded / Total")
-    ax_ratio.set_xlabel(xlabel)
+    ax_ratio.set_ylabel("Excluded / Total", fontsize=15, loc='center')
+    ax_ratio.set_xlabel(xlabel, fontsize=20)
     ax_ratio.grid(True, linestyle=':', alpha=0.6)
     ax_ratio.tick_params(direction='in', top=True, right=True)
-    
-    fig.savefig(output_dir / f'{var}_ar_clipping_{tau_label}.png', dpi=150)
-    fig.savefig(output_dir / f'{var}_ar_clipping_{tau_label}.pdf')
+
+    final_dir = output_dir / 'clipping_info'
+    if not final_dir.exists():
+        os.makedirs(final_dir)
+    fig.savefig(final_dir / f'{var}_ar_clipping_{tau_label}.png', dpi=150)
+    fig.savefig(final_dir / f'{var}_ar_clipping_{tau_label}.pdf')
     plt.close(fig)
 
 
@@ -2212,13 +2217,14 @@ def run_plots_for_njets_category(category_name, njets_title):
 
     data_complete_njets = select_njets_category(data_complete, category_name)
     data_preselected = mask_preselection_for_estimator(data_complete_njets)
-
+    
     # ----- plot NF sampling -----
     if args.plot_nf_sampling:
         plot_nf_sampling_training_variables(category_name, njets_title, data_preselected)
-    if not args.plot_ff_results:
+    if not args.plot_ff_results and not args.plot_ar_data_with_clipping:
         return
-
+    
+    
     # ----- prepare data for FF estimation -----
     logger.info(
         f"Starting {category_name}: {len(data_complete_njets)} input events, {len(data_preselected)} after preselection"
@@ -2347,6 +2353,32 @@ def run_plots_for_njets_category(category_name, njets_title):
                     total_variables,
                     var,
                 )
+            
+            # Plot AR data with clipping information if requested
+            if args.plot_ar_data_with_clipping:
+                plot_ar_data_with_clipping_info(
+                    var=var,
+                    bins=bins,
+                    xlabel=xlabel,
+                    data_ar_os_full=data_AR_OS_tau1,
+                    clipping_mask=ar_os_clipping_mask_tau1,
+                    njets_title=njets_title,
+                    output_dir=category_plot_dir,
+                    tau_label='tau_1',
+                )
+                plot_ar_data_with_clipping_info(
+                    var=var,
+                    bins=bins,
+                    xlabel=xlabel,
+                    data_ar_os_full=data_AR_OS_tau2,
+                    clipping_mask=ar_os_clipping_mask_tau2,
+                    njets_title=njets_title,
+                    output_dir=category_plot_dir,
+                    tau_label='tau_2',
+                )
+            
+            if not args.plot_ff_results:
+                continue
 
             #counts_ff_data_classic, bin_edges = np.histogram(data_AR_OS_classic[var], weights=data_AR_OS_classic['corrected_ff'], bins=bins)
             #counts_ff_data_classic2, _ = np.histogram(data_AR_OS_classic[var], weights=data_AR_OS_classic['corrected_ff']**2, bins=bins)
@@ -2528,28 +2560,7 @@ def run_plots_for_njets_category(category_name, njets_title):
             fig.savefig(category_plot_dir / f'{var}.pdf')
             plt.close(fig)
 
-            # Plot AR data with clipping information if requested
-            if args.plot_ar_data_with_clipping:
-                plot_ar_data_with_clipping_info(
-                    var=var,
-                    bins=bins,
-                    xlabel=xlabel,
-                    data_ar_os_full=data_AR_OS_tau1,
-                    clipping_mask=ar_os_clipping_mask_tau1,
-                    njets_title=njets_title,
-                    output_dir=category_plot_dir,
-                    tau_label='tau_1',
-                )
-                plot_ar_data_with_clipping_info(
-                    var=var,
-                    bins=bins,
-                    xlabel=xlabel,
-                    data_ar_os_full=data_AR_OS_tau2,
-                    clipping_mask=ar_os_clipping_mask_tau2,
-                    njets_title=njets_title,
-                    output_dir=category_plot_dir,
-                    tau_label='tau_2',
-                )
+            
     else:
         raise ValueError(f"Invalid taus configuration: {args.embedding}. Expected embedding or no_embedding.")
 
@@ -2572,10 +2583,10 @@ def run_all_njets_categories() -> None:
         ('njets_geq_2', r'$\mathrm{N_{jets}} \geq 2$'),
         ('njets_inclusive', r'$\mathrm{N_{jets}} \geq 0$'),
     ]
-
+    
     for category_name, njets_title in njets_categories:
         logger.info(f"Queueing plot production for {category_name}")
-        if args.plot_ff_results or args.plot_nf_sampling:
+        if args.plot_ff_results or args.plot_nf_sampling or args.plot_ar_data_with_clipping:
             run_plots_for_njets_category(category_name, njets_title)
 
 
