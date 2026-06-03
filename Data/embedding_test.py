@@ -24,7 +24,7 @@ def preselec_mask(df):
     return mask
 
 path = "/work/tapp/crown/KingMaker/CROWN/build/bin/"
-file = "test_embed_tt.root"
+file = "test_embed_fb-1_tt.root"
 
 df = load_root_file_as_pd(path + file)
 print('----- before preselec -----')

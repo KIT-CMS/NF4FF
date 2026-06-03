@@ -14,8 +14,8 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 
 class Args(Tap):
-    loc: Literal["remote", "present"] = "remote"
-    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
+    loc: Literal["remote", "present"] = "present"
+    embedding: Literal["embedding", "no_embedding"] = "embedding"
 
 
 # ----- functions to load files -----
@@ -92,7 +92,7 @@ def main():
 
     for i in range(len(datasets)):
 
-        file = cfg['input_dir'][args.loc] + dataset_names[i]
+        file = cfg['input_dir'][args.embedding][args.loc] + dataset_names[i]
         
         # ----- Load the ROOT file and convert it to a pandas DataFrame -----
         datasets[i] = load_root_file_as_pd(file)
@@ -123,17 +123,12 @@ def main():
         if dataset_names[i] == 'data.root': datasets[i]['Label'] = 1
         else: datasets[i]['Label'] = 0
 
-        logger.info(f"{dataset_names[i]} loaded.")
+        logger.info(f"{dataset_names[i]} with {len(datasets[i])} events loaded.")
 
     combined_data = pd.concat(datasets, ignore_index=True)
 
-    # set class weights for njets
-    # combined_data['class_weights'] = get_class_weights(weights = combined_data.weight, Y = combined_data.njets, classes = (0, 1, 2), class_weighted=True)
-
     # set class weights for process
-    num_process = tuple(range(len(dataset_names)))
     combined_data['class_weights'] = get_class_weights(weights = combined_data.weight, Y = combined_data.Label, classes = (0, 1), class_weighted=True)
-    print(combined_data['class_weights'].value_counts())
 
     combined_data.to_feather(cfg['output_dir'][args.loc] + args.embedding + "/combined_data.feather")
 

@@ -6,4 +6,6 @@ config_settings: /work/tapp/TauFF/NF4FF/Classifier_tt/configs/config_settings.ya
 labels: /work/tapp/TauFF/NF4FF/Normalizing_Flow_tt/configs/labels.yaml
 labels_short: /work/tapp/TauFF/NF4FF/Normalizing_Flow_tt/configs/labels_short.yaml
 plots: /work/tapp/TauFF/NF4FF/Normalizing_Flow_tt/plots
-process_map_no_emb: /work/tapp/TauFF/NF4FF/Classifier_tt/configs/data_process_mapping_no_embedding.yaml
+process_map:
+  no_embedding: /work/tapp/TauFF/NF4FF/Classifier_tt/configs/data_process_mapping_no_embedding.yaml
+  embedding: /work/tapp/TauFF/NF4FF/Classifier_tt/configs/data_process_mapping_embedding.yaml

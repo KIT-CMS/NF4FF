@@ -40,7 +40,7 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 # ----- TAP Arguments -----
 class Args(Tap):
     loc: Literal["remote", "present"] = "present"
-    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
+    embedding: Literal["embedding", "no_embedding"] = "embedding"
 
 # ----- constants ------
 PATIENCE = 20
@@ -619,8 +619,7 @@ def main():
     # -----load variables from settings config
 
     variables = cfg["variables"]
-    print("Variables used for training:", variables)
-    exit()
+    
     dim = len(variables)
 
 

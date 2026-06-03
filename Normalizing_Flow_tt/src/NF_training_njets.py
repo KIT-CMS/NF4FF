@@ -61,9 +61,9 @@ class Args(Tap):
     test_size: float = 0.25  # Validation fraction for the train/validation split.
     random_state: int = SEED  # Random seed used for train/validation splitting.
 
-    training_model: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = TRAINING_MODEL_SINGLE  # Training mode: grouped split, single inclusive NF, or conditional NF with njets input.
+    training_model: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = TRAINING_MODEL_CONDITIONAL  # Training mode: grouped split, single inclusive NF, or conditional NF with njets input.
     taus = [1, 2] #[1, 2, 12] # list of tau fakes
-    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
+    embedding: Literal["embedding", "no_embedding"] = "embedding"
     var: Literal["variables_5", "variables_8"] = "variables_5"
 
     def configure(self) -> None:
