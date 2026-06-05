@@ -108,6 +108,8 @@ results*/
 **/.cache/
 **/closure_plots/
 **/loss_lr_plots/
+**/NF_results/
+**/datasets/
 
 # Tests
 /test.py
