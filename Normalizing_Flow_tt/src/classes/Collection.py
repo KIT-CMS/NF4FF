@@ -1,57 +1,20 @@
 from __future__ import annotations
-import math
 import logging
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Literal, Tuple
-import pandas as pd
+import random
+from typing import Tuple, Any, Union, Generator
+
+from contextlib import contextmanager
 import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
 import torch
-import matplotlib.pyplot as plt
-import matplotlib
-from tap import Tap
-import torch
+import torch as t
 import torch.nn as nn
-import torch.nn.functional as F
-from typing import Any, List, Union
-from classes.path_managment import StorePathHelper
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import TensorDataset, DataLoader
-from classes.training import train_epoch, val_epoch
-from classes.path_managment import StorePathHelper
-from classes.Logging import setup_logging
 import yaml
-import numpy as np
-import random
-from contextlib import contextmanager
-from tap import Tap
-from typing import Literal, Generator
-import matplotlib.pyplot as plt
-from dataclasses import dataclass
-from typing import Tuple, Any, Dict
-from sklearn.model_selection import train_test_split
-import numpy as np
-import pandas as pd
-import torch as t
-import random
-from typing import (Any, Callable, Dict, Iterable, List, Protocol, Tuple,
-                    Union, runtime_checkable)
-from contextlib import contextmanager
-from typing import (Any, Callable, Dict, Generator, Iterable, Iterator, List,
-                    Optional, Tuple, Type, Union, get_args, get_origin)
-from sklearn.model_selection import train_test_split
 
-from classes.NeuralNetworks import MLP, AffineCoupling, RealNVP, ConditionalRealNVP
-from classes.Dataclasses import ModelConfig, _collection, _component_collection
-
-import numpy as np
-from classes.NeuralNetworks import GroupedNFRouter
-import torch as t
-from typing import Any, Union, Generator
-from contextlib import contextmanager
-import random
+from classes.Dataclasses import ModelConfig, _component_collection
+from classes.Logging import setup_logging
+from classes.NeuralNetworks import RealNVP, ConditionalRealNVP, GroupedNFRouter
 
 
 FF_CLIP_TAIL_FRACTION = 0.04
@@ -74,93 +37,6 @@ def rng_seed(seed: int) -> Generator[None, None, None]:
         np.random.set_state(np_rng_state)
         random.setstate(py_rng_state)
         t.set_rng_state(t_rng_state)
-
-def _calculate_scaled_event_weights_generalized(
-    event_values: Union[np.ndarray, t.Tensor],
-    event_original_weights: Union[np.ndarray, t.Tensor],
-    bins: np.ndarray,
-    total_subtraction_per_bin: Union[np.ndarray, t.Tensor],
-) -> Union[np.ndarray, t.Tensor]:
-    lib, device = _get_backend_and_device(event_values)
-    is_torch = (lib == t)
-    device_kwargs = {'device': device} if is_torch else {}
-
-    raw = _collection(event_values, event_original_weights, total_subtraction_per_bin)
-    
-    initial = _collection(
-        values=lib.asarray(raw.values, **device_kwargs),
-        weights=lib.asarray(raw.weights, **device_kwargs),
-        histograms=lib.asarray(raw.histograms, **device_kwargs)
-    )
-    
-    shape_prefix = _collection(
-        values=initial.values.shape[:-1],
-        weights=initial.weights.shape[:-1],
-        histograms=initial.histograms.shape[:-1]
-    )
-
-    bins = lib.asarray(bins, dtype=event_values.dtype, **device_kwargs)
-    n_bins, n_events = len(bins) - 1, initial.values.shape[-1]
-
-    flat = _collection(
-        initial.values.reshape(-1, n_events).contiguous() if is_torch else initial.values.reshape(-1, n_events),
-        initial.weights.reshape(-1, n_events),
-        initial.histograms.reshape(-1, n_bins)
-    )
-    batch_size = _collection(
-        values=flat.values.shape[0],
-        weights=flat.weights.shape[0],
-        histograms=flat.histograms.shape[0]
-    )
-
-    try:
-        common_prefix_dim = np.broadcast_shapes(*shape_prefix.unrolled)
-        max_batch_size = int(np.prod(common_prefix_dim)) if common_prefix_dim else 1
-    except ValueError as e:
-        raise ValueError(f"Prefix shapes {shape_prefix.unrolled} are not broadcastable. Error: {e}")
-
-    if batch_size.values == 1 and max_batch_size > 1:
-        flat.values = lib.broadcast_to(flat.values, (max_batch_size, n_events))
-    if batch_size.weights == 1 and max_batch_size > 1:
-        flat.weights = lib.broadcast_to(flat.weights, (max_batch_size, n_events))
-    if batch_size.histograms == 1 and max_batch_size > 1:
-        flat.histograms = lib.broadcast_to(flat.histograms, (max_batch_size, n_bins))
-
-    _digitize, digitize_kwargs = (lib.bucketize, {'right': False}) if is_torch else (lib.digitize, {})
-    raw_indices = _digitize(flat.values, bins, **digitize_kwargs) - 1
-
-    is_out_of_bounds = (raw_indices < 0) | (raw_indices >= n_bins)
-    event_bin_indices = lib.clip(raw_indices, 0, n_bins - 1)
-
-    event_weights_for_summation = flat.weights.clone() if is_torch else flat.weights.copy()
-    event_weights_for_summation[is_out_of_bounds] = 0.0  # Zero out weights for out-of-bounds events for sum calculation
-
-    sum_original_weights_per_bin = lib.zeros((max_batch_size, n_bins), dtype=flat.weights.dtype, **device_kwargs)
-    if is_torch:
-        sum_original_weights_per_bin.scatter_add_(1, event_bin_indices.long(), event_weights_for_summation)
-    else:
-        for i in range(max_batch_size):
-            sum_original_weights_per_bin[i] = lib.bincount(event_bin_indices[i], event_weights_for_summation[i], n_bins)
-
-    scale_factor_per_bin = lib.ones_like(sum_original_weights_per_bin)
-    non_zero_sum_mask = sum_original_weights_per_bin != 0
-
-    scale_factor_per_bin[non_zero_sum_mask] = 1.0 - flat.histograms[non_zero_sum_mask] / sum_original_weights_per_bin[non_zero_sum_mask]
-
-    zero_sum_non_zero_subtraction_mask = (sum_original_weights_per_bin == 0) & (flat.histograms != 0)
-    scale_factor_per_bin[zero_sum_non_zero_subtraction_mask] = 0.0  # lib.nan
-
-    # Gather Scale Factors for each Event
-    if is_torch:
-        scale_factors_for_events = lib.gather(scale_factor_per_bin, dim=1, index=event_bin_indices.long())
-    else:
-        row_idx_gather = lib.arange(max_batch_size)[:, None]
-        scale_factors_for_events = scale_factor_per_bin[row_idx_gather, event_bin_indices]
-
-    corrected_event_weights_flat = flat.weights * scale_factors_for_events
-    corrected_event_weights_flat[is_out_of_bounds] = flat.weights[is_out_of_bounds]
-
-    return corrected_event_weights_flat.reshape(initial.weights.shape)  # reshape back to original shape
 
 
 # --------model loading
@@ -452,27 +328,6 @@ def evaluate_pdf(model: RealNVP, X: torch.Tensor) -> np.ndarray:
     return pdf
 
 
-@torch.no_grad()
-def evaluate_density_ratio_binary_classifier(
-    model: nn.Module,
-    X: torch.Tensor,
-    prior_ar_over_sr: float,
-    eps: float = 1e-7,
-) -> np.ndarray:
-    """
-    Returns eventwise density ratio p(x|SR-like) / p(x|AR-like) from a binary classifier.
-
-    Uses:
-        ratio(x) = [P(SR|x) / (1 - P(SR|x))] * [P(AR) / P(SR)]
-    """
-    prob_sr = model(X).reshape(-1)
-    prob_sr = torch.clamp(prob_sr, min=eps, max=1.0 - eps)
-    odds_sr_over_ar = prob_sr / (1.0 - prob_sr)
-    ratio_sr_over_ar = odds_sr_over_ar * float(prior_ar_over_sr)
-    ratio_sr_over_ar = torch.clamp(ratio_sr_over_ar, min=0.0, max=1e10)
-    return ratio_sr_over_ar.cpu().numpy()
-
-
 def compute_eventwise_fake_factors(
     pdf_AR: np.ndarray,
     pdf_SR: np.ndarray,
@@ -515,43 +370,6 @@ def compute_eventwise_fake_factors(
 
     # ---- clipped FF
     
-    ff_eventwise_clipped = ff_eventwise_full[clip_mask]
-
-    return ff_eventwise_full, ff_eventwise_clipped, global_ff_cor, clip_mask, clip_value
-
-
-def compute_eventwise_fake_factors_binary_classifier(
-    ratio_sr_over_ar: np.ndarray,
-    global_ff: float,
-    clip_value: float = 2.0,
-) -> tuple[np.ndarray, np.ndarray, float, np.ndarray, float]:
-    """
-    Compute clipped/corrected eventwise fake factors from a classifier-based SR/AR ratio.
-
-    Parameters
-    ----------
-    ratio_sr_over_ar : np.ndarray
-        Eventwise density ratio p(x|SR-like) / p(x|AR-like).
-    global_ff : float
-        Global normalization factor.
-    clip_value : float, default=2.0
-        Upper clipping value for eventwise FF.
-    """
-    ratio = np.asarray(ratio_sr_over_ar, dtype=float)
-    valid_ratio_mask = np.isfinite(ratio) & (ratio > 0)
-
-    ff_eventwise_nominal = global_ff * ratio
-
-    clip_mask = (ff_eventwise_nominal <= clip_value) & valid_ratio_mask
-
-    correction_factor = np.sum(clip_mask) / max(len(ratio), 1)
-    correction_factor = max(correction_factor, 1e-12)
-    global_ff_cor = global_ff / correction_factor
-
-    ff_eventwise_full = global_ff_cor * ratio
-    ff_eventwise_full = np.where(valid_ratio_mask, ff_eventwise_full, 0.0)
-    ff_eventwise_full = np.clip(ff_eventwise_full, a_min=0.0, a_max=clip_value)
-
     ff_eventwise_clipped = ff_eventwise_full[clip_mask]
 
     return ff_eventwise_full, ff_eventwise_clipped, global_ff_cor, clip_mask, clip_value

@@ -1,3 +1,6 @@
+from dataclasses import KW_ONLY, dataclass
+from typing import (Any, Dict, List, Tuple, Union)
+
 import yaml
 import torch as t
 import pandas as pd
@@ -6,9 +9,7 @@ import numpy as np
 
 import classes.helper as helper
 
-from dataclasses import KW_ONLY, dataclass
-from typing import (Any, Callable, Dict, Iterable, List, Protocol, Tuple,
-                    Union, runtime_checkable)
+
 
 TailIndexValue = Union[int, List[int], Tuple[int, ...]]
 TailStringValue = Union[str, List[str], Tuple[str, ...]]
