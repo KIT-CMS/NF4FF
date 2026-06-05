@@ -1,0 +1,5 @@
+variables_5: ['pt_1', 'pt_2', 'm_vis', 'deltaR_ditaupair', 'pt_vis']
+
+# current best
+
+variables_8: ['pt_1', 'pt_2', 'm_vis', 'deltaR_ditaupair', 'pt_vis', 'met', 'pt_tt', 'm_fastmtt']
