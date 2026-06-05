@@ -20,26 +20,14 @@ __pycache__/
 
 # Large datasets
 
-CODE/
 plots/
-data/
 
 Classifier/data/
 Classifier/plots/
 Classifier/Categorizer_results/
 Data/test_data/
-Data/datasets/
+datasets/
 Data/QCD_MC/
-
-
-
-Classifier_all_in_one/.cache/
-Classifier_all_in_one/Categorizer_results/
-Classifier_all_in_one/CODE/
-Classifier_all_in_one/plots/
-CustomLogging/
-!Classifier_all_in_one/CustomLogging/
-!Classifier_all_in_one/CustomLogging/**
 
 FakeFaktor/
 Helper/
