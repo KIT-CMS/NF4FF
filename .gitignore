@@ -7,7 +7,7 @@ __pycache__/
 *.pkl
 *.pt
 *.pth
-*.feather
+**/*.feather
 *.png
 *.pdf
 *.spm
@@ -109,7 +109,7 @@ results*/
 **/closure_plots/
 **/loss_lr_plots/
 **/NF_results/
-**/datasets/
+
 
 # Tests
 /test.py
