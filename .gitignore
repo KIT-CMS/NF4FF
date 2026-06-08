@@ -44,7 +44,7 @@ DNN_et/training_datasets
 DNN_et/non_closure_corrections
 DNN_et/CombinedModels*
 DNN_et/Enrichment_models
-
+DNN_et/data
 DNN_et/comparison_squeezing_limit
 
 FakeFaktor/

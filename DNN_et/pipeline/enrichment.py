@@ -37,6 +37,7 @@ QCD_WEIGHT_REFRESH_EVERY = 5
 QCD_WEIGHT_REFRESH_UNTIL_EPOCH = 100
 QCD_GROUPING_CONFIG_PATH = "../configs/config_qcd_groupings_enrichment.yaml"
 TRAINING_SEED = 42
+QCD_EARLY_STOPPING_PATIENCE = 20
 
 
 def _set_training_seed(seed: int) -> None:
@@ -179,6 +180,39 @@ def print_epoch_summary(
     )
 
     console.print(table)
+
+
+@t.no_grad()
+def _evaluate_qcd_classifier(model, loader, criterion, device):
+    model.eval()
+    loss_sum = 0.0
+    weight_sum = 0.0
+    correct = 0
+    total = 0
+
+    for Xb, yb, wb in loader:
+        Xb = Xb.to(device, non_blocking=True)
+        yb = yb.to(device, non_blocking=True)
+        wb = wb.to(device, non_blocking=True)
+
+        predictions = model(Xb)
+        targets = (yb == 2).float().view(-1, 1)
+        weights = wb.float().view(-1, 1)
+        loss_per_event = criterion(
+            predictions.float().clamp(1e-7, 1 - 1e-7),
+            targets,
+        )
+
+        loss_sum += (loss_per_event * weights).sum().item()
+        weight_sum += weights.sum().item()
+        predicted_classes = (predictions >= 0.5).float()
+        correct += (predicted_classes.view(-1) == targets.view(-1)).sum().item()
+        total += targets.numel()
+
+    return (
+        loss_sum / max(weight_sum, 1e-12),
+        correct / max(total, 1),
+    )
 
 
 def _write_group_metadata(path: Path, payload: Dict[str, Any]) -> None:
@@ -550,8 +584,16 @@ def train_fold_model_qcd(
                 split_fields[field.name] = value
         return type(dataset)(**split_fields)
 
-    train_idx_ss, val_idx_ss = train_test_split(np.arange(df.X.ss.shape[0]), random_state=seed)
-    train_idx_os, val_idx_os = train_test_split(np.arange(df.X.os.shape[0]), random_state=seed)
+    train_idx_ss, val_idx_ss = train_test_split(
+        np.arange(df.X.ss.shape[0]),
+        test_size=0.5,
+        random_state=seed,
+    )
+    train_idx_os, val_idx_os = train_test_split(
+        np.arange(df.X.os.shape[0]),
+        test_size=0.5,
+        random_state=seed,
+    )
     train_pt = _split_collection(df, train_idx_ss, train_idx_os).to_torch(device=None)
     val_pt = _split_collection(df, val_idx_ss, val_idx_os).to_torch(device=None)
 
@@ -562,7 +604,7 @@ def train_fold_model_qcd(
 
     model = DNN(
         input_nodes = len(training_variables),
-        hidden_nodes = (200, ), 
+        hidden_nodes = (200, 200),
         output_nodes = 1,
         dropout = 0.15,
         activation = 'ReLU',
@@ -598,12 +640,6 @@ def train_fold_model_qcd(
     log_rows = []
     logger.info("Starting training for %s", fold_label)
 
-
-
-
-    qcd_mask_os_train = (train_pt.Y.os == 2)
-    qcd_mask_os_val = (val_pt.Y.os == 2)
-
     train_generator = t.Generator().manual_seed(seed)
     val_generator = t.Generator().manual_seed(seed + 1)
 
@@ -616,7 +652,7 @@ def train_fold_model_qcd(
 
         refresh_qcd = should_refresh_qcd_weights(epoch)
 
-        # ------- update qcd weights (every 5 epochs) ------
+        # The reference QCD training refreshes the derived weights every epoch.
 
         if refresh_qcd:
             model.eval()
@@ -656,8 +692,8 @@ def train_fold_model_qcd(
         w_val = val_pt.weights.ss
 
 
-        dataset_train = TensorDataset(X_train, y_train, w_train, train_pt.process.ss)
-        dataset_val   = TensorDataset(X_val,   y_val,   w_val,   val_pt.process.ss)
+        dataset_train = TensorDataset(X_train, y_train, w_train)
+        dataset_val = TensorDataset(X_val, y_val, w_val)
 
 
         train_loader = DataLoader(
@@ -683,46 +719,27 @@ def train_fold_model_qcd(
         train_weight_sum = 0.0
         epoch_start = time.time()
 
-        for Xb, yb, wb, pb in train_loader:
+        for Xb, yb, wb in train_loader:
             Xb = Xb.to(device, non_blocking=True)
             yb = yb.to(device, non_blocking=True)
             wb = wb.to(device, non_blocking=True)
-            pb = pb.to(device, non_blocking = True)
 
             optimizer.zero_grad(set_to_none=True)
 
 
             with t.amp.autocast('cuda', enabled=use_amp):
 
-                logits = model(Xb)
-                y = (yb == 1).float().view(-1, 1)
-                w = wb.float().view(-1, 1)
+                predictions = model(Xb)
+                targets = (yb == 2).float().view(-1, 1)
+                weights = wb.float().view(-1, 1)
 
-                # Identify classes
-                is_signal = (y == 1).float()
-                is_qcd    = (pb == 2).float().view(-1, 1)   # process ID 2 = QCD
-                is_bkg    = ((y == 0).float() * (1 - is_qcd))
-
-                # Base BCE loss (per event)
-                base_loss = criterion(logits.float().clamp(1e-7, 1 - 1e-7), y)
-
-                # Weighting factors (tune these)
-                w_signal = 1.0
-                w_bkg    = 1.0
-                w_qcd    = 3.0           # increase dominance of QCD
-
-                # Total loss per event
-                loss_per_event = (
-                    w_signal * base_loss * is_signal
-                    + w_bkg    * base_loss * is_bkg
-                    + w_qcd    * base_loss * is_qcd
+                loss_per_event = criterion(
+                    predictions.float().clamp(1e-7, 1 - 1e-7),
+                    targets,
                 )
-
-                # ⬅⬅⬅ This is what you asked for:
-                batch_loss   = (loss_per_event * w).sum()
-                batch_weight = w.sum()
-
-                loss = batch_loss   # or: loss = batch_loss / batch_weight
+                batch_loss = (loss_per_event * weights).sum()
+                batch_weight = weights.sum()
+                loss = batch_loss / batch_weight.clamp_min(1e-12)
 
 
             # AMP backward
@@ -741,23 +758,17 @@ def train_fold_model_qcd(
             train_weight_sum += batch_weight.item()
 
         train_loss_optim = train_loss_sum / max(train_weight_sum, 1e-12)
-        train_loss, train_acc = evaluate_binary_classifier(
+        train_loss, train_acc = _evaluate_qcd_classifier(
             model,
             train_loader,
             criterion,
             device,
-            w_signal=w_signal,
-            w_bkg=w_bkg,
-            w_qcd=w_qcd,
         )
-        val_loss, val_acc = evaluate_binary_classifier(
+        val_loss, val_acc = _evaluate_qcd_classifier(
             model,
             val_loader,
             criterion,
             device,
-            w_signal=w_signal,
-            w_bkg=w_bkg,
-            w_qcd=w_qcd,
         )
         epoch_time = time.time() - epoch_start
 
@@ -805,7 +816,7 @@ def train_fold_model_qcd(
             }
         else:
             counter += 1
-            if counter >= cfg.patience:
+            if counter >= QCD_EARLY_STOPPING_PATIENCE:
                 logger.info("Early stopping for %s at epoch %d", fold_label, epoch)
                 break
 
@@ -1004,6 +1015,7 @@ def _run_enrichment_process(
         store = FeatureStore(feature_store_path, registry)
 
         store.write(pd.DataFrame({
+            "row_index": region_df.index,
             "event": region_df["event"],
             f"qcd_weight_{group_idx_name}": region_df[f"qcd_weight_{group_idx_name}"],
         }))

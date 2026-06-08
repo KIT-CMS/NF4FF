@@ -42,6 +42,9 @@ QCD_WEIGHT_DYNAMIC_DELTA_LAST = 10.0
 QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD = 10.0
 QCD_WEIGHT_REFRESH_EVERY = 5
 QCD_WEIGHT_REFRESH_UNTIL_EPOCH = 100
+QCD_SS_WEIGHT_DYNAMIC_DELTA = 4.0
+QCD_SS_WEIGHT_DYNAMIC_DELTA_LAST = 4.0
+QCD_SS_WEIGHT_DYNAMIC_MIN_QCD_YIELD = 4.0
 
 # ----- data clas
 @dataclass
@@ -164,9 +167,9 @@ def refresh_qcd_weights(
             subtract_njets_based=use_grouping,
             qcd_weight_binning=QCD_WEIGHT_BINNING,
             qcd_weight_n_bins=QCD_WEIGHT_N_BINS,
-            qcd_weight_dynamic_delta=QCD_WEIGHT_DYNAMIC_DELTA,
-            qcd_weight_dynamic_delta_last=QCD_WEIGHT_DYNAMIC_DELTA_LAST,
-            qcd_weight_dynamic_min_qcd_yield=QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD,
+            qcd_weight_dynamic_delta=QCD_SS_WEIGHT_DYNAMIC_DELTA,
+            qcd_weight_dynamic_delta_last=QCD_SS_WEIGHT_DYNAMIC_DELTA_LAST,
+            qcd_weight_dynamic_min_qcd_yield=QCD_SS_WEIGHT_DYNAMIC_MIN_QCD_YIELD,
         )
 
 
@@ -521,7 +524,11 @@ def get_ff_dataset_with_qcd_weights_ss(
                 non_qcd_hist,
             )
 
-            qcd_weights = set_negatives_to_one(qcd_weights)
+            qcd_weights = t.where(
+                qcd_weights < 0,
+                t.zeros_like(qcd_weights),
+                qcd_weights,
+            )
 
             # Save weights
             _dataset.weights.ss[qcd_mask_sr] = qcd_weights
@@ -596,7 +603,9 @@ def _calculate_scaled_event_weights_generalized(
     _digitize, digitize_kwargs = (lib.bucketize, {'right': False}) if is_torch else (lib.digitize, {})
     raw_indices = _digitize(flat.values, bins, **digitize_kwargs) - 1
 
-    is_out_of_bounds = (raw_indices < 0) | (raw_indices >= n_bins)
+    # np.digitize places values equal to the final edge above the last bin,
+    # whereas np.histogram includes that edge in the final bin.
+    is_out_of_bounds = (flat.values < bins[0]) | (flat.values > bins[-1])
     event_bin_indices = lib.clip(raw_indices, 0, n_bins - 1)
 
     event_weights_for_summation = flat.weights.clone() if is_torch else flat.weights.copy()

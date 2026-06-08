@@ -156,21 +156,30 @@ class ProcessView:
         #
         self._parent.ensure_column(name)
 
-        return getattr(self._df, name)
+        current_df = self._parent._df
+        if name in current_df.columns:
+            return current_df.loc[self._process_mask, name]
+
+        return getattr(current_df.loc[self._process_mask], name)
 
     @property
     def events(self):
-        return self._df.loc[self._process_mask]
+        return self._parent._df.loc[self._process_mask]
 
     def __getitem__(self, key):
 
         if isinstance(key, str):
             self._parent.ensure_column(key)
 
-        return self._df.loc[self._process_mask, key]
+        return self._parent._df.loc[self._process_mask, key]
 
 
 class AnalysisDataFrame:
+    """DataFrame wrapper with configured region and process views.
+
+    Process attributes always apply their mask: ``df.data`` contains only
+    process 0, while ``df.full`` is the explicit all-process view.
+    """
 
     def __init__(self, df, manager, resolver):
         self._df = df
@@ -206,9 +215,6 @@ class AnalysisDataFrame:
         return self._process_cache[name]
 
     def __getattr__(self, name):
-        if name == "data":
-            return self
-
         if name in self._manager.regions:
             return RegionView(
                 self._df,
@@ -278,7 +284,11 @@ class AnalysisDataFrame:
 
         feat = feat[new_cols]
 
-        feature_cols = [c for c in feat.columns if c != "event"]
+        key_column = "row_index" if "row_index" in feat.columns else "event"
+        feature_cols = [
+            c for c in feat.columns
+            if c not in ("event", "row_index")
+        ]
         if len(feature_cols) == 0:
             self._loaded_feature_files.add(path)
             return
@@ -289,14 +299,17 @@ class AnalysisDataFrame:
         # existing dataframe without changing row count/order.
         #
         feat_compact = (
-            feat[["event"] + feature_cols]
-            .groupby("event", as_index=False, sort=False)
+            feat[[key_column] + feature_cols]
+            .groupby(key_column, as_index=False, sort=False)
             .last()
-            .set_index("event")
+            .set_index(key_column)
         )
 
         for col in feature_cols:
-            self._df[col] = self._df["event"].map(feat_compact[col])
+            if key_column == "row_index":
+                self._df[col] = self._df.index.to_series().map(feat_compact[col])
+            else:
+                self._df[col] = self._df["event"].map(feat_compact[col])
 
         self._loaded_feature_files.add(path)
 
@@ -367,12 +380,13 @@ class FeatureStore:
 
     def upsert(self, df):
         df = self._normalize(df)
+        key_column = "row_index" if "row_index" in df.columns else "event"
 
         if self.df.empty:
             self.df = df.copy()
         else:
-            current = self.df.set_index("event")
-            incoming = df.set_index("event")
+            current = self.df.set_index(key_column)
+            incoming = df.set_index(key_column)
 
             for col in incoming.columns:
                 if col not in current.columns:
@@ -386,20 +400,29 @@ class FeatureStore:
 
             self.df = current.reset_index()
 
-        self.registry.register(df.columns.drop("event"), self.path)
+        feature_columns = [
+            c for c in df.columns
+            if c not in ("event", "row_index")
+        ]
+        self.registry.register(feature_columns, self.path)
 
     def write(self, df):
         df = self._normalize(df)
         self.df = df
 
-        self.registry.register(df.columns.drop("event"), self.path)
+        feature_columns = [
+            c for c in df.columns
+            if c not in ("event", "row_index")
+        ]
+        self.registry.register(feature_columns, self.path)
 
     def save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.df.to_feather(self.path)
 
     def _normalize(self, df):
-        return df.groupby("event", as_index=False).last()
+        key_column = "row_index" if "row_index" in df.columns else "event"
+        return df.groupby(key_column, as_index=False).last()
 
 class FeatureResolver:
 
@@ -413,7 +436,10 @@ class FeatureResolver:
             return base_df[column]
 
         if column in self.col_cache:
-            return self.col_cache[column]
+            series = self.col_cache[column]
+            if series.index.name == "row_index":
+                return base_df.index.to_series().map(series)
+            return base_df["event"].map(series)
 
         file = self.registry.get_file(column)
 
@@ -421,7 +447,13 @@ class FeatureResolver:
             raise KeyError(f"Unknown feature: {column}")
 
         if file not in self.file_cache:
-            self.file_cache[file] = pd.read_feather(file).set_index("event")
+            feature_df = pd.read_feather(file)
+            key_column = (
+                "row_index"
+                if "row_index" in feature_df.columns
+                else "event"
+            )
+            self.file_cache[file] = feature_df.set_index(key_column)
 
         df = self.file_cache[file]
 
@@ -432,7 +464,9 @@ class FeatureResolver:
 
         self.col_cache[column] = series
 
-        return series
+        if df.index.name == "row_index":
+            return base_df.index.to_series().map(series)
+        return base_df["event"].map(series)
 
 
 def write_features(
@@ -558,60 +592,110 @@ def training_data(
     training_var,
     weight_column="weight",
     balance=True,
+    balance_column=None,
+    balance_with_absolute_yields=False,
 ):
 
     X_sig = df_sig[training_var].to_numpy(dtype=np.float32)
-    w_sig = df_sig[weight_column].to_numpy(dtype=np.float32)
+    w_sig = df_sig[weight_column].to_numpy(dtype=np.float64)
 
     X_bkg = df_bkg[training_var].to_numpy(dtype=np.float32)
-    w_bkg = df_bkg[weight_column].to_numpy(dtype=np.float32)
+    w_bkg = df_bkg[weight_column].to_numpy(dtype=np.float64)
 
     y_sig = np.ones(df_sig.shape[0], dtype=np.float32)
     y_bkg = np.zeros(df_bkg.shape[0], dtype=np.float32)
 
+    if not np.isfinite(X_sig).all() or not np.isfinite(X_bkg).all():
+        raise ValueError("Training features contain non-finite values.")
+    if not np.isfinite(w_sig).all() or not np.isfinite(w_bkg).all():
+        raise ValueError(
+            f"Training weight column '{weight_column}' contains "
+            "non-finite values."
+        )
 
     if balance:
-        # Normalize SR to AR, preferably per njets category like in FF calculation.
-        if "tau_decaymode_2" in df_sig.columns and "tau_decaymode_2" in df_bkg.columns:
-
-            njets_sig = df_sig["tau_decaymode_2"].to_numpy(dtype=np.float32)
-            njets_bkg = df_bkg["tau_decaymode_2"].to_numpy(dtype=np.float32)
-
-            # Categories:
-            group_defs = (
-                (lambda x: x == 0),
-                (lambda x: x == 1),
-                (lambda x: x == 10),
-                (lambda x: x == 11),
-            )
+        if (
+            balance_column is not None
+            and balance_column in df_sig.columns
+            and balance_column in df_bkg.columns
+        ):
+            group_values_sig = df_sig[balance_column].to_numpy()
+            group_values_bkg = df_bkg[balance_column].to_numpy()
+            if balance_column == "tau_decaymode_2":
+                group_defs = (
+                    lambda values: values == 0,
+                    lambda values: values == 1,
+                    lambda values: values == 10,
+                    lambda values: values == 11,
+                )
+            elif balance_column == "njets":
+                group_defs = (
+                    lambda values: values == 0,
+                    lambda values: values == 1,
+                    lambda values: values >= 2,
+                )
+            else:
+                unique_values = np.union1d(
+                    group_values_sig,
+                    group_values_bkg,
+                )
+                group_defs = tuple(
+                    lambda values, current=value: values == current
+                    for value in unique_values
+                )
 
             w_sig_scaled = w_sig.copy()
 
             for group_fn in group_defs:
-                sig_mask = group_fn(njets_sig)
-                bkg_mask = group_fn(njets_bkg)
+                sig_mask = group_fn(group_values_sig)
+                bkg_mask = group_fn(group_values_bkg)
+                if not sig_mask.any():
+                    continue
 
-                sig_yield = np.sum(w_sig[sig_mask])
-                bkg_yield = np.sum(w_bkg[bkg_mask])
+                if balance_with_absolute_yields:
+                    sig_yield = np.abs(w_sig[sig_mask]).sum(dtype=np.float64)
+                    bkg_yield = np.abs(w_bkg[bkg_mask]).sum(dtype=np.float64)
+                else:
+                    sig_yield = w_sig[sig_mask].sum(dtype=np.float64)
+                    bkg_yield = w_bkg[bkg_mask].sum(dtype=np.float64)
 
-                if sig_yield > 0:
-                    sig_scale = bkg_yield / sig_yield if bkg_yield > 0 else 0.0
-                    w_sig_scaled[sig_mask] = w_sig[sig_mask] * sig_scale
+                if sig_yield != 0:
+                    sig_scale = bkg_yield / sig_yield
+                    w_sig_scaled[sig_mask] = (
+                        w_sig[sig_mask] * sig_scale
+                    )
 
             w_sig = w_sig_scaled
 
         else:
-            sig_yield = np.sum(w_sig)
-            bkg_yield = np.sum(w_bkg)
+            if balance_with_absolute_yields:
+                sig_yield = np.abs(w_sig).sum(dtype=np.float64)
+                bkg_yield = np.abs(w_bkg).sum(dtype=np.float64)
+            else:
+                sig_yield = w_sig.sum(dtype=np.float64)
+                bkg_yield = w_bkg.sum(dtype=np.float64)
 
-            if sig_yield > 0:
-                sig_scale = bkg_yield / sig_yield if bkg_yield > 0 else 0.0
+            if sig_yield != 0:
+                sig_scale = bkg_yield / sig_yield
                 w_sig = w_sig * sig_scale
 
+    if not np.isfinite(w_sig).all() or not np.isfinite(w_bkg).all():
+        raise ValueError(
+            f"Balancing produced non-finite values in '{weight_column}'."
+        )
+    float32_max = np.finfo(np.float32).max
+    max_absolute_weight = max(
+        np.abs(w_sig).max(initial=0.0),
+        np.abs(w_bkg).max(initial=0.0),
+    )
+    if max_absolute_weight > float32_max:
+        raise ValueError(
+            f"Balancing '{weight_column}' exceeded the float32 range."
+        )
 
     X = np.concatenate([X_sig, X_bkg], axis=0)
     Y = np.concatenate([y_sig, y_bkg], axis=0)
-    weights = np.concatenate([w_sig, w_bkg], axis=0)
+    weights = np.concatenate([w_sig, w_bkg], axis=0).astype(np.float32)
 
     idx = np.random.permutation(len(X))
 
@@ -638,6 +722,8 @@ def create_training_dataset(
     training_var,
     weight_column="weight",
     balance=True,
+    balance_column=None,
+    balance_with_absolute_yields=False,
     test_size=0.25,
     random_state=42,
 ):
@@ -659,6 +745,8 @@ def create_training_dataset(
         training_var=training_var,
         weight_column=weight_column,
         balance=balance,
+        balance_column=balance_column,
+        balance_with_absolute_yields=balance_with_absolute_yields,
     )
 
     val_dataset = training_data(
@@ -667,6 +755,8 @@ def create_training_dataset(
         training_var=training_var,
         weight_column=weight_column,
         balance=False,
+        balance_column=balance_column,
+        balance_with_absolute_yields=balance_with_absolute_yields,
     )
 
     X_train = train_dataset.X
