@@ -921,19 +921,21 @@ def _run_enrichment_process(
     input_file_path: Path,
     train_fold_model_fn,
     region_name: str,
+    output_root: Path = None,
 ):
     _set_training_seed(TRAINING_SEED)
 
     project_root = Path(__file__).resolve().parent.parent
+    output_root = Path(output_root) if output_root is not None else project_root
     process_slug = process_name.lower()
     DATA_PATH = Path(input_file_path)
     MASKS_PATH = project_root / 'configs' / 'masks.yaml'
     TRAINING_VARIABLES_ENRICHMENT = project_root / 'configs' / 'training_variables_enrichment.yaml'
     CONFIG_MODEL_PATH = project_root / 'configs' / 'config_NN_enrichment.yaml'
-    CHECKPOINT_DIR = project_root / 'Enrichment_models' / process_slug
-    FEATURE_REGISTRY_PATH = project_root / 'data' / 'features' / process_slug / 'feature_registry.json'
-    FEATURE_STORE_DIR = project_root / 'data' / 'features' / process_slug
-    DEFAULT_FEATURE_REGISTRY_PATH = project_root / 'data' / 'features' / 'feature_registry.json'
+    CHECKPOINT_DIR = output_root / 'Enrichment_models' / process_slug
+    FEATURE_REGISTRY_PATH = output_root / 'data' / 'features' / process_slug / 'feature_registry.json'
+    FEATURE_STORE_DIR = output_root / 'data' / 'features' / process_slug
+    DEFAULT_FEATURE_REGISTRY_PATH = output_root / 'data' / 'features' / 'feature_registry.json'
 
 
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
@@ -949,7 +951,7 @@ def _run_enrichment_process(
 
 
 
-    region_df = getattr(df.data, region_name).events
+    region_df = getattr(df.full, region_name).events
     data_pt_even = get_my_data(region_df[region_df.event % 2 == 0], training_variables)
     data_pt_odd = get_my_data(region_df[region_df.event % 2 == 1], training_variables)
 
@@ -1055,20 +1057,22 @@ def _run_enrichment_process(
     }
 
 
-def train_enrichment_wjets(input_file_path: Path):
+def train_enrichment_wjets(input_file_path: Path, output_root: Path = None):
     return _run_enrichment_process(
         process_name="wjets",
         input_file_path=input_file_path,
         train_fold_model_fn=_train_fold_model_wjets,
         region_name="DR_wjets_without_signs",
+        output_root=output_root,
     )
 
-def train_enrichment_qcd(input_file_path: Path):
+def train_enrichment_qcd(input_file_path: Path, output_root: Path = None):
     return _run_enrichment_process(
         process_name="qcd",
         input_file_path=input_file_path,
         train_fold_model_fn=train_fold_model_qcd,
         region_name="DR_qcd_without_signs",
+        output_root=output_root,
     )
 
 if __name__ == "__main__":

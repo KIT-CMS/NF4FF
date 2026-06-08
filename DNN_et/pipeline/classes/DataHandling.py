@@ -328,14 +328,19 @@ def load_variables(yaml_path):
     return yaml_vars
 
 
-def load_data(feather_file, config_file):
+def load_data(feather_file, config_file, feature_registry_path=None):
 
     df = pd.read_feather(feather_file)
 
     manager = SelectionManager(config_file)
 
-    project_root = Path(__file__).resolve().parents[2]
-    registry = FeatureRegistry(project_root / "data" / "features" / "feature_registry.json")
+    if feature_registry_path is None:
+        feature_registry_path = (
+            Path(feather_file).resolve().parent
+            / "features"
+            / "feature_registry.json"
+        )
+    registry = FeatureRegistry(feature_registry_path)
     resolver = FeatureResolver(registry)
 
     return AnalysisDataFrame(df, manager, resolver)

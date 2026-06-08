@@ -31,6 +31,30 @@ PROCESSES = ['diboson', 'DYjets', 'ST', 'ttbar', 'embedding']
 PROCESSES_QCD = ['wjets', 'diboson', 'DYjets', 'ST', 'ttbar', 'embedding']
 
 
+def _configure_output_root(output_root):
+    global CHECKPOINT_DIR
+    global DATA_PATH
+    global FEATURE_STORE_DIR_WJETS
+    global FEATURE_REGISTRY_PATH_WJETS
+    global FEATURE_STORE_DIR_QCD
+    global FEATURE_REGISTRY_PATH_QCD
+    global QCD_WEIGHT_STORE_DIR_WJETS
+    global QCD_WEIGHT_STORE_DIR_QCD
+    global DEFAULT_FEATURE_REGISTRY_PATH
+
+    output_root = Path(output_root)
+    CHECKPOINT_DIR = output_root / 'Enrichment_models'
+    DATA_PATH = output_root / 'data' / 'dataframe_complete.feather'
+    feature_root = output_root / 'data' / 'features'
+    FEATURE_STORE_DIR_WJETS = feature_root / 'reduced_dataset' / 'wjets'
+    FEATURE_REGISTRY_PATH_WJETS = FEATURE_STORE_DIR_WJETS / 'feature_registry.json'
+    FEATURE_STORE_DIR_QCD = feature_root / 'reduced_dataset' / 'qcd'
+    FEATURE_REGISTRY_PATH_QCD = FEATURE_STORE_DIR_QCD / 'feature_registry.json'
+    QCD_WEIGHT_STORE_DIR_WJETS = feature_root / 'wjets'
+    QCD_WEIGHT_STORE_DIR_QCD = feature_root / 'qcd'
+    DEFAULT_FEATURE_REGISTRY_PATH = feature_root / 'feature_registry.json'
+
+
 def _reduced_weight_name(process, grouping):
     return f"reduced_weight_{process}_{grouping}_nominal"
 
@@ -228,7 +252,8 @@ def _predict_fold_output(model, region_df, training_variables, device):
     return model(model_input).detach().cpu().numpy()
 
 
-def reduced_data_wjets():
+def reduced_data_wjets(output_root=PROJECT_ROOT):
+    _configure_output_root(output_root)
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
     df = load_data(DATA_PATH, MASKS_PATH)
     training_variables = load_variables(VARIABLES_ENRICHMENT_PATH)
@@ -239,7 +264,7 @@ def reduced_data_wjets():
             QCD_WEIGHT_STORE_DIR_WJETS / f"qcd_weights_{grouping}.feather"
         )
 
-        inference_view = df.data.DR_wjets_without_signs
+        inference_view = df.full.DR_wjets_without_signs
         inference_df = inference_view.events.copy()
 
         nn_output_name = _nn_output_name("wjets", grouping)
@@ -326,31 +351,30 @@ def reduced_data_wjets():
 
 
 
-def reduced_data_qcd():
+def reduced_data_qcd(output_root=PROJECT_ROOT):
+    _configure_output_root(output_root)
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
     df = load_data(DATA_PATH, MASKS_PATH)
     training_variables = load_variables(VARIABLES_ENRICHMENT_PATH)
 
     for grouping in GROUPING_NAMES:
         model = _load_group_model("qcd", grouping)
-        df.load_feature_file(
-            QCD_WEIGHT_STORE_DIR_QCD / f"qcd_weights_{grouping}.feather"
-        )
 
-        region_view = df.data.DR_qcd
-        region_df = region_view.events.copy()
+        inference_view = df.full.DR_qcd
+        inference_df = inference_view.events.copy()
 
         nn_output_name = _nn_output_name("qcd", grouping)
-        region_df[nn_output_name] = _predict_fold_output(
+        inference_df[nn_output_name] = _predict_fold_output(
             model=model,
-            region_df=region_df,
+            region_df=inference_df,
             training_variables=training_variables,
             device=device,
         )
 
-        region_view[nn_output_name] = region_df[nn_output_name].to_numpy()
+        inference_view[nn_output_name] = inference_df[nn_output_name].to_numpy()
 
-        data_values = region_view[nn_output_name].to_numpy(dtype=np.float32)
+        data_region = df["data"].DR_qcd
+        data_values = data_region[nn_output_name].to_numpy(dtype=np.float32)
         bins = equi_populated_bins(data_values, NBINS)
 
         hist_data, bin_edges = np.histogram(data_values, bins=bins)
@@ -383,18 +407,23 @@ def reduced_data_qcd():
 
         feature_name = _reduced_weight_name("qcd", grouping)
         legacy_name = f"reduced_weight_{grouping}_nominal"
-        region_view[feature_name] = reduced_weights
+        data_region[feature_name] = reduced_weights
 
         feature_store_path = Path(FEATURE_STORE_DIR_QCD) / f'reduced_weight_{grouping}.feather'
 
         registry = FeatureRegistry(FEATURE_REGISTRY_PATH_QCD)
         store = FeatureStore(feature_store_path, registry)
-        store.write(pd.DataFrame({
-            "row_index": region_view.events.index,
-            "event": region_view["event"],
-            nn_output_name: region_view[nn_output_name],
-            feature_name: region_view[feature_name],
-        }))
+        feature_df = pd.DataFrame({
+            "row_index": inference_view.events.index,
+            "event": inference_view["event"],
+            nn_output_name: inference_view[nn_output_name],
+        })
+        reduced_by_row = pd.Series(
+            data_region[feature_name].to_numpy(),
+            index=data_region.events.index,
+        )
+        feature_df[feature_name] = feature_df["row_index"].map(reduced_by_row)
+        store.write(feature_df)
         store.save()
         registry.index.pop(legacy_name, None)
         registry.save()

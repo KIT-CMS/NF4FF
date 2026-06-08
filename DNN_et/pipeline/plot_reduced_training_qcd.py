@@ -36,7 +36,14 @@ def _safe_ratio(numerator, denominator):
 
 
 def _equi_populated_bins(values, n_bins):
-    edges = np.quantile(values, np.linspace(0.0, 1.0, n_bins + 1))
+    values = np.asarray(values, dtype=np.float32)
+    values = values[np.isfinite(values)]
+    if values.size == 0:
+        raise ValueError("Cannot build bins without finite NN outputs.")
+    edges = np.quantile(
+        values,
+        np.linspace(0.0, 1.0, n_bins + 1),
+    ).astype(values.dtype)
     edges = np.unique(edges)
     if len(edges) < 2:
         raise ValueError("Cannot build bins from a constant NN output.")
@@ -98,6 +105,12 @@ def _plot_reduced_closure(
 
     qcd_counts = data_counts - background_counts
     qcd_variance = data_counts + background_variance
+    if not np.allclose(reduced_counts, qcd_counts, rtol=1e-5, atol=1e-5):
+        max_difference = np.max(np.abs(reduced_counts - qcd_counts))
+        raise RuntimeError(
+            f"QCD/{grouping} plot closure failed; maximum bin "
+            f"difference is {max_difference:.6g}. Re-run ReducedDataset."
+        )
 
     centers = 0.5 * (bins[:-1] + bins[1:])
     widths = np.diff(bins)
@@ -199,6 +212,12 @@ def _plot_training_composition(
     simulation = np.sum(component_counts, axis=0)
     simulation_variance = np.sum(component_variances, axis=0)
     data_counts = _histogram(data_output, bins)
+    if not np.allclose(simulation, data_counts, rtol=1e-5, atol=1e-5):
+        max_difference = np.max(np.abs(simulation - data_counts))
+        raise RuntimeError(
+            f"QCD/{grouping} composition closure failed; maximum bin "
+            f"difference is {max_difference:.6g}. Re-run ReducedDataset."
+        )
     ratio = _safe_ratio(data_counts, simulation)
     simulation_uncertainty = _safe_ratio(
         np.sqrt(simulation_variance),
@@ -283,11 +302,13 @@ def create_qcd_training_plots(
     data_path=DEFAULT_DATA_PATH,
     masks_path=DEFAULT_MASKS_PATH,
     output_dir=DEFAULT_OUTPUT_DIR,
+    reduced_weight_store_dir=REDUCED_WEIGHT_STORE_DIR_QCD,
     n_bins=20,
 ):
     data_path = Path(data_path)
     masks_path = Path(masks_path)
     output_dir = Path(output_dir)
+    reduced_weight_store_dir = Path(reduced_weight_store_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     df = load_data(data_path, masks_path)
@@ -295,7 +316,7 @@ def create_qcd_training_plots(
 
     for grouping in GROUPINGS:
         df.load_feature_file(
-            REDUCED_WEIGHT_STORE_DIR_QCD
+            reduced_weight_store_dir
             / f"reduced_weight_{grouping}.feather"
         )
         nn_output_name = f"nn_output_qcd_{grouping}"

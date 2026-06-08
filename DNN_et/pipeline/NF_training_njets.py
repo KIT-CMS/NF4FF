@@ -501,7 +501,7 @@ def _prepare_frame(
     analysis_df.ensure_column(source_weight)
     frame = _region_frame(analysis_df, process, region)
     frame = frame.copy()
-    frame["training_weight"] = analysis_df.events.loc[
+    frame["training_weight"] = analysis_df.full.events.loc[
         frame.index,
         source_weight,
     ]

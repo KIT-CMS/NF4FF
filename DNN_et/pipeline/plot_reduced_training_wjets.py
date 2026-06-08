@@ -269,11 +269,13 @@ def create_wjets_training_plots(
     data_path=DEFAULT_DATA_PATH,
     masks_path=DEFAULT_MASKS_PATH,
     output_dir=DEFAULT_OUTPUT_DIR,
+    qcd_weight_store_dir=QCD_WEIGHT_STORE_DIR_WJETS,
     n_bins=20,
 ):
     data_path = Path(data_path)
     masks_path = Path(masks_path)
     output_dir = Path(output_dir)
+    qcd_weight_store_dir = Path(qcd_weight_store_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     df = load_data(data_path, masks_path)
@@ -282,7 +284,7 @@ def create_wjets_training_plots(
 
     for grouping in GROUPINGS:
         df.load_feature_file(
-            QCD_WEIGHT_STORE_DIR_WJETS / f"qcd_weights_{grouping}.feather"
+            qcd_weight_store_dir / f"qcd_weights_{grouping}.feather"
         )
         nn_output_name = f"nn_output_wjets_{grouping}"
         reduced_weight_name = f"reduced_weight_wjets_{grouping}_nominal"

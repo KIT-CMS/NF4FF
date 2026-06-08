@@ -258,12 +258,14 @@ def train_squeezed_models(
     training_var_path: Union[str, Path] = TRAINING_VAR_PATH,
     nn_config_path: Union[str, Path] = NN_CONFIG_PATH,
     checkpoint_dir: Union[str, Path] = CHECKPOINT_DIR,
+    reduced_weight_dir: Union[str, Path] = REDUCED_WEIGHT_DIR,
 ):
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
     cfg = load_config(nn_config_path, Config)
     df = load_data(data_path, masks_path)
     training_var = load_variables(training_var_path)
     checkpoint_dir = Path(checkpoint_dir)
+    reduced_weight_dir = Path(reduced_weight_dir)
     penalty_upper_bound = squeezing_limit_from_probability(squeezing)
     output_label = squeezing_label(squeezing)
 
@@ -306,7 +308,7 @@ def train_squeezed_models(
                 source_weight = f'reduced_weight_wjets_{group_label}_nominal'
                 weight_column = 'weight_wjets'
                 df.load_feature_file(
-                    REDUCED_WEIGHT_DIR
+                    reduced_weight_dir
                     / 'wjets'
                     / f'reduced_weight_{group_label}.feather'
                 )
@@ -328,7 +330,7 @@ def train_squeezed_models(
                 source_weight = f'reduced_weight_qcd_{group_label}_nominal'
                 weight_column = 'weight_qcd'
                 df.load_feature_file(
-                    REDUCED_WEIGHT_DIR
+                    reduced_weight_dir
                     / 'qcd'
                     / f'reduced_weight_{group_label}.feather'
                 )

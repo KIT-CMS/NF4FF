@@ -3,6 +3,7 @@ import luigi
 from pathlib import Path
 
 from BuildDataset import build_dataset
+from NF_training_njets import train_conditional_flows
 from enrichment import train_enrichment_wjets, train_enrichment_qcd
 from ReducedDataset import reduced_data_wjets, reduced_data_qcd
 from plot_reduced_training_qcd import create_qcd_training_plots
@@ -13,6 +14,9 @@ from training_squeezed_loss import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+WORKFLOW_ROOT = PROJECT_ROOT / 'Law_workflow_results'
+WORKFLOW_DATA_ROOT = WORKFLOW_ROOT / 'data'
+WORKFLOW_FEATURE_ROOT = WORKFLOW_DATA_ROOT / 'features'
 ENRICHMENT_GROUPINGS = ('tau_decaymode_2', 'njets')
 
 
@@ -21,7 +25,7 @@ class BuildDataset(law.Task):
     config_path = law.Parameter(default="../configs/root_data_path.yaml")
 
     def output(self):
-        out_dir = PROJECT_ROOT / "data"
+        out_dir = WORKFLOW_DATA_ROOT
         return law.LocalFileTarget(out_dir / "dataframe_complete.feather")
 
     def run(self):
@@ -50,7 +54,7 @@ class TrainEnrichmentProcess(law.Task):
     )
 
     def output(self):
-        base = PROJECT_ROOT / "Enrichment_models" / self.process_name
+        base = WORKFLOW_ROOT / "Enrichment_models" / self.process_name
         outputs = {
             f"{grouping}_{fold}": law.LocalDirectoryTarget(
                 base / grouping / fold
@@ -59,7 +63,7 @@ class TrainEnrichmentProcess(law.Task):
             for fold in ('fold_even', 'fold_odd')
         }
         outputs["features_schema"] = law.LocalFileTarget(
-            PROJECT_ROOT
+            WORKFLOW_ROOT
             / "data"
             / "features"
             / self.process_name
@@ -72,7 +76,10 @@ class TrainEnrichmentProcess(law.Task):
             raise RuntimeError("No trainer function configured for this process task")
 
         print("TRAIN INPUT:", self.input().path)
-        result = self.trainer(self.input().path)
+        result = self.trainer(
+            self.input().path,
+            output_root=WORKFLOW_ROOT,
+        )
         schema_path = Path(self.output()["features_schema"].path)
         schema_path.parent.mkdir(parents=True, exist_ok=True)
         schema_path.write_text("row-index keyed enrichment features\n")
@@ -100,20 +107,20 @@ class ReducedDataset(law.Task):
 
     def output(self):
         return {
-            'wjets': law.LocalDirectoryTarget(PROJECT_ROOT / 'data' / 'features' / 'reduced_dataset' / 'wjets'),
-            'qcd': law.LocalDirectoryTarget(PROJECT_ROOT / 'data' / 'features' / 'reduced_dataset' / 'qcd'),
+            'wjets': law.LocalDirectoryTarget(WORKFLOW_FEATURE_ROOT / 'reduced_dataset' / 'wjets'),
+            'qcd': law.LocalDirectoryTarget(WORKFLOW_FEATURE_ROOT / 'reduced_dataset' / 'qcd'),
             'schema': law.LocalFileTarget(
-                PROJECT_ROOT / 'data' / 'features' / 'reduced_dataset' / '.schema_v4'
+                WORKFLOW_FEATURE_ROOT / 'reduced_dataset' / '.schema_v6'
             ),
         }
 
     def run(self):
-        reduced_data_wjets()
-        reduced_data_qcd()
+        reduced_data_wjets(output_root=WORKFLOW_ROOT)
+        reduced_data_qcd(output_root=WORKFLOW_ROOT)
         schema_path = Path(self.output()['schema'].path)
         schema_path.parent.mkdir(parents=True, exist_ok=True)
         schema_path.write_text(
-            "process-qualified reduced weights and signed-region NN outputs\n"
+            "explicit full-process inference and data-only reduced weights\n"
         )
         print("REDUCED DATASET WJETS OUTPUT:", self.output()['wjets'].path)
         print("REDUCED DATASET QCD OUTPUT:", self.output()['qcd'].path)
@@ -128,7 +135,7 @@ class PlotTrainingResultsWjets(law.Task):
         return ReducedDataset()
 
     def output(self):
-        output_dir = PROJECT_ROOT / 'plots' / 'enrichment_wjets'
+        output_dir = WORKFLOW_ROOT / 'plots' / 'enrichment_wjets'
         return {
             f"{plot_name}_{grouping}_{extension}": law.LocalFileTarget(
                 output_dir / f"{plot_name}_wjets_{grouping}.{extension}"
@@ -140,9 +147,10 @@ class PlotTrainingResultsWjets(law.Task):
 
     def run(self):
         create_wjets_training_plots(
-            data_path=PROJECT_ROOT / 'data' / 'dataframe_complete.feather',
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
             masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
-            output_dir=PROJECT_ROOT / 'plots' / 'enrichment_wjets',
+            output_dir=WORKFLOW_ROOT / 'plots' / 'enrichment_wjets',
+            qcd_weight_store_dir=WORKFLOW_FEATURE_ROOT / 'wjets',
             n_bins=self.n_bins,
         )
 
@@ -156,7 +164,7 @@ class PlotTrainingResultsQCD(law.Task):
         return ReducedDataset()
 
     def output(self):
-        output_dir = PROJECT_ROOT / 'plots' / 'enrichment_qcd'
+        output_dir = WORKFLOW_ROOT / 'plots' / 'enrichment_qcd'
         return {
             f"{plot_name}_{grouping}_{extension}": law.LocalFileTarget(
                 output_dir / f"{plot_name}_qcd_{grouping}.{extension}"
@@ -168,9 +176,12 @@ class PlotTrainingResultsQCD(law.Task):
 
     def run(self):
         create_qcd_training_plots(
-            data_path=PROJECT_ROOT / 'data' / 'dataframe_complete.feather',
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
             masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
-            output_dir=PROJECT_ROOT / 'plots' / 'enrichment_qcd',
+            output_dir=WORKFLOW_ROOT / 'plots' / 'enrichment_qcd',
+            reduced_weight_store_dir=(
+                WORKFLOW_FEATURE_ROOT / 'reduced_dataset' / 'qcd'
+            ),
             n_bins=self.n_bins,
         )
 
@@ -185,7 +196,7 @@ class TrainSqueezedModels(law.Task):
 
     def output(self):
         return law.LocalFileTarget(
-            PROJECT_ROOT
+            WORKFLOW_ROOT
             / 'Training_results_squeezed'
             / squeezing_label(self.squeezing)
             / '.complete'
@@ -194,15 +205,54 @@ class TrainSqueezedModels(law.Task):
     def run(self):
         train_squeezed_models(
             squeezing=self.squeezing,
-            data_path=PROJECT_ROOT / 'data' / 'dataframe_complete.feather',
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
             masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
             training_var_path=PROJECT_ROOT / 'configs' / 'training_variables.yaml',
             nn_config_path=PROJECT_ROOT / 'configs' / 'DNN.yaml',
-            checkpoint_dir=PROJECT_ROOT / 'Training_results_squeezed',
+            checkpoint_dir=WORKFLOW_ROOT / 'Training_results_squeezed',
+            reduced_weight_dir=WORKFLOW_FEATURE_ROOT / 'reduced_dataset',
         )
 
         output_path = Path(self.output().path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
             f"squeezing_probability={self.squeezing}\n"
+        )
+
+
+class TrainConditionalNF(law.Task):
+    """Train two-fold conditional normalizing flows on reduced datasets."""
+
+    test_size = luigi.FloatParameter(default=0.25)
+    random_state = luigi.IntParameter(default=42)
+
+    def requires(self):
+        return ReducedDataset()
+
+    def output(self):
+        output_root = WORKFLOW_ROOT / 'Training_resuluts_NF'
+        return {
+            f"{grouping}_{process}_{region}_{fold}": law.LocalFileTarget(
+                output_root
+                / grouping
+                / process
+                / region
+                / fold
+                / 'model_checkpoint.pth'
+            )
+            for grouping in ENRICHMENT_GROUPINGS
+            for process in ('wjets', 'qcd')
+            for region in ('AR-like', 'SR-like')
+            for fold in ('fold_even', 'fold_odd')
+        }
+
+    def run(self):
+        train_conditional_flows(
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            variables_path=PROJECT_ROOT / 'configs' / 'training_variables_nf.yaml',
+            config_path=PROJECT_ROOT / 'configs' / 'config_NF.yaml',
+            output_root=WORKFLOW_ROOT / 'Training_resuluts_NF',
+            test_size=self.test_size,
+            random_state=self.random_state,
         )

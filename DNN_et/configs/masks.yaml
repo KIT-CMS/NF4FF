@@ -148,6 +148,7 @@ regions:
 
 
 processes:
+  full: process >= 0
   data: process == 0
   wjets: process == 1
   diboson: process.isin([2, 3])
