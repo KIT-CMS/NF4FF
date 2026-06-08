@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Union, Tuple, Dict, Any
 import yaml
 from dataclasses import is_dataclass, fields
-from classes.CustomLogging import Logging
+from classes.Logging import Logging
 from pathlib import Path
 
 SEED = 42

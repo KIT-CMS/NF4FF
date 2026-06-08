@@ -12,7 +12,7 @@ import more_itertools as mit
 import numpy as np
 import torch as t
 
-import classes.CustomLogging as log
+import classes.Logging as log
 
 logger = log.setup_logging(logger=logging.getLogger(__name__))
 

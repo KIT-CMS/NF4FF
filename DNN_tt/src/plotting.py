@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import torch as t
 import pandas as pd
 import correctionlib as cr
-from classes import CMS_CHANNEL_TITLE, CMS_CATEGORY_TITLE, CMS_LUMI_TITLE, CMS_LABEL, adjust_ylim_for_legend, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
+from classes.Plotting import CMS_CHANNEL_TITLE, CMS_CATEGORY_TITLE, CMS_LUMI_TITLE, CMS_LABEL, adjust_ylim_for_legend, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
 from pathlib import Path
 import matplotlib
 import yaml
