@@ -172,6 +172,8 @@ class RealNVP_config:
     n_epochs: int
     use_amp: bool
     s_scale_max: float
+    training_patience: int
+    test_size: int
 
     # model
     n_layers: int

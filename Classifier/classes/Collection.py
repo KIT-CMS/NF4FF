@@ -10,7 +10,9 @@ from typing import Any, Union, Tuple
 from sklearn.model_selection import train_test_split
 from classes.models import BinaryClassifier
 import classes.helper as helper
+from pathlib import Path
 
+from typing import Any, Callable, Dict, Generator, List, Literal, Tuple, Union
 
 
 # ----- seeds -----
@@ -22,6 +24,50 @@ random.seed(SEED)
 
 
 # ---------- data loading ----------
+
+class MaskManager:
+    def __init__(self, yaml_path):
+        self.yaml_path = Path(yaml_path)
+        self.masks = self.load_masks()
+        
+    def load_masks(self):
+        with open (self.yaml_path, "r") as f:
+            raw = yaml.safe_load(f)
+
+        masks = {}
+        for name, conditions in raw["masks"].items():
+            masks[name] = self._normalize_conditions(conditions)
+        return masks
+    @staticmethod
+    def _normalize_conditions(conditions):
+        fixed = []
+        for c in conditions:
+            c = (
+                c.replace("&gt;", ">")
+                 .replace("&lt;", "<")
+                 .replace("&&", "&")
+            )
+            fixed.append(f"({c})")
+        return " & ".join(fixed)
+
+
+
+    def apply(self, df, *mask_names):
+
+        if not mask_names:
+            raise ValueError("At least one mask must be provided")
+
+        unknown = set(mask_names) - self.masks.keys()
+        if unknown:
+            raise KeyError(f"Unknown masks: {unknown}")
+
+        expr = " & ".join(f"({self.masks[m]})" for m in mask_names)
+        return df.query(expr)
+
+    def get_mask(self, df: pd.DataFrame, mask_name: str) -> pd.Series:
+        return df.eval(self.masks[mask_name])
+
+
 
 def load_config(path='config.yaml'):
     with open(path, 'r') as f:
@@ -209,8 +255,7 @@ def _calculate_scaled_event_weights_generalized(
 
 # ----- QCD weight binning -----
 
-
-
+'''
 def refresh_qcd_weights(
     dataset: helper._component_collection,
     model: nn.Module,
@@ -232,8 +277,7 @@ def refresh_qcd_weights(
         qcd_weight_dynamic_delta_last=QCD_WEIGHT_DYNAMIC_DELTA_LAST,
         qcd_weight_dynamic_min_qcd_yield=QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD,
     )
-
-
+'''
 
 def get_ff_dataset_with_qcd_weights_os(
     dataset: helper._component_collection,

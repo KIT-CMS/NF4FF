@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 import logging
 import random
+from torch.utils import data
+import yaml
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Union
@@ -32,6 +34,7 @@ torch.manual_seed(42)
 np.random.seed(42)
 random.seed(42)
 t.set_num_threads(8)
+
 SEED = 42
 
 # ------ logger -----
@@ -47,8 +50,8 @@ CONFIG_MODEL_PATH = 'configs/config_NN.yaml'
 PATIENCE = 25
 QCD_WEIGHT_BINNING = 'dynamic'
 QCD_WEIGHT_N_BINS = 20
-QCD_WEIGHT_DYNAMIC_DELTA = 4.0
-QCD_WEIGHT_DYNAMIC_DELTA_LAST = 5.0
+QCD_WEIGHT_DYNAMIC_DELTA = 10.0
+QCD_WEIGHT_DYNAMIC_DELTA_LAST = 10.0
 QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD = 10.0
 QCD_WEIGHT_REFRESH_EVERY = 5
 QCD_WEIGHT_REFRESH_UNTIL_EPOCH = 100
@@ -224,19 +227,12 @@ def build_qcd_weight_bins(
 
     return bins
 
-
-
 # ------ lists -----
 
+with open("configs/training_variables.yaml", "r") as f:
+    raw = yaml.safe_load(f)
 
-variables = [
-    "pt_1","pt_2","eta_1","eta_2","jpt_1","jpt_2","jeta_1","jeta_2",
-    "m_fastmtt","pt_fastmtt","met","njets","mt_tot","m_vis",
-    "pt_tt","pt_vis","mjj","pt_dijet","pt_ttjj","deltaEta_jj","deltaR_jj",
-    "deltaR_ditaupair","deltaR_1j1","deltaR_1j2",
-    "deltaR_2j1","deltaR_2j2","deltaR_12j1","deltaR_12j2","deltaEta_1j1",
-    "deltaEta_1j2","deltaEta_2j1","deltaEta_2j2","deltaEta_12j1","deltaEta_12j2", 'tau_decaymode_1', 'tau_decaymode_2', 'nbtag',
-]
+variables = raw["variables"]
 
 dim = len(variables)
 
@@ -297,6 +293,50 @@ class BinaryClassifier(nn.Module):
         return self.net(x)
 
 # ----- functions -----
+
+class MaskManager:
+    def __init__(self, yaml_path):
+        self.yaml_path = Path(yaml_path)
+        self.masks = self.load_masks()
+        
+    def load_masks(self):
+        with open (self.yaml_path, "r") as f:
+            raw = yaml.safe_load(f)
+
+        masks = {}
+        for name, conditions in raw["masks"].items():
+            masks[name] = self._normalize_conditions(conditions)
+        return masks
+    @staticmethod
+    def _normalize_conditions(conditions):
+        fixed = []
+        for c in conditions:
+            c = (
+                c.replace("&gt;", ">")
+                 .replace("&lt;", "<")
+                 .replace("&&", "&")
+            )
+            fixed.append(f"({c})")
+        return " & ".join(fixed)
+
+
+
+    def apply(self, df, *mask_names):
+
+        if not mask_names:
+            raise ValueError("At least one mask must be provided")
+
+        unknown = set(mask_names) - self.masks.keys()
+        if unknown:
+            raise KeyError(f"Unknown masks: {unknown}")
+
+        expr = " & ".join(f"({self.masks[m]})" for m in mask_names)
+        return df.query(expr)
+
+    def get_mask(self, df: pd.DataFrame, mask_name: str) -> pd.Series:
+        return df.eval(self.masks[mask_name])
+
+
 
 @torch.no_grad()
 def predict_probabilities(
@@ -458,7 +498,7 @@ def get_ff_dataset_with_qcd_weights_os(
 
     _dataset = deepcopy(dataset)
 
-    # Optional: basic validation to ensure SR_like is present
+    # Optional: basic validation to ensure SR_like is precalculatesent
     if not hasattr(_dataset, "SR_like") or not hasattr(_dataset.SR_like, "ss") or not hasattr(_dataset.SR_like, "os"):
         raise AttributeError("Expected dataset.SR_like with .ss and .os boolean tensors.")
 
@@ -577,6 +617,153 @@ def get_ff_dataset_with_qcd_weights_os(
         lambda x: x.contiguous() if isinstance(x, torch.Tensor) else x
     )
 
+def get_ff_dataset_with_qcd_weights_os_variations(
+    dataset: _component_collection,
+    model: t.nn.Module,
+    qcd_mask_os_loaded: torch.Tensor,
+    device,
+    njets_idx: int = -1,
+    njets_groups: Tuple[Tuple[int, ...], ...] = ((0,), (1,), (2, 100)),
+    subtract_njets_based: bool = False,
+    reweight_njets_based: bool = True,
+    qcd_weight_binning: Literal['quantile', 'dynamic'] = 'quantile',
+    qcd_weight_n_bins: int = 10,
+    qcd_weight_dynamic_delta: float = 100.0,
+    qcd_weight_dynamic_delta_last: float = 100.0,
+    qcd_weight_dynamic_min_qcd_yield: float = 100.0,
+) -> _component_collection:
+    """
+    Build a dataset with OS QCD weights computed from SS control region shapes.
+
+    Changes vs. previous version:
+    - Replaces the mt_low_mask split by using dataset.SR_like.ss / dataset.SR_like.os.
+    - For each njets group and SR_like value (True/False), compute QCD reweighting
+      from SS (QCD-enriched) and apply the weights to OS in the same SR_like slice.
+    """
+
+    _dataset = deepcopy(dataset)
+
+    # Optional: basic validation to ensure SR_like is precalculatesent
+    if not hasattr(_dataset, "SR_like") or not hasattr(_dataset.SR_like, "ss") or not hasattr(_dataset.SR_like, "os"):
+        raise AttributeError("Expected dataset.SR_like with .ss and .os boolean tensors.")
+
+    # Initialize container for OS QCD weights
+    _dataset.qcd_weights_os = torch.full_like(
+        _dataset.weights.os,
+        fill_value=torch.nan,
+    )
+
+    # --- predictions ---
+    model.eval()
+    with torch.no_grad():
+        prediction = deepcopy(_dataset.X)
+        prediction.ss = predict_probabilities(model, _dataset.X.ss, device)
+        prediction.os = predict_probabilities(model, _dataset.X.os, device)
+
+    # --- original QCD masks ---
+    qcd_process_mask_ss = _dataset.Y.ss == 2          # QCD in SS
+    qcd_process_mask_os = qcd_mask_os_loaded          # QCD-like OS events (provided)
+
+    # Loop over njets groups (or single inclusive bin if not subtract_njets_based)
+    for njets_group in (njets_groups if subtract_njets_based else ((0, 1000),)):
+        if len(njets_group) == 1:
+            njets_mask_ss = _dataset.X.ss[:, njets_idx] == njets_group[0]
+            njets_mask_os = _dataset.X.os[:, njets_idx] == njets_group[0]
+        else:
+            njets_mask_ss = (
+                (_dataset.X.ss[:, njets_idx] >= njets_group[0]) &
+                (_dataset.X.ss[:, njets_idx] <= njets_group[1])
+            )
+            njets_mask_os = (
+                (_dataset.X.os[:, njets_idx] >= njets_group[0]) &
+                (_dataset.X.os[:, njets_idx] <= njets_group[1])
+            )
+
+        qcd_mask_ss = njets_mask_ss & qcd_process_mask_ss
+        non_qcd_mask_ss = njets_mask_ss & ~qcd_process_mask_ss
+        qcd_mask_os = njets_mask_os & qcd_process_mask_os
+
+        # --- split by SR_like True/False (replacing previous mt_low_mask split) ---
+        for sr_value in (True, False):
+            sr_mask_ss = (_dataset.SR_like.ss == sr_value)
+            sr_mask_os = (_dataset.SR_like.os == sr_value)
+
+            qcd_mask_ss_sr = qcd_mask_ss & sr_mask_ss
+            non_qcd_mask_ss_sr = non_qcd_mask_ss & sr_mask_ss
+            qcd_mask_os_sr = qcd_mask_os & sr_mask_os
+
+            # skip empty regions
+            if (
+                qcd_mask_ss_sr.sum() == 0
+                or non_qcd_mask_ss_sr.sum() == 0
+                or qcd_mask_os_sr.sum() == 0
+            ):
+                continue
+
+            bins = build_qcd_weight_bins(
+                qcd_values=prediction.ss[qcd_mask_ss_sr].squeeze(),
+                qcd_weights=_dataset.weights.ss[qcd_mask_ss_sr].squeeze(),
+                non_qcd_values=prediction.ss[non_qcd_mask_ss_sr].squeeze(),
+                non_qcd_weights=_dataset.weights.ss[non_qcd_mask_ss_sr].squeeze(),
+                binning=qcd_weight_binning,
+                n_bins=qcd_weight_n_bins,
+                dynamic_delta=qcd_weight_dynamic_delta,
+                dynamic_delta_last=qcd_weight_dynamic_delta_last,
+                dynamic_min_qcd_yield=qcd_weight_dynamic_min_qcd_yield,
+            )
+
+            logger.info(
+                "QCD weight bins (%s, njets=%s, SR_like=%s): %d",
+                qcd_weight_binning,
+                njets_group,
+                sr_value,
+                max(int(bins.numel()) - 1, 0),
+            )
+
+            non_qcd_ss_hist, bins = t.histogram(
+                input=prediction.ss[non_qcd_mask_ss_sr],
+                bins=bins,
+                weight=_dataset.weights.ss[non_qcd_mask_ss_sr],
+            )
+
+            # Compute QCD scaling weights from SS and apply to OS in same SR_like slice
+            qcd_weights = _calculate_scaled_event_weights_generalized(
+                prediction.ss[qcd_mask_ss_sr].squeeze(),
+                t.ones_like(prediction.ss[qcd_mask_ss_sr].squeeze()),
+                bins,
+                non_qcd_ss_hist,
+            )
+
+            qcd_weights = set_negatives_to_one(qcd_weights)
+
+            _dataset.qcd_weights_os[qcd_mask_os_sr] = qcd_weights
+            _dataset.weights.os[qcd_mask_os_sr] = qcd_weights
+            _dataset.class_weights.os[qcd_mask_os_sr] *= qcd_weights
+
+    # --- relabel QCD events to background ---
+    _dataset.class_weights.os = _dataset.weights.os
+    _dataset.Y.os[qcd_mask_os_loaded] = 0
+
+    # --- njets-based class weights (same logic as before) ---
+    njets_classes = t.zeros_like(qcd_mask_os_loaded, dtype=torch.long)
+    for idx, njets_group in enumerate(njets_groups if reweight_njets_based else ((0, 1000),)):
+        if len(njets_group) == 1:
+            njets_mask = _dataset.X.os[:, njets_idx] == njets_group[0]
+        else:
+            njets_mask = (
+                (_dataset.X.os[:, njets_idx] >= njets_group[0]) &
+                (_dataset.X.os[:, njets_idx] <= njets_group[1])
+            )
+        njets_classes[njets_mask] = idx
+
+    _dataset.class_weights.os = _dataset.weights.os
+
+    return _dataset.apply_func(
+        lambda x: x.contiguous() if isinstance(x, torch.Tensor) else x
+    )
+
+
+
 def _get_backend_and_device(tensor_or_array: Union[np.ndarray, t.Tensor]) -> tuple[Any, Any]:
     if isinstance(tensor_or_array, t.Tensor):
         return t, tensor_or_array.device
@@ -678,7 +865,7 @@ def mask_DR(df):
 
     mask_a1 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
     mask_a2 = (df.nbtag == 0)
-    mask_a4 = ((df.iso_1 > 0.0) & (df.iso_1 < 0.15))
+    mask_a4 = ((df.iso_1 >= 0.0) & (df.iso_1 < 0.15))
     mask_a5 = ( (df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
     mask_a6 = (df.mt_1 > 70)
     mask_DR = (mask_a1 & mask_a2  & mask_a4 & mask_a5 & mask_a6)
@@ -746,7 +933,7 @@ def main():
 
     # --- load device
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
     logger.info(f"Using device: {device}")
     logger.info(
@@ -768,8 +955,14 @@ def main():
 
     # --- load data 
 
+    # --- load masks
+
+    masks = MaskManager('configs/masks.yaml')
+
     data_complete = pd.read_feather('../data/data_complete.feather')
-    data_DR = mask_DR(data_complete)
+
+    data_DR = masks.apply(data_complete, "preselection_loose", "DR_wjets")
+
     train1, val1, train2, val2 = split_even_odd(data_DR)
 
 
@@ -790,6 +983,7 @@ def main():
 
         model = BinaryClassifier(input_dim=dim, hidden_dim=200, p=0.15).to(device)
         model.initialize_scaler(shift = shift, scale = scale)
+        
         criterion = nn.BCELoss(reduction='none')                                  # there
         optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -1041,6 +1235,8 @@ def main():
                 'scaler_scale': torch.from_numpy(scale.astype(np.float32)),
                 'variables': variables,
             }
+
+
 
         torch.save(checkpoint, paths_training.autopath.joinpath('model_checkpoint.pth'))
         torch.save(train_pt.qcd_weights_os[qcd_mask_os_train], paths_training.autopath.joinpath('qcd_weights_train.pt'))

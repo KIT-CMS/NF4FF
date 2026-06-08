@@ -26,7 +26,7 @@ from tap import Tap
 from typing import Literal, Generator
 
 from classes.helper import _same_sign_opposite_sign_split, _collection
-
+from classes.Collection import MaskManager
 # ----- seeds -----
 
 SEED = 42
@@ -46,7 +46,7 @@ class Args(Tap):
     ckpt_pth_fold2: str = 'results/QCD/inclusive/fold2/last/'
     #ckpt_pth_fold1: str = 'Categorizer_results/QCD/inclusive/fold1/2026-02-19/0_18-59-52/'
     #ckpt_pth_fold2: str = 'Categorizer_results/QCD/inclusive/fold2/2026-02-19/0_19-00-37/'
-    write_back: bool = False
+    write_back: bool = True
 
 # ----- Constants
 
@@ -570,8 +570,12 @@ def main() -> None:
 
     logger.info("Loading data")
 
+    # --- data loading
+
+    masks = MaskManager('configs/masks.yaml')
+
     data_complete = pd.read_feather(args.data_complete_path)
-    data_DR = mask_DR(data_complete)
+    data_DR = masks.apply(data_complete, 'preselection_loose','DR_qcd')
     train1, val1, train2, val2 = split_even_odd(data_DR)
 
     train1 = get_my_data(train1, variables).to_torch(device=None)
@@ -661,13 +665,38 @@ def main() -> None:
 
     bin_widths = np.diff(bins)
 
-    hist_nFF, _ = np.histogram(probs_nFF,weights=weights_nFF, bins= bins)
 
+    hist_nFF, _ = np.histogram(probs_nFF,weights=weights_nFF, bins= bins)
+    hist_qcd, _ = np.histogram(probs_qcd, weights = weights_qcd, bins = bins)
+
+    var_nFF, _ = np.histogram(probs_nFF, weights=weights_nFF**2, bins=bins)
+    var_qcd, _ = np.histogram(probs_qcd, weights=weights_qcd**2, bins=bins)
+
+    sub_nom = hist_nFF + hist_qcd
+    err_sub = np.sqrt(var_nFF + var_qcd)
+
+    sub_plus = np.clip(sub_nom + err_sub, 0.0, None)
+    sub_minus = np.clip(sub_nom - err_sub, 0.0, None) 
+    
     QCD_weights = _calculate_scaled_event_weights_generalized(
         event_values = probs_data,
         event_original_weights = np.ones_like(probs_data),
         bins = bins,
-        total_subtraction_per_bin=hist_nFF,
+        total_subtraction_per_bin=sub_nom,
+    )
+
+    QCD_weights_up = _calculate_scaled_event_weights_generalized(
+        event_values = probs_data,
+        event_original_weights = np.ones_like(probs_data),
+        bins = bins,
+        total_subtraction_per_bin=sub_minus,
+    )
+
+    QCD_weights_down = _calculate_scaled_event_weights_generalized(
+        event_values = probs_data,
+        event_original_weights = np.ones_like(probs_data),
+        bins = bins,
+        total_subtraction_per_bin=sub_plus,
     )
 
 
@@ -690,18 +719,31 @@ def main() -> None:
     data_DR.loc[indices_qcd_DR, "weight_qcd"] = QCD_weights
 
 
+
     if args.write_back:
-        # Insert qcd_weights into the FULL data_complete
+
+
+        data_DR["weight_qcd"] = np.nan
+        data_DR["weight_qcd_up"] = np.nan
+        data_DR["weight_qcd_down"] = np.nan
+
+        data_DR.loc[indices_qcd_DR, "weight_qcd"] = QCD_weights
+        data_DR.loc[indices_qcd_DR, "weight_qcd_up"] = QCD_weights_up
+        data_DR.loc[indices_qcd_DR, "weight_qcd_down"] = QCD_weights_down
+
         data_complete["weight_qcd"] = np.nan
-
-        # Copy values from data_DR into their original row positions
+        data_complete["weight_qcd_up"] = np.nan
+        data_complete["weight_qcd_down"] = np.nan
+        
         data_complete.loc[data_DR.index, "weight_qcd"] = data_DR["weight_qcd"]
-
-        # Save updated file
+        data_complete.loc[data_DR.index, "weight_qcd_up"] = data_DR["weight_qcd_up"]
+        data_complete.loc[data_DR.index, "weight_qcd_down"] = data_DR["weight_qcd_down"]
         data_complete.reset_index(drop=True).to_feather(args.data_complete_path)
-        logger.info("Successfully inserted weight_qcd into full data_complete.feather")
+        logger.info("Successfully inserted weight_qcdwith up and down variation into %s", args.data_complete_path)
+
+
     else:
-        logger.info("Skipped writing weight_qcd back to file (write_back=False).")
+        logger.info("Skipping write-back to data frame/file (--write_back is False).")
 
 
 
@@ -837,7 +879,6 @@ def main() -> None:
 
     ax[0].set_ylim([0, 1.4*np.max([np.max(data_counts), np.max(sim_counts)])])
     ax[0].legend(loc='upper right', bbox_to_anchor=(0.8, 0.9), ncol=3, frameon=False)
-    ax[0].set_ylim([0, 8000])
     # Remove top ticks
     ax[0].tick_params(direction='in', top=True, right=True)
 

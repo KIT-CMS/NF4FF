@@ -37,7 +37,6 @@ def CMS_LABEL(ax, *args, **kwargs):
         transform=ax[0].transAxes
     )
 
-
 def reorder_for_rowwise_legend(handles, labels, ncol, reverse=False):
     if reverse:
         handles = handles[::-1]

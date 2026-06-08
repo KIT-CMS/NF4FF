@@ -1,0 +1,1308 @@
+from pathlib import Path
+import copy
+from classes import load_variables, load_data, load_model, load_fold_combined_model, test_data
+from classes import calculate_fake_factors, calculate_fake_factor_dnn, calculate_fake_factor_classic
+from classes import calculate_fake_factors_in_DR_wjets, calculate_fake_factors_in_DR_qcd, calculate_fake_factors_in_DR_ttbar
+from classes import (
+    FF_closure_in_DR_wjets, 
+    FF_closure_in_DR_qcd, 
+    FF_closure_in_DR_ttbar,
+    FF_closure_in_DR_ttbar_MC,
+    plot_fake_factors_in_DR, 
+    plot_fake_factors)
+from pathlib import Path
+import numpy as np
+import matplotlib.pyplot as plt
+import torch as t
+import pandas as pd
+import correctionlib as cr
+from classes import CMS_CHANNEL_TITLE, CMS_CATEGORY_TITLE, CMS_LUMI_TITLE, CMS_LABEL, adjust_ylim_for_legend, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
+from pathlib import Path
+import matplotlib
+import yaml
+from classes import FoldCombinedDNN, load_fold_combined_model
+import time
+import torch as t
+from pathlib import Path
+from typing import Literal, Union
+
+
+from classes import DNN
+
+
+DATA_PATH = '../../data/data_complete.feather'
+MASKS_PATH = '../configs/masks.yaml'
+TRAINING_VAR_PATH = '../configs/training_variables.yaml'
+NN_CONFIG_PATH = '../configs/DNN.yaml'
+CHECKPOINT_DIR = '../Training_results'
+
+PLOTTING_CONFIG_PATH = '../configs/plotting.yaml'
+LABELS_CONFIG_PATH = '../configs/labels.yaml'
+
+PLOTS_DIR = Path('../plots/layers_3/ReLU')
+PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+
+PLOT_GROUPINGS = ('tau_decaymode', 'njets')
+PLOT_SUBDIRS = ('closure_in_DR', 'FF_distribution_AR', 'FF_distribution_DR', 'closure_plots')
+for subdir in PLOT_SUBDIRS:
+    for grouping in PLOT_GROUPINGS:
+        (PLOTS_DIR / subdir / grouping).mkdir(parents=True, exist_ok=True)
+
+
+
+def _read_yaml(path):
+    with open(path, 'r', encoding='utf-8') as f:
+        return yaml.safe_load(f)
+
+
+def _read_labels_yaml(path):
+    labels_by_channel = {}
+    current_channel = None
+
+    with open(path, 'r', encoding='utf-8') as f:
+        for raw_line in f:
+            line = raw_line.rstrip('\n')
+            stripped = line.strip()
+            indent = len(line) - len(line.lstrip(' '))
+
+            if not stripped or stripped.startswith('#'):
+                continue
+
+            # Be tolerant if the channel key is accidentally indented by one space.
+            if stripped.endswith(':') and ':' not in stripped[:-1] and indent <= 1:
+                current_channel = stripped[:-1]
+                labels_by_channel.setdefault(current_channel, {})
+                continue
+
+            if current_channel is None:
+                continue
+
+            if indent < 4:
+                continue
+
+            key_value = line.strip().split(':', 1)
+            if len(key_value) != 2:
+                continue
+
+            key, value = key_value
+            labels_by_channel[current_channel][key] = value.strip().strip('"').strip("'")
+
+    return labels_by_channel
+
+
+PLOTTING_CFG = _read_yaml(PLOTTING_CONFIG_PATH)
+LABELS_CFG = _read_labels_yaml(LABELS_CONFIG_PATH)
+
+VARIABLES_SMALL = PLOTTING_CFG.get('variables_set_small', [])
+VARIABLES_LARGE = PLOTTING_CFG.get('variables_set_large', [])
+
+
+def get_bins(variable):
+    bin_spec = PLOTTING_CFG.get('bins_by_variable', {}).get(variable)
+    if bin_spec is None:
+        raise KeyError(f'No bin specification found for variable: {variable}')
+
+    if isinstance(bin_spec, (list, tuple)) and len(bin_spec) == 3:
+        start, stop, num = bin_spec
+        return np.linspace(float(start), float(stop), int(num))
+
+    return np.asarray(bin_spec, dtype=float)
+
+
+def get_label(variable, channel='et'):
+    labels_by_channel = LABELS_CFG.get(channel, {}) if isinstance(LABELS_CFG, dict) else {}
+    return labels_by_channel.get(variable, variable)
+
+
+def get_bins_and_label(variable, channel='et'):
+    return get_bins(variable), get_label(variable, channel)
+
+
+def _prepare_input_tensor(model: t.nn.Module, X_tensor: t.Tensor, df_ar) -> t.Tensor:
+    """Return the correctly shaped input tensor for the given model type."""
+    if isinstance(model, FoldCombinedDNN):
+        event_ids = t.from_numpy(np.asarray(df_ar['event'] % 2, dtype=np.float32))
+        return t.cat([event_ids.unsqueeze(0), X_tensor.T], dim=0)  # [1 + n_features, N]
+    return X_tensor  # [N, n_features]
+
+
+
+def _build_group_masks(values, grouping_definition):
+    masks = []
+
+    for group in grouping_definition:
+        if len(group) == 1:
+            val = group[0]
+            mask = values == val
+            group_name = f"{val}"
+        elif len(group) == 2:
+            low, high = group
+            mask = (values >= low) & (values <= high)
+            group_name = f"{low}_{high}"
+        else:
+            raise ValueError(f"Invalid group definition: {group}")
+
+        masks.append((group_name, mask))
+
+    return masks
+
+
+
+def _build_normalization_vector_for_views(
+    target_view,
+    sr_view,
+    ar_view,
+    grouping_variable,
+    grouping_definition,
+):
+    """Build one normalization value per event in the target view."""
+    normalization = np.zeros(target_view.n, dtype=np.float32)
+
+    target_group_values = np.asarray(target_view[grouping_variable])
+    target_masks = _build_group_masks(target_group_values, grouping_definition)
+
+    sr_masks = dict(_build_group_masks(
+        np.asarray(sr_view[grouping_variable]),
+        grouping_definition,
+    ))
+    ar_masks = dict(_build_group_masks(
+        np.asarray(ar_view[grouping_variable]),
+        grouping_definition,
+    ))
+
+    for group_name, target_mask in target_masks:
+        numerator = np.sum(sr_view.weight[sr_masks[group_name]])
+        denominator = np.sum(ar_view.weight[ar_masks[group_name]])
+        normalization[target_mask] = numerator / denominator if denominator > 0 else 0.0
+
+    return normalization
+
+
+
+def build_normalization_vector(
+    df,
+    grouping_variable,
+    grouping_definition,
+    process='wjets',
+):
+    """Build per-event normalization factors for df.AR."""
+    process_views = {
+        'wjets': (df.AR, df.data.SR_like_wjets, df.data.AR_like_wjets),
+        'qcd': (df.AR, df.data.SR_like_qcd, df.data.AR_like_qcd),
+        'ttbar': (df.AR, df.data.SR_like_ttbar, df.data.AR_like_ttbar),
+    }
+
+    if process not in process_views:
+        raise ValueError(f"Unknown process '{process}'. Use 'wjets', 'qcd', or 'ttbar'.")
+
+    target_view, sr_view, ar_view = process_views[process]
+    return _build_normalization_vector_for_views(
+        target_view,
+        sr_view,
+        ar_view,
+        grouping_variable,
+        grouping_definition,
+    )
+
+def build_normalization_vector_in_DR(
+    df,
+    process,
+    grouping_variable,
+    grouping_definition,
+):
+    """Build per-event normalization factors for df.AR_like_process."""
+    target_view = getattr(df, f'AR_like_{process}')
+    sr_view = getattr(df.data, f'SR_like_{process}')
+    ar_view = getattr(df.data, f'AR_like_{process}')
+
+    return _build_normalization_vector_for_views(
+        target_view,
+        sr_view,
+        ar_view,
+        grouping_variable,
+        grouping_definition,
+    )
+
+
+def build_normalization_vector_in_DR_wjets(
+    df,
+    grouping_variable,
+    grouping_definition,
+):
+    """Build per-event normalization factors for df.AR_like_wjets."""
+    return _build_normalization_vector_for_views(
+        df.AR_like_wjets,
+        df.data.SR_like_wjets,
+        df.data.AR_like_wjets,
+        grouping_variable,
+        grouping_definition,
+    )
+
+def build_normalization_vector_in_DR_qcd(
+    df,
+    grouping_variable,
+    grouping_definition,
+):
+    """Build per-event normalization factors for df.AR_like_qcd."""
+    return _build_normalization_vector_for_views(
+        df.AR_like_qcd,
+        df.data.SR_like_qcd,
+        df.data.AR_like_qcd,
+        grouping_variable,
+        grouping_definition,
+    )
+
+
+
+def predict_fake_factors(
+    model,
+    X_wjets,
+    normalization,
+    device: t.device | None = None,
+):
+    """Returns fake factors for one model."""
+    if device is None:
+        device = t.device('cuda' if t.cuda.is_available() else 'cpu')
+
+    eps = 1e-6
+
+    model = model.to(device)
+    X_wjets = X_wjets.to(device)
+    normalization = normalization.to(device)
+
+    with t.inference_mode():
+        f = model(X_wjets).squeeze()
+
+    f = t.clamp(f, eps, 1 - eps)
+    ratio = f / (1.0 - f)
+    fake_factor = ratio * normalization
+    fake_factor = t.clamp(fake_factor, 0, 1)
+
+    return fake_factor.cpu()
+
+
+
+def load_models(checkpoint_dir,
+                seeds,
+                process = 'wjets',
+                ):
+    models = []
+
+    for seed in seeds:
+        model = load_fold_combined_model(
+            even_model_path=(
+                Path(checkpoint_dir)
+                / 'tau_decaymode'
+                / process
+                / str(seed)
+                / 'fold_even'
+            ),
+            odd_model_path=(
+                Path(checkpoint_dir)
+                / 'tau_decaymode'
+                / process
+                / str(seed)
+                / 'fold_odd'
+            ),
+        )
+
+        model.eval()
+        models.append(model)
+
+    return models
+
+
+
+def _calculate_fake_factor_mean_std_for_view_per_model(
+    df_view,
+    models,
+    training_variables,
+    normalization,
+    device: t.device | None = None,
+):
+    """
+    Compute FF mean/std by processing all events per model (no batching).
+    """
+    if device is None:
+        device = t.device('cuda' if t.cuda.is_available() else 'cpu')
+
+    print(f'[INFO] Using device: {device}')
+    print('[INFO] Building full input tensor...')
+
+    X = test_data(df_view, training_variables)
+    X_tensor = t.from_numpy(X.X).float()
+    X = _prepare_input_tensor(models[0], X_tensor, df_view).to(device)
+
+    normalization = t.from_numpy(normalization).float().to(device)
+
+    n_events = df_view.n
+    n_models = len(models)
+
+    print(f'[INFO] Events: {n_events:,}')
+    print(f'[INFO] Models: {n_models}')
+    print('[INFO] Inference mode: full events per model')
+
+    sum_ff = t.zeros(n_events, dtype=t.float32, device=device)
+    sum_sq_ff = t.zeros(n_events, dtype=t.float32, device=device)
+
+    start_time = time.time()
+
+    with t.inference_mode():
+        for i, model in enumerate(models, start=1):
+            model.to(device)
+            model.eval()
+
+            f = model(X).squeeze()
+            f = t.clamp(f, 1e-6, 1 - 1e-6)
+            ratio = f / (1.0 - f)
+            ff = ratio * normalization
+            ff = t.clamp(ff, 0, 1)
+
+            sum_ff += ff
+            sum_sq_ff += ff * ff
+
+            model.cpu()  # free GPU memory after each model
+
+            elapsed = time.time() - start_time
+            speed = i / elapsed if elapsed > 0 else 0
+            remaining = n_models - i
+            eta = remaining / speed if speed > 0 else 0
+
+            print(
+                f'\r[PROGRESS] Model {i}/{n_models} | '
+                f'{100.0 * i / n_models:6.2f}% | '
+                f'{speed:,.2f} models/s | '
+                f'ETA {eta/60:.2f} min',
+                end='',
+                flush=True,
+            )
+
+    mean_ff = sum_ff / n_models
+    var_ff = (sum_sq_ff / n_models) - mean_ff * mean_ff
+    var_ff = t.clamp(var_ff, min=0)
+    std_ff = t.sqrt(var_ff)
+
+    print('\n[INFO] Inference complete.')
+
+    return mean_ff.cpu().numpy(), std_ff.cpu().numpy()
+
+
+def _enable_dropout_only(model: t.nn.Module) -> None:
+    """
+    Keep the model in eval mode, but activate dropout layers only.
+    This avoids BatchNorm running-stat updates during MC-dropout inference.
+    """
+    model.eval()
+    for module in model.modules():
+        if isinstance(module, t.nn.Dropout):
+            module.train()
+
+
+def _calculate_fake_factor_mean_std_for_view_per_model_per_mask(
+    df_view,
+    model,
+    training_variables,
+    normalization,
+    device: t.device | None = None,
+):
+    """
+    Compute FF mean/std by processing all events per model (no batching).
+    """
+    if device is None:
+        device = t.device('cuda' if t.cuda.is_available() else 'cpu')
+
+    print(f'[INFO] Using device: {device}')
+    print('[INFO] Building full input tensor...')
+
+    X = test_data(df_view, training_variables)
+    X_tensor = t.from_numpy(X.X).float()
+    X = _prepare_input_tensor(model, X_tensor, df_view).to(device)
+
+    normalization = t.from_numpy(normalization).float().to(device)
+
+    n_events = df_view.n
+    n_masks = 100
+
+    print(f'[INFO] Events: {n_events:,}')
+    print(f'[INFO] Models: {n_masks}')
+    print('[INFO] Inference mode: full events per model')
+
+    sum_ff = t.zeros(n_events, dtype=t.float32, device=device)
+    sum_sq_ff = t.zeros(n_events, dtype=t.float32, device=device)
+
+    start_time = time.time()
+
+    with t.inference_mode():
+        for i in range(1, n_masks + 1):
+            model.to(device)
+            _enable_dropout_only(model)
+
+            f = model(X).squeeze()
+            f = t.clamp(f, 1e-6, 1 - 1e-6)
+            ratio = f / (1.0 - f)
+            ff = ratio * normalization
+            ff = t.clamp(ff, 0, 1)
+
+            sum_ff += ff
+            sum_sq_ff += ff * ff
+
+            model.cpu()  # free GPU memory after each model
+
+            elapsed = time.time() - start_time
+            speed = i / elapsed if elapsed > 0 else 0
+            remaining = n_masks - i
+            eta = remaining / speed if speed > 0 else 0
+
+            print(
+                f'\r[PROGRESS] Model {i}/{n_masks} | '
+                f'{100.0 * i / n_masks:6.2f}% | '
+                f'{speed:,.2f} models/s | '
+                f'ETA {eta/60:.2f} min',
+                end='',
+                flush=True,
+            )
+
+    mean_ff = sum_ff / n_masks
+    var_ff = (sum_sq_ff / n_masks) - mean_ff * mean_ff
+    var_ff = t.clamp(var_ff, min=0)
+    std_ff = t.sqrt(var_ff)
+
+    print('\n[INFO] Inference complete.')
+
+    return mean_ff.cpu().numpy(), std_ff.cpu().numpy()
+
+
+
+def calculate_fake_factor_mean_std(
+    df,
+    models,
+    training_variables,
+    grouping_variable,
+    grouping_definition,
+    process='wjets',
+    output_mean='fake_factor_mean',
+    output_std='fake_factor_std',
+    device: t.device | None = None,
+):
+    if device is None:
+        device = t.device('cuda' if t.cuda.is_available() else 'cpu')
+
+    print('[INFO] Computing normalization...')
+    normalization = build_normalization_vector(
+        df,
+        grouping_variable,
+        grouping_definition,
+        process,
+    )
+
+    mean_result, std_result = _calculate_fake_factor_mean_std_for_view_per_model(
+        df.AR,
+        models,
+        training_variables,
+        normalization,
+        device=device,
+    )
+
+    df.AR[output_mean] = mean_result
+    df.AR[output_std] = std_result
+    return df
+
+
+def calculate_fake_factor_mean_std_dropout_mask_variation(
+    df,
+    model,
+    training_variables,
+    grouping_variable,
+    grouping_definition,
+    process='wjets',
+    output_mean='fake_factor_mean',
+    output_std='fake_factor_std',
+    device: t.device | None = None,
+):
+    if device is None:
+        device = t.device('cuda' if t.cuda.is_available() else 'cpu')
+
+    print('[INFO] Computing normalization...')
+    normalization = build_normalization_vector(
+        df,
+        grouping_variable,
+        grouping_definition,
+        process,
+    )
+
+    mean_result, std_result = _calculate_fake_factor_mean_std_for_view_per_model_per_mask(
+        df.AR,
+        model,
+        training_variables,
+        normalization,
+        device=device,
+    )
+
+    df.AR[output_mean] = mean_result
+    df.AR[output_std] = std_result
+    return df
+
+
+def calculate_fake_factor_mean_std_in_DR(
+    df,
+    models,
+    training_variables,
+    grouping_variable,
+    grouping_definition,
+    process='wjets',
+    output_mean='fake_factor_mean',
+    output_std='fake_factor_std',
+    device: t.device | None = None,
+):
+    if process not in {'wjets', 'qcd', 'ttbar'}:
+        raise ValueError("calculate_fake_factor_mean_std_batched_in_DR only supports process='wjets', 'qcd', or 'ttbar'.")
+
+    if device is None:
+        device = t.device('cuda' if t.cuda.is_available() else 'cpu')
+
+    print('[INFO] Computing normalization...')
+    normalization = build_normalization_vector_in_DR(
+        df,
+        process,
+        grouping_variable,
+        grouping_definition,
+    )
+
+    target_view = getattr(df, f'AR_like_{process}')
+
+    mean_result, std_result = _calculate_fake_factor_mean_std_for_view_per_model(
+        target_view,
+        models,
+        training_variables,
+        normalization,
+        device=device,
+    )
+
+    target_view[output_mean] = mean_result
+    target_view[output_std] = std_result
+    return df
+
+
+'''
+def calculate_fake_factor_mean_std_batched_in_DR_wjets(
+    df,
+    models,
+    training_variables,
+    grouping_variable,
+    grouping_definition,
+    process='wjets',
+    output_mean='fake_factor_mean',
+    output_std='fake_factor_std',
+    device: t.device | None = None,
+):
+    if process != 'wjets':
+        raise ValueError("calculate_fake_factor_mean_std_batched_in_DR_wjets only supports process='wjets'.")
+
+    if device is None:
+        device = t.device('cuda' if t.cuda.is_available() else 'cpu')
+
+    print('[INFO] Computing normalization...')
+    normalization = build_normalization_vector_in_DR_wjets(
+        df,
+        grouping_variable,
+        grouping_definition,
+    )
+
+    mean_result, std_result = _calculate_fake_factor_mean_std_for_view_per_model(
+        df.AR_like_wjets,
+        models,
+        training_variables,
+        normalization,
+        device=device,
+    )
+
+    df.AR_like_wjets[output_mean] = mean_result
+    df.AR_like_wjets[output_std] = std_result
+    return df
+
+
+def calculate_fake_factor_mean_std_batched_in_DR_qcd(
+    df,
+    models,
+    training_variables,
+    grouping_variable,
+    grouping_definition,
+    process='qcd',
+    output_mean='fake_factor_mean',
+    output_std='fake_factor_std',
+    device: t.device | None = None,
+):
+    if process != 'qcd':
+        raise ValueError("calculate_fake_factor_mean_std_batched_in_DR_wjets only supports process='qcd'.")
+
+    if device is None:
+        device = t.device('cuda' if t.cuda.is_available() else 'cpu')
+
+    print('[INFO] Computing normalization...')
+    normalization = build_normalization_vector_in_DR_wjets(
+        df,
+        grouping_variable,
+        grouping_definition,
+    )
+
+    mean_result, std_result = _calculate_fake_factor_mean_std_for_view_per_model(
+        df.AR_like_qcd,
+        models,
+        training_variables,
+        normalization,
+        device=device,
+    )
+
+    df.AR_like_qcd[output_mean] = mean_result
+    df.AR_like_qcd[output_std] = std_result
+    return df
+'''
+'''
+def calculate_fake_factor_mean_std_batched_in_DR_ttbar(
+    df,
+    models,
+    training_variables,
+    grouping_variable,
+    grouping_definition,
+    process='ttbar',
+    output_mean='fake_factor_mean',
+    output_std='fake_factor_std',
+    device: t.device | None = None,
+):
+    if process != 'ttbar':
+        raise ValueError("calculate_fake_factor_mean_std_batched_in_DR_wjets only supports process='ttbar'.")
+
+    if device is None:
+        device = t.device('cuda' if t.cuda.is_available() else 'cpu')
+
+    print('[INFO] Computing normalization...')
+    normalization = build_normalization_vector_in_DR_wjets(
+        df,
+        grouping_variable,
+        grouping_definition,
+    )
+
+    mean_result, std_result = _calculate_fake_factor_mean_std_for_view_per_model(
+        df.AR_like_qcd,
+        models,
+        training_variables,
+        normalization,
+        device=device,
+    )
+
+    df.AR_like_qcd[output_mean] = mean_result
+    df.AR_like_qcd[output_std] = std_result
+    return df
+
+
+'''
+	
+def calculate_fake_factor_mean_std_in_DR_dropout_mask_variation(
+    df,
+    model,
+    training_variables,
+    grouping_variable,
+    grouping_definition,
+    process='wjets',
+    output_mean='fake_factor_mean',
+    output_std='fake_factor_std',
+    device: t.device | None = None,
+):
+    if process not in {'wjets', 'qcd', 'ttbar'}:
+        raise ValueError("calculate_fake_factor_mean_std_batched_in_DR only supports process='wjets', 'qcd', or 'ttbar'.")
+
+    if device is None:
+        device = t.device('cuda' if t.cuda.is_available() else 'cpu')
+
+    print('[INFO] Computing normalization...')
+    normalization = build_normalization_vector_in_DR(
+        df,
+        process,
+        grouping_variable,
+        grouping_definition,
+    )
+
+    target_view = getattr(df, f'AR_like_{process}')
+
+    mean_result, std_result = _calculate_fake_factor_mean_std_for_view_per_model_per_mask(
+        target_view,
+        model,
+        training_variables,
+        normalization,
+        device=device,
+    )
+
+    target_view[output_mean] = mean_result
+    target_view[output_std] = std_result
+    return df
+
+
+class FixedMaskDropout(t.nn.Module):
+    def __init__(self, ensemble_size: int, feature_dim: int, p: float):
+        super().__init__()
+        self.ensemble_size = ensemble_size
+        total_slots = ensemble_size + 1  # 0 always 1.0, 1 to N are random
+
+        masks = t.ones(total_slots, feature_dim)
+        rand_masks = (t.rand(ensemble_size, feature_dim) > p).float() / (1.0 - p)  # scale to keep same expected value magnitude
+        masks[1:] = rand_masks
+
+        self.register_buffer("masks", masks)
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        total_rows = x.shape[0]
+        batch_size = total_rows // (self.ensemble_size + 1)
+        feature_dim = x.shape[1]
+        x = x.reshape(self.ensemble_size + 1, batch_size, feature_dim)
+        x = x * self.masks.unsqueeze(1)
+        return x.reshape(total_rows, feature_dim)
+
+
+
+
+class EnsembleStatUncWrapper(t.nn.Module):
+    def __init__(
+        self,
+        model: t.nn.Module,
+        ensemble_size: int = 10,
+        direction: Literal["Nominal", "Up", "Down"] = "Nominal",
+        sigma: float = 1.0,
+        vary_index: Union[int, None] = None,
+    ):
+        super().__init__()
+        self.ensemble_size = ensemble_size
+        self.direction = direction
+        self.sigma = sigma
+        self.vary_index = vary_index
+        self.wrapped_model = model
+
+        self._input_nodes = getattr(model, "_input_nodes", None)
+        self._input_names = getattr(model, "_input_names", None)
+        self._fold_id_name = getattr(model, "_fold_id_name", "event_parity")
+
+        self._replace_layers(self.wrapped_model)
+
+    def _replace_layers(self, module):
+        for name, child in module.named_children():
+            if isinstance(child, t.nn.Dropout) and child.p > 0:
+                parent_seq = module
+                layer_list = list(parent_seq)
+                layer_idx = layer_list.index(child)
+                prev_linear = layer_list[layer_idx - 2]  # preceding Activation + Dropout
+
+                new_dropout = FixedMaskDropout(
+                    ensemble_size=self.ensemble_size,
+                    feature_dim=prev_linear.out_features,
+                    p=child.p
+                )
+                setattr(module, name, new_dropout)
+            else:
+                self._replace_layers(child)
+
+    def forward(self, X: t.Tensor) -> t.Tensor:
+        outputs = self.wrapped_model(X.repeat(1, self.ensemble_size + 1))
+        outputs = outputs.reshape(self.ensemble_size + 1, X.shape[1], *outputs.shape[1:])
+
+        nominal = outputs[0]
+        std = t.std(outputs[1:], dim=0, unbiased=True)
+        mean = t.mean(outputs[1:], dim=0)
+        total_uncertainty = ((mean - nominal) ** 2 + std ** 2).sqrt()
+
+        if self.vary_index is not None:
+            idx_mask = t.zeros(nominal.shape[-1], device=nominal.device, dtype=nominal.dtype)
+            idx_mask[self.vary_index] = 1.0
+
+            nominal_value = nominal[..., self.vary_index: self.vary_index + 1]
+            uncertainty_value = total_uncertainty[..., self.vary_index: self.vary_index + 1]
+
+            if self.direction == "Up":
+                shifted_value = t.clamp(nominal_value + self.sigma * uncertainty_value, max=1.0)
+            elif self.direction == "Down":
+                shifted_value = t.clamp(nominal_value - self.sigma * uncertainty_value, min=0.0)
+
+            R_old, R_new = 1.0 - nominal_value, 1.0 - shifted_value
+            scale_factor = t.where(R_old > 1e-6, R_new / R_old, t.zeros_like(R_old))  # if norm_v becomes rounding 1.0
+
+            return (shifted_value * idx_mask) + (nominal * (1.0 - idx_mask) * scale_factor)
+
+        if self.direction == "Up":
+            return nominal + self.sigma * total_uncertainty / 2
+        elif self.direction == "Down":
+            return nominal - self.sigma * total_uncertainty / 2
+        else:
+            return nominal  # should actually never happen :)
+
+    @property
+    def _imports(self) -> str:
+        base_imports = getattr(self.wrapped_model, "_imports", "")
+        wrapper_imports = f"from {self.__class__.__module__} import {self.__class__.__name__}\n"
+        return base_imports + wrapper_imports
+
+    @property
+    def model_name(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"model={self.wrapped_model.model_name}, "
+            f"ensemble_size={self.ensemble_size}, "
+            f"direction='{self.direction}'"
+            f")"
+        )
+
+    def __recreate__(self) -> str:
+        return f"{self._imports}__model = {self.model_name}\n\n"
+
+
+CHECKPOINT_DIR = '../Training_results'
+
+def calculate_fake_factors_ensemble(
+    df,
+    model_wjets: t.nn.Module,
+    training_variables,
+    grouping_variable: str,
+    grouping_definition,
+):
+    """Compute nominal/up/down FFs in AR_like_wjets using fixed-mask dropout ensemble wrapper."""
+
+    # Use independent model copies so wrappers cannot interfere through in-place layer replacement.
+    nominal_model = EnsembleStatUncWrapper(
+        model=copy.deepcopy(model_wjets),
+        ensemble_size=100,
+        direction='Nominal',
+    )
+    up_model = EnsembleStatUncWrapper(
+        model=copy.deepcopy(model_wjets),
+        ensemble_size=100,
+        direction='Up',
+    )
+    down_model = EnsembleStatUncWrapper(
+        model=copy.deepcopy(model_wjets),
+        ensemble_size=100,
+        direction='Down',
+    )
+
+    X_data = test_data(df.AR_like_wjets, training_variables)
+    X_tensor = t.from_numpy(X_data.X).float()
+    X_wjets = _prepare_input_tensor(model_wjets, X_tensor, df.AR_like_wjets)
+
+    with t.no_grad():
+        f_nom = nominal_model(X_wjets)
+        f_up = up_model(X_wjets)
+        f_down = down_model(X_wjets)
+
+    # Convert to numpy before numpy math.
+    f_nom = f_nom.detach().cpu().numpy().squeeze()
+    f_up = f_up.detach().cpu().numpy().squeeze()
+    f_down = f_down.detach().cpu().numpy().squeeze()
+
+    eps = 1e-6
+    f_nom = np.clip(f_nom, eps, 1 - eps)
+    f_up = np.clip(f_up, eps, 1 - eps)
+    f_down = np.clip(f_down, eps, 1 - eps)
+
+    ratio_nom = f_nom / (1.0 - f_nom)
+    ratio_up = f_up / (1.0 - f_up)
+    ratio_down = f_down / (1.0 - f_down)
+
+    fake_factor_nominal = np.zeros_like(ratio_nom)
+    fake_factor_up = np.zeros_like(ratio_up)
+    fake_factor_down = np.zeros_like(ratio_down)
+
+    # Keep masks in the same region where predictions were computed.
+    ar_group_values = np.asarray(df.AR_like_wjets[grouping_variable])
+    group_masks = _build_group_masks(ar_group_values, grouping_definition)
+
+    sr_wjets_masks = dict(_build_group_masks(
+        np.asarray(df.data.SR_like_wjets[grouping_variable]),
+        grouping_definition,
+    ))
+    ar_wjets_masks = dict(_build_group_masks(
+        np.asarray(df.data.AR_like_wjets[grouping_variable]),
+        grouping_definition,
+    ))
+
+    for group_name, ar_mask in group_masks:
+        sr_wjets_mask = sr_wjets_masks[group_name]
+        ar_wjets_mask = ar_wjets_masks[group_name]
+
+        denom = np.sum(df.data.AR_like_wjets.weight[ar_wjets_mask])
+        norm_wjets = (
+            np.sum(df.data.SR_like_wjets.weight[sr_wjets_mask]) / denom
+            if denom > 0
+            else 0.0
+        )
+
+        fake_factor_nominal[ar_mask] = norm_wjets * ratio_nom[ar_mask]
+        fake_factor_up[ar_mask] = norm_wjets * ratio_up[ar_mask]
+        fake_factor_down[ar_mask] = norm_wjets * ratio_down[ar_mask]
+
+        print(f"[{group_name}] WJets norm = {norm_wjets:.4f}")
+
+    fake_factor_nominal = np.clip(fake_factor_nominal, 0, 1)
+    fake_factor_up = np.clip(fake_factor_up, 0, 1)
+    fake_factor_down = np.clip(fake_factor_down, 0, 1)
+
+    df.AR_like_wjets['ff_wjets_nominal_ensemble'] = fake_factor_nominal
+    df.AR_like_wjets['ff_wjets_up_ensemble'] = fake_factor_up
+    df.AR_like_wjets['ff_wjets_down_ensemble'] = fake_factor_down
+
+    return df
+
+def calculate_fake_factors_ensemble_2sigma(
+    df,
+    model_wjets: t.nn.Module,
+    training_variables,
+    grouping_variable: str,
+    grouping_definition,
+):
+    """Compute nominal/up/down FFs in AR_like_wjets using fixed-mask dropout ensemble wrapper."""
+
+    # Use independent model copies so wrappers cannot interfere through in-place layer replacement.
+    nominal_model = EnsembleStatUncWrapper(
+        model=copy.deepcopy(model_wjets),
+        ensemble_size=100,
+        direction='Nominal',
+    )
+    up_model = EnsembleStatUncWrapper(
+        model=copy.deepcopy(model_wjets),
+        ensemble_size=100,
+        direction='Up',
+        sigma=2.0,
+    )
+    down_model = EnsembleStatUncWrapper(
+        model=copy.deepcopy(model_wjets),
+        ensemble_size=100,
+        direction='Down',
+        sigma=2.0,
+    )
+
+    X_data = test_data(df.AR_like_wjets, training_variables)
+    X_tensor = t.from_numpy(X_data.X).float()
+    X_wjets = _prepare_input_tensor(model_wjets, X_tensor, df.AR_like_wjets)
+
+    with t.no_grad():
+        f_nom = nominal_model(X_wjets)
+        f_up = up_model(X_wjets)
+        f_down = down_model(X_wjets)
+
+    # Convert to numpy before numpy math.
+    f_nom = f_nom.detach().cpu().numpy().squeeze()
+    f_up = f_up.detach().cpu().numpy().squeeze()
+    f_down = f_down.detach().cpu().numpy().squeeze()
+
+    eps = 1e-6
+    f_nom = np.clip(f_nom, eps, 1 - eps)
+    f_up = np.clip(f_up, eps, 1 - eps)
+    f_down = np.clip(f_down, eps, 1 - eps)
+
+    ratio_nom = f_nom / (1.0 - f_nom)
+    ratio_up = f_up / (1.0 - f_up)
+    ratio_down = f_down / (1.0 - f_down)
+
+    fake_factor_nominal = np.zeros_like(ratio_nom)
+    fake_factor_up = np.zeros_like(ratio_up)
+    fake_factor_down = np.zeros_like(ratio_down)
+
+    # Keep masks in the same region where predictions were computed.
+    ar_group_values = np.asarray(df.AR_like_wjets[grouping_variable])
+    group_masks = _build_group_masks(ar_group_values, grouping_definition)
+
+    sr_wjets_masks = dict(_build_group_masks(
+        np.asarray(df.data.SR_like_wjets[grouping_variable]),
+        grouping_definition,
+    ))
+    ar_wjets_masks = dict(_build_group_masks(
+        np.asarray(df.data.AR_like_wjets[grouping_variable]),
+        grouping_definition,
+    ))
+
+    for group_name, ar_mask in group_masks:
+        sr_wjets_mask = sr_wjets_masks[group_name]
+        ar_wjets_mask = ar_wjets_masks[group_name]
+
+        denom = np.sum(df.data.AR_like_wjets.weight[ar_wjets_mask])
+        norm_wjets = (
+            np.sum(df.data.SR_like_wjets.weight[sr_wjets_mask]) / denom
+            if denom > 0
+            else 0.0
+        )
+
+        fake_factor_nominal[ar_mask] = norm_wjets * ratio_nom[ar_mask]
+        fake_factor_up[ar_mask] = norm_wjets * ratio_up[ar_mask]
+        fake_factor_down[ar_mask] = norm_wjets * ratio_down[ar_mask]
+
+        print(f"[{group_name}] WJets norm = {norm_wjets:.4f}")
+
+    fake_factor_nominal = np.clip(fake_factor_nominal, 0, 1)
+    fake_factor_up = np.clip(fake_factor_up, 0, 1)
+    fake_factor_down = np.clip(fake_factor_down, 0, 1)
+
+    df.AR_like_wjets['ff_wjets_up_ensemble_2sigma'] = fake_factor_up
+    df.AR_like_wjets['ff_wjets_down_ensemble_2sigma'] = fake_factor_down
+
+    return df
+
+
+
+model_wjets_tdm = load_fold_combined_model(
+    even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'wjets' / 'fold_even',
+    odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'wjets' / 'fold_odd',
+)
+model_qcd_tdm = load_fold_combined_model(
+    even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'qcd' / 'fold_even',
+    odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'qcd' / 'fold_odd',
+)
+
+model_ttbar_tdm = load_fold_combined_model(
+    even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'ttbar' / 'fold_even',
+    odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'ttbar' / 'fold_odd',
+)
+
+'''
+model_wjets_njets = load_fold_combined_model(
+    even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'wjets' / 'fold_even',
+    odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'wjets' / 'fold_odd',
+)
+model_qcd_njets = load_fold_combined_model(
+    even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'qcd' / 'fold_even',
+    odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'qcd' / 'fold_odd',
+)
+
+model_ttbar_njets = load_fold_combined_model(
+    even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'ttbar' / 'fold_even',
+    odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'ttbar' / 'fold_odd',
+)
+'''
+
+grouping_njets = (
+    (0,),
+    (1,),
+    (2, 1000),
+)
+
+models_wjets = load_models(
+    checkpoint_dir='../Training_results_uncertainties',
+    seeds = range(100, 200),
+)
+
+models_qcd = load_models(
+    checkpoint_dir='../Training_results_uncertainties',
+    seeds = range(100, 200),
+    process = 'qcd',
+)
+
+models_ttbar = load_models(
+    checkpoint_dir='../Training_results_uncertainties',
+    seeds = range(100, 200),
+    process = 'ttbar',
+)
+
+
+
+
+
+
+
+
+
+# ---------------- execution part
+
+df = load_data(DATA_PATH, MASKS_PATH)
+training_variables = load_variables(TRAINING_VAR_PATH)
+
+'''
+models_wjets = load_models(
+    checkpoint_dir='../Training_results_uncertainties',
+    seeds = range(100, 200),
+)
+
+
+
+calculate_fake_factors(
+    df=df,
+    model_wjets=model_wjets_tdm,
+    model_qcd=model_qcd_tdm,
+    model_ttbar=model_ttbar_tdm,
+    training_variables=training_variables,
+	grouping_variable = 'njets',
+    grouping_definition = grouping_njets,
+    output_suffix = '',
+)
+
+calculate_fake_factors(
+    df=df,
+    model_wjets=model_wjets_njets,
+    model_qcd=model_qcd_njets,
+    model_ttbar=model_ttbar_njets,
+    training_variables=training_variables,
+	grouping_variable = 'njets',
+    grouping_definition = grouping_njets,
+    output_suffix = 'njets',
+)
+
+
+calculate_fake_factor_classic(
+    df = df.AR,
+)
+
+calculate_fake_factor_dnn(
+    df = df.AR,
+	grouping = 'tau_decaymode',
+)
+
+calculate_fake_factor_dnn(
+    df = df.AR,
+	grouping = 'njets',
+)
+
+calculate_fake_factors_in_DR_wjets(
+    df,
+    model_wjets_tdm,
+    training_variables,
+    'njets',
+    grouping_njets,
+)
+
+calculate_fake_factors_in_DR_qcd(
+	df, model_qcd_tdm,
+    training_variables,
+    'njets',
+    grouping_njets,
+)
+
+calculate_fake_factors_in_DR_ttbar(
+    df, model_ttbar_tdm,
+    training_variables,
+    'njets',
+    grouping_njets,
+)
+
+calculate_fake_factors_in_DR_wjets(
+    df,
+    model_wjets_njets,
+    training_variables,
+    'njets',
+    grouping_njets,
+    'njets',
+)
+
+calculate_fake_factors_in_DR_qcd(
+	df, model_qcd_njets,
+    training_variables,
+    'njets',
+    grouping_njets,
+    'njets',
+)
+
+calculate_fake_factors_in_DR_ttbar(
+    df, model_ttbar_njets,
+    training_variables,
+    'njets',
+    grouping_njets,
+    'njets'
+)
+
+
+'''
+
+calculate_fake_factor_mean_std(
+    df= df,
+    models= models_wjets,
+    training_variables=training_variables,
+    grouping_variable='njets',
+    grouping_definition=grouping_njets,
+    process = 'wjets',
+    output_mean='ff_wjets_mean',
+    output_std='ff_wjets_std',
+)
+
+
+
+calculate_fake_factor_mean_std_in_DR(
+    df= df,
+    models= models_qcd,
+    training_variables=training_variables,
+    grouping_variable='njets',
+    grouping_definition=grouping_njets,
+    process = 'qcd',
+    output_mean='ff_qcd_mean',
+    output_std='ff_qcd_std',
+)
+
+calculate_fake_factor_mean_std_in_DR(
+    df= df,
+    models= models_ttbar,
+    training_variables=training_variables,
+    grouping_variable='njets',
+    grouping_definition=grouping_njets,
+    process = 'ttbar',
+    output_mean='ff_ttbar_mean',
+    output_std='ff_ttbar_std',
+)
+
+
+calculate_fake_factor_mean_std_dropout_mask_variation(
+    df= df,
+    model= model_wjets_tdm,
+    training_variables=training_variables,
+    grouping_variable='njets',
+    grouping_definition=grouping_njets,
+    process = 'wjets',
+    output_mean='ff_wjets_mean_pmask',
+    output_std='ff_wjets_std_pmask',
+)
+
+
+calculate_fake_factor_mean_std_in_DR_dropout_mask_variation(
+    df = df,
+    model = model_wjets_tdm,
+    training_variables = training_variables,
+    grouping_variable = 'njets',
+    grouping_definition = grouping_njets,
+    process='wjets',
+    output_mean='ff_wjets_mean_pmask',
+    output_std='ff_wjets_std_pmask',
+)
+
+calculate_fake_factor_mean_std_in_DR_dropout_mask_variation(
+    df = df,
+    model = model_qcd_tdm,
+    training_variables = training_variables,
+    grouping_variable = 'njets',
+    grouping_definition = grouping_njets,
+    process='qcd',
+    output_mean='ff_qcd_mean_pmask',
+    output_std='ff_qcd_std_pmask',
+)
+
+calculate_fake_factor_mean_std_in_DR_dropout_mask_variation(
+    df = df,
+    model = model_ttbar_tdm,
+    training_variables = training_variables,
+    grouping_variable = 'njets',
+    grouping_definition = grouping_njets,
+    process='ttbar',
+    output_mean='ff_ttbar_mean_pmask',
+    output_std='ff_ttbar_std_pmask',
+)
+
+
+'''
+grouping_njets = (
+    (0,),
+    (1,),
+    (2, 1000),
+)
+
+
+calculate_fake_factors_ensemble_2sigma(
+    df=df,
+    model_wjets=model_wjets_tdm,
+    training_variables=training_variables,
+	grouping_variable='njets',
+    grouping_definition=grouping_njets,
+)
+
+'''
+
+
+df.to_feather(DATA_PATH)

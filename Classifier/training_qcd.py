@@ -21,11 +21,8 @@ import torch as t
 from tap import Tap
 from typing import Any, Callable, Dict, Generator, List, Literal, Tuple, Union
 from copy import deepcopy
-from frozendict import frozendict
+from classes.Collection import MaskManager
 import time
-from itertools import product, zip_longest
-import matplotlib.pyplot as plt
-
 # ----- seed -----
 
 torch.manual_seed(42)
@@ -42,14 +39,14 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 # ----- constants ------
 
-INPUT_DIM = 20
+
 CONFIG_MODEL_PATH = 'configs/config_NN.yaml'
 PATIENCE = 20
 QCD_WEIGHT_BINNING = 'dynamic'
 QCD_WEIGHT_N_BINS = 20
 QCD_WEIGHT_DYNAMIC_DELTA = 4.0
 QCD_WEIGHT_DYNAMIC_DELTA_LAST = 4.0
-QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD = 10.0
+QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD = 4.0
 
 # ----- data classes -----
 @dataclass
@@ -688,7 +685,7 @@ def main():
 
     # --- load device
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
     logger.info(f"Using device: {device}")
     logger.info(
@@ -705,8 +702,10 @@ def main():
 
     # --- load data 
 
+    masks = MaskManager('configs/masks.yaml')
+
     data_complete = pd.read_feather('../data/data_complete.feather')
-    data_DR = mask_DR(data_complete)
+    data_DR = masks.apply(data_complete, 'preselection_loose','DR_qcd')
 
 
     data_DR.loc[data_DR['process'] != 0, 'Label'] = 0
@@ -1023,15 +1022,6 @@ def main():
         qcd_counts, _ = np.histogram(probs_data, weights = weights_qcd, bins=bins)
         nqcd_counts, _ = np.histogram(probs_nqcd, weights = weights_nqcd, bins=bins)
         bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
-        plt.errorbar(bin_centers,data_counts,  color = 'black', fmt = 'o' ,markersize = 5, label = 'data (reduced)')
-        plt.bar(bin_centers, qcd_counts, width = bin_widths, color ='#b9ac70', label = 'QCD')
-        plt.bar(bin_centers, nqcd_counts, bottom = qcd_counts, color = 'grey', width = bin_widths, label = 'nQCD')
-        plt.legend()
-        plt.savefig(f'closure_plot_{fold}.png')
-        plt.close()
-
-        plt.hist(probs_data, bins = bins, color = 'black', alpha = 0.3) 
-        plt.hist([])
 
         torch.save(checkpoint, paths_training.autopath.joinpath('model_checkpoint.pth'))
         torch.save(train_pt.weights.ss[qcd_mask_ss_train], paths_training.autopath.joinpath('qcd_weights_qcd_train.pt'))
