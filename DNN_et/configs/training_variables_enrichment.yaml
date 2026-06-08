@@ -13,6 +13,7 @@ variables:
   - njets
   - mt_tot
   - m_vis
+  - mass_2
   - pt_tt
   - pt_vis
   - mjj
@@ -33,8 +34,4 @@ variables:
   - deltaEta_2j2
   - deltaEta_12j1
   - deltaEta_12j2
-  - tau_decaymode_1
   - tau_decaymode_2
-  - nbtag
-#  - mass_2
-

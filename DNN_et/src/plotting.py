@@ -61,11 +61,13 @@ def _read_labels_yaml(path):
         for raw_line in f:
             line = raw_line.rstrip('\n')
             stripped = line.strip()
+            indent = len(line) - len(line.lstrip(' '))
 
             if not stripped or stripped.startswith('#'):
                 continue
 
-            if stripped.endswith(':') and not line.startswith(' '):
+            # Be tolerant if the channel key is accidentally indented by one space.
+            if stripped.endswith(':') and ':' not in stripped[:-1] and indent <= 1:
                 current_channel = stripped[:-1]
                 labels_by_channel.setdefault(current_channel, {})
                 continue
@@ -73,7 +75,7 @@ def _read_labels_yaml(path):
             if current_channel is None:
                 continue
 
-            if not line.startswith('    '):
+            if indent < 4:
                 continue
 
             key_value = line.strip().split(':', 1)
@@ -118,98 +120,14 @@ def get_bins_and_label(variable, channel='et'):
 
 def main():
     df = load_data(DATA_PATH, MASKS_PATH)
-    training_variables = load_variables(TRAINING_VAR_PATH)
 
-    model_wjets_tdm = load_fold_combined_model(
-        even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'wjets' / 'fold_even',
-        odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'wjets' / 'fold_odd',
-    )
-    model_qcd_tdm = load_fold_combined_model(
-        even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'qcd' / 'fold_even',
-        odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'qcd' / 'fold_odd',
-    )
-    model_wjets_njets = load_fold_combined_model(
-        even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'wjets' / 'fold_even',
-        odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'wjets' / 'fold_odd',
-    )
-    model_qcd_njets = load_fold_combined_model(
-        even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'qcd' / 'fold_even',
-        odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'qcd' / 'fold_odd',
-    )
 
     grouping_njets = (
         (0,),
         (1,),
         (2, 1000),
     )
-    calculate_fake_factors(
-        df=df,
-        model_wjets=model_wjets_tdm,
-        model_qcd=model_qcd_tdm,
-        training_variables=training_variables,
-        grouping_variable = 'njets',
-        grouping_definition = grouping_njets,
-        output_suffix = 'tdm',
-    )
 
-    calculate_fake_factors(
-        df=df,
-        model_wjets=model_wjets_njets,
-        model_qcd=model_qcd_njets,
-        training_variables=training_variables,
-        grouping_variable = 'njets',
-        grouping_definition = grouping_njets,
-        output_suffix = 'njets',
-    )
-
-
-    calculate_fake_factor_classic(
-        df = df.AR,
-    )
-
-    calculate_fake_factor_dnn(
-        df = df.AR,
-        grouping = 'tau_decaymode',
-    )
-
-    calculate_fake_factor_dnn(
-        df = df.AR,
-        grouping = 'njets',
-    )
-
-    calculate_fake_factors_in_DR_wjets(
-        df,
-        model_wjets_tdm,
-        training_variables,
-        'njets',
-        grouping_njets,
-        'tdm',
-    )
-
-    calculate_fake_factors_in_DR_qcd(
-        df, model_qcd_tdm,
-        training_variables,
-        'njets',
-        grouping_njets,
-        'tdm',
-    )
-
-    calculate_fake_factors_in_DR_wjets(
-        df,
-        model_wjets_njets,
-        training_variables,
-        'njets',
-        grouping_njets,
-        'njets',
-    )
-
-    calculate_fake_factors_in_DR_qcd(
-        df, model_qcd_njets,
-        training_variables,
-        'njets',
-        grouping_njets,
-        'njets',
-    )
 
 
     for grouping in PLOT_GROUPINGS:

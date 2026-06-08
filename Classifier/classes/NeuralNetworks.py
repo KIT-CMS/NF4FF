@@ -6,15 +6,13 @@ from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Tuple, Union, Literal
-from torch.nn.modules.loss import _Loss
-#import CODE.HELPER as helper
+
 import dill
 import more_itertools as mit
 import numpy as np
 import torch as t
-import torch.nn.functional as F
+
 import classes.CustomLogging as log
-import onnx
 
 logger = log.setup_logging(logger=logging.getLogger(__name__))
 
@@ -139,7 +137,7 @@ class DNN(t.nn.Module):
 
     def forward(self, X: t.Tensor) -> t.Tensor:
         if self._forward_auto_to_device:
-            return self.layers.to(X.device)(self.apply_scaler(X))
+            return self.layers(self.apply_scaler(X))
         else:
             return self.layers(self.apply_scaler(X))
 
@@ -544,7 +542,7 @@ def load_model(
         try:
             with open(full_model_path, "rb") as f:
                 __model = dill.load(f)
-                #logger.info(f"Model {__model.__class__.__name__} loaded from {full_model_path}")
+                logger.info(f"Model {__model.__class__.__name__} loaded from {full_model_path}")
                 __model = __model.to('cpu')
                 log_nested_scaler_shifts(__model, "cpu")
                 __model = __model.to(device)
@@ -606,6 +604,8 @@ def train_state(model: t.nn.Module) -> Iterable[t.nn.Module]:
     finally:
         if not was_training:
             model.eval()
+
+
 
 
 def build_manual_scaler(model: t.nn.Module) -> Callable[[t.Tensor], t.Tensor]:
@@ -695,294 +695,3 @@ def temporary_extract_scaler_callable(
         for name, buffer in model.named_buffers():
             if name in originals:
                 buffer.copy_(originals[name])
-
-
-def convert_models_to_onnx(
-    torch_model: Union[t.nn.Module, None] = None,
-    torch_model_dir: Union[str, List[str], None] = None,
-    onnx_model_path: Union[str, Path] = "__model.onnx",
-) -> None:
-    assert (torch_model is not None) ^ (torch_model_dir is not None), "Provide either torch_model or torch_model_dir, not both"
-
-    if torch_model is not None:
-        model = torch_model.eval()
-        logger.info("Model provided directly as torch_model argument, using it for ONNX conversion.")
-
-    elif torch_model_dir is not None:
-        if isinstance(torch_model_dir, str):
-            model = load_model(torch_model_dir).eval().to("cpu")
-        elif isinstance(torch_model_dir, list):
-            logger.info("Assuming list of fold models is provided [fold0, fold1] > [even_model_path, odd_model_path]")
-            assert len(torch_model_dir) == 2, "Provide exactly two model paths for fold combined model"
-            model = load_fold_combined_model(*torch_model_dir).eval().to("cpu")
-    else:
-        raise ValueError("No model provided for ONNX conversion")
-
-    toggled = []
-    for m in model.modules():
-        if hasattr(m, "_forward_auto_to_device"):
-            toggled.append((m, "_forward_auto_to_device", m._forward_auto_to_device))
-            m._forward_auto_to_device = False
-
-    try:
-        logger.info(f"Model loaded successfully from {torch_model_dir}")
-
-        example_inputs = (t.randn(model._input_nodes, 1),)
-        logger.info(f"Example inputs created with shape: {example_inputs[0].shape}")
-        logger.info("Exporting model to ONNX format...")
-
-        onnx_program = t.onnx.export(
-            model,
-            example_inputs,
-            input_names=["input_tensor"],
-            dynamo=True,
-            optimize=True,
-            verify=True,
-            profile=True,
-        )
-
-        if (input_names := getattr(model, "_input_names", None)) is not None:
-            logger.info(f"Adding input names metadata to ONNX model: {input_names}")
-            model_proto = onnx_program.model_proto
-            meta = model_proto.metadata_props.add()
-            meta.key = "input_tensor"
-            meta.value = "Input features in order:\n\n" + "\n".join(input_names)
-
-        onnx.save(
-            model_proto,
-            onnx_model_path,
-            save_as_external_data=False,
-        )
-
-        logger.info(f"Model successfully converted to ONNX format at {onnx_model_path}")
-    finally:
-        for m, attr, old in toggled:
-            setattr(m, attr, old)
-
-
-
-class LikelihoodRatioCalculation(GroupedLayerABC):
-    def __init__(
-        self,
-        model: Union[t.nn.Module, DNN, GroupedDNN],
-        normalization_constants: Union[Dict[Any, float], float] = 1.0,
-        clip: Tuple[float, float] = (1e-4, 1.0),
-    ) -> None:
-        super().__init__()
-        self.wrapped_model = model
-        self._wrapped_delegate = model
-        self.clip = clip
-        self._init_constants = normalization_constants
-
-        self._is_grouped_norm = isinstance(normalization_constants, dict)
-        self._norm_dict = normalization_constants if self._is_grouped_norm else {}
-        self._fallback_norm = float(self._norm_dict.get("fallback", 1.0)) if self._is_grouped_norm else float(normalization_constants)
-        self._group_specs: List[Tuple[List[Tuple[int, Tuple[Any, ...]]], float]] = []
-
-        if self._is_grouped_norm and hasattr(model, "_logic_pipeline"):
-            for conditions, _ in model._logic_pipeline:
-                key = tuple(cond[1] for cond in conditions)
-                norm = self._resolve_norm_value(key)
-                self._group_specs.append((conditions, norm))
-
-    def _resolve_norm_value(self, key: Any) -> float:
-        if not self._is_grouped_norm:
-            return self._fallback_norm
-
-        if key in self._norm_dict:
-            return float(self._norm_dict[key])
-
-        if isinstance(key, tuple) and len(key) == 1 and key[0] in self._norm_dict:
-            return float(self._norm_dict[key[0]])
-
-        return self._fallback_norm
-
-    def _extract_values(self, X: t.Tensor, col_idx: int) -> t.Tensor:
-        # FoldCombinedDNN consumes [1 + n_features, N] where row 0 is event parity.
-        if isinstance(self.wrapped_model, FoldCombinedDNN):
-            feature_row_idx = col_idx + 1
-            if feature_row_idx >= X.shape[0]:
-                raise IndexError(
-                    f"Feature index {col_idx} out of bounds for FoldCombined input shape {tuple(X.shape)}"
-                )
-            return X[feature_row_idx, ...]
-
-        if col_idx >= X.shape[1]:
-            raise IndexError(f"Feature index {col_idx} out of bounds for input shape {tuple(X.shape)}")
-        return X[:, col_idx]
-
-    def _build_condition_mask(self, X: t.Tensor, conditions: List[Tuple[int, Tuple[Any, ...]]], n_events: int) -> t.Tensor:
-        mask = t.ones(n_events, dtype=t.bool, device=X.device)
-
-        for col_idx, bounds in conditions:
-            vals = self._extract_values(X, col_idx)
-
-            if len(bounds) == 1:
-                target = float(bounds[0])
-                target_tensor = t.tensor(target, dtype=vals.dtype, device=vals.device)
-                mask = mask & t.isclose(vals, target_tensor, atol=1e-4, rtol=0.0)
-            elif len(bounds) == 2:
-                low, high = float(bounds[0]), float(bounds[1])
-                mask = mask & (vals >= (low - 1e-4))
-                if high != float("inf"):
-                    mask = mask & (vals <= (high + 1e-4))
-            else:
-                raise ValueError(f"Invalid bound: {bounds}")
-
-        return mask
-
-    def forward(self, X: t.Tensor) -> t.Tensor:
-        if not isinstance(X, t.Tensor):
-            raise TypeError(f"LikelihoodRatioCalculation expects torch.Tensor input, got {type(X)}")
-
-        output = self.wrapped_model(X)
-        if output.dim() == 0:
-            output = output.unsqueeze(0)
-        fraction = output / (1 - output + 1e-8)
-
-        if not self._is_grouped_norm:
-            return (fraction * self._fallback_norm).clamp(*self.clip)
-
-        n_events = fraction.shape[0]
-        norm_vec = t.full((n_events,), self._fallback_norm, dtype=fraction.dtype, device=fraction.device)
-
-        for conditions, norm in self._group_specs:
-            cond_mask = self._build_condition_mask(X, conditions, n_events)
-            norm_vec = t.where(cond_mask, t.full_like(norm_vec, float(norm)), norm_vec)
-
-        if fraction.dim() > 1:
-            norm_vec = norm_vec.unsqueeze(1)
-
-        return (fraction * norm_vec).clamp(*self.clip)
-
-    def _execute_group(self, X, payload) -> t.Tensor:
-        output = self.wrapped_model(X)
-        fraction = output / (1 - output + 1e-8)
-        return (fraction * float(payload)).clamp(*self.clip)
-
-    @property
-    def model_name(self) -> str:
-        delegate_name = getattr(self._wrapped_delegate, "model_name", self._wrapped_delegate.__class__.__name__)
-        return (
-            f"{self.__class__.__name__}("
-            f"model={delegate_name}, "
-            f"normalization_constants={repr(self._init_constants)}, "
-            f"clip={repr(self.clip)}"
-            ")"
-        )
-
-
-
-class FixedMaskDropout(t.nn.Module):
-    def __init__(self, ensemble_size: int, feature_dim: int, p: float):
-        super().__init__()
-        self.ensemble_size = ensemble_size
-        total_slots = ensemble_size + 1  # 0 always 1.0, 1 to N are random
-
-        masks = t.ones(total_slots, feature_dim)
-        rand_masks = (t.rand(ensemble_size, feature_dim) > p).float() / (1.0 - p)  # scale to keep same expected value magnitude
-        masks[1:] = rand_masks
-
-        self.register_buffer("masks", masks)
-
-    def forward(self, x: t.Tensor) -> t.Tensor:
-        total_rows = x.shape[0]
-        batch_size = total_rows // (self.ensemble_size + 1)
-        feature_dim = x.shape[1]
-        x = x.reshape(self.ensemble_size + 1, batch_size, feature_dim)
-        x = x * self.masks.unsqueeze(1)
-        return x.reshape(total_rows, feature_dim)
-
-
-
-class EnsembleStatUncWrapper(t.nn.Module):
-    def __init__(
-        self,
-        model: t.nn.Module,
-        ensemble_size: int = 10,
-        direction: Literal["Nominal", "Up", "Down"] = "Nominal",
-        sigma: float = 1.0,
-        vary_index: Union[int, None] = None,
-    ):
-        super().__init__()
-        self.ensemble_size = ensemble_size
-        self.direction = direction
-        self.sigma = sigma
-        self.vary_index = vary_index
-        self.wrapped_model = model
-
-        self._input_nodes = getattr(model, "_input_nodes", None)
-        self._input_names = getattr(model, "_input_names", None)
-        self._fold_id_name = getattr(model, "_fold_id_name", "event_parity")
-
-        self._replace_layers(self.wrapped_model)
-
-    def _replace_layers(self, module):
-        for name, child in module.named_children():
-            if isinstance(child, t.nn.Dropout) and child.p > 0:
-                parent_seq = module
-                layer_list = list(parent_seq)
-                layer_idx = layer_list.index(child)
-                prev_linear = layer_list[layer_idx - 2]  # preceding Activation + Dropout
-
-                new_dropout = FixedMaskDropout(
-                    ensemble_size=self.ensemble_size,
-                    feature_dim=prev_linear.out_features,
-                    p=child.p
-                )
-                setattr(module, name, new_dropout)
-            else:
-                self._replace_layers(child)
-
-    def forward(self, X: t.Tensor) -> t.Tensor:
-        outputs = self.wrapped_model(X.repeat(1, self.ensemble_size + 1))
-        outputs = outputs.reshape(self.ensemble_size + 1, X.shape[1], *outputs.shape[1:])
-
-        nominal = outputs[0]
-        std = t.std(outputs[1:], dim=0, unbiased=True)
-        mean = t.mean(outputs[1:], dim=0)
-        total_uncertainty = ((mean - nominal) ** 2 + std ** 2).sqrt()
-
-        if self.vary_index is not None:
-            idx_mask = t.zeros(nominal.shape[-1], device=nominal.device, dtype=nominal.dtype)
-            idx_mask[self.vary_index] = 1.0
-
-            nominal_value = nominal[..., self.vary_index: self.vary_index + 1]
-            uncertainty_value = total_uncertainty[..., self.vary_index: self.vary_index + 1]
-
-            if self.direction == "Up":
-                shifted_value = t.clamp(nominal_value + self.sigma * uncertainty_value, max=1.0)
-            elif self.direction == "Down":
-                shifted_value = t.clamp(nominal_value - self.sigma * uncertainty_value, min=0.0)
-
-            R_old, R_new = 1.0 - nominal_value, 1.0 - shifted_value
-            scale_factor = t.where(R_old > 1e-6, R_new / R_old, t.zeros_like(R_old))  # if norm_v becomes rounding 1.0
-
-            return (shifted_value * idx_mask) + (nominal * (1.0 - idx_mask) * scale_factor)
-
-        if self.direction == "Up":
-            return nominal + self.sigma * total_uncertainty / 2
-        elif self.direction == "Down":
-            return nominal - self.sigma * total_uncertainty / 2
-        else:
-            return nominal  # should actually never happen :)
-
-    @property
-    def _imports(self) -> str:
-        base_imports = getattr(self.wrapped_model, "_imports", "")
-        wrapper_imports = f"from {self.__class__.__module__} import {self.__class__.__name__}\n"
-        return base_imports + wrapper_imports
-
-    @property
-    def model_name(self) -> str:
-        return (
-            f"{self.__class__.__name__}("
-            f"model={self.wrapped_model.model_name}, "
-            f"ensemble_size={self.ensemble_size}, "
-            f"direction='{self.direction}'"
-            f")"
-        )
-
-    def __recreate__(self) -> str:
-        return f"{self._imports}__model = {self.model_name}\n\n"
-

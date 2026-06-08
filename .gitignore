@@ -40,8 +40,12 @@ CustomLogging/
 !Classifier_all_in_one/CustomLogging/**
 
 DNN_et/taylor_coefficients
+DNN_et/training_datasets
+DNN_et/non_closure_corrections
+DNN_et/CombinedModels*
+DNN_et/Enrichment_models
 
-
+DNN_et/comparison_squeezing_limit
 
 FakeFaktor/
 Helper/

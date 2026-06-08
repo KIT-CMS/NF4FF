@@ -29,16 +29,6 @@ out_dir = cfg['directories']['data_output_directory']
 
 # --------------
 
-def get_class_weights(
-    weights: Union[pd.Series, np.ndarray, t.Tensor],
-    Y: Union[pd.Series, np.ndarray, t.Tensor],
-    classes: tuple = (0, 1),
-    class_weighted: bool = True,
-) -> Union[pd.Series, np.ndarray, t.Tensor]:
-    _weights = np.zeros_like(weights)
-    for _class in classes:
-        _weights[Y == _class] = weights.sum() / weights[Y == _class].sum()
-    return _weights * (weights if class_weighted else 1.0)
 
 processes = {
     'Wjets': uproot.open(str(in_dir + "/" + "Wjets.root"))['ntuple'].arrays(library="pd"),

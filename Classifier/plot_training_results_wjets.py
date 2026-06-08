@@ -742,12 +742,37 @@ def main() -> None:
 
     hist_nFF, _ = np.histogram(probs_nFF,weights=weights_nFF, bins= bins)
     hist_qcd, _ = np.histogram(probs_qcd, weights = weights_qcd, bins = bins)
+
+    var_nFF, _ = np.histogram(probs_nFF, weights=weights_nFF**2, bins=bins)
+    var_qcd, _ = np.histogram(probs_qcd, weights=weights_qcd**2, bins=bins)
+
+    sub_nom = hist_nFF + hist_qcd
+    err_sub = np.sqrt(var_nFF + var_qcd)
+
+    sub_plus = np.clip(sub_nom + err_sub, 0.0, None)
+    sub_minus = np.clip(sub_nom - err_sub, 0.0, None) 
+    
     Wjets_weights = _calculate_scaled_event_weights_generalized(
         event_values = probs_data,
         event_original_weights = np.ones_like(probs_data),
         bins = bins,
-        total_subtraction_per_bin=hist_nFF + hist_qcd,
+        total_subtraction_per_bin=sub_nom,
     )
+
+    Wjets_weights_up = _calculate_scaled_event_weights_generalized(
+        event_values = probs_data,
+        event_original_weights = np.ones_like(probs_data),
+        bins = bins,
+        total_subtraction_per_bin=sub_minus,
+    )
+
+    Wjets_weights_down = _calculate_scaled_event_weights_generalized(
+        event_values = probs_data,
+        event_original_weights = np.ones_like(probs_data),
+        bins = bins,
+        total_subtraction_per_bin=sub_plus,
+    )
+
 
 
     if args.write_back:
@@ -760,12 +785,25 @@ def main() -> None:
         )
 
         data_DR["weight_wjets"] = np.nan
+        data_DR["weight_wjets_up"] = np.nan
+        data_DR["weight_wjets_down"] = np.nan
+
         data_DR.loc[indices_wjets_DR, "weight_wjets"] = Wjets_weights
+        data_DR.loc[indices_wjets_DR, "weight_wjets_up"] = Wjets_weights_up
+        data_DR.loc[indices_wjets_DR, "weight_wjets_down"] = Wjets_weights_down
+
 
         data_complete["weight_wjets"] = np.nan
+        data_complete["weight_wjets_up"] = np.nan
+        data_complete["weight_wjets_down"] = np.nan
+        
         data_complete.loc[data_DR.index, "weight_wjets"] = data_DR["weight_wjets"]
+        data_complete.loc[data_DR.index, "weight_wjets_up"] = data_DR["weight_wjets_up"]
+        data_complete.loc[data_DR.index, "weight_wjets_down"] = data_DR["weight_wjets_down"]
         data_complete.reset_index(drop=True).to_feather(args.data_complete_path)
-        logger.info("Successfully inserted weight_wjets into %s", args.data_complete_path)
+        logger.info("Successfully inserted weight_wjets with up and down variation into %s", args.data_complete_path)
+
+
     else:
         logger.info("Skipping write-back to data frame/file (--write_back is False).")
 

@@ -7,6 +7,8 @@ from .DataHandling import (
     append_features,
     update_features,
     get_class_weights,
+    FeatureStore,
+    FeatureRegistry,
     )
 from .DataHandling import create_training_dataset
 from .NeuralNetworks import (
@@ -69,3 +71,5 @@ from .Plotting import (
     plot_fake_factors_grouped_c,
 )
 from .NeuralNetworks import temporary_extract_scaler_callable
+
+from .config_loader import load_config

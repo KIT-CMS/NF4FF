@@ -3,9 +3,11 @@ import numpy as np
 import random
 import logging
 import yaml
+import csv
+import json
 from classes import load_variables, load_data, create_training_dataset
 from classes import DNN, GroupedDNN, FoldCombinedDNN
-from classes import train_dnn, save_model
+from classes import train_dnn, train_dnn_new, train_dnn_squeezed_loss, save_model
 from dataclasses import dataclass
 from typing import List, Optional, Union, Tuple, Dict, Any
 import yaml
@@ -26,7 +28,7 @@ DATA_PATH = '../data/data_complete.feather'
 MASKS_PATH = 'configs/masks.yaml'
 TRAINING_VAR_PATH = 'configs/training_variables.yaml'
 NN_CONFIG_PATH = 'configs/DNN.yaml'
-CHECKPOINT_DIR = 'Training_results'
+CHECKPOINT_DIR = 'Training_results_down'
 
 
 
@@ -72,6 +74,25 @@ def _from_dict(data: dict, cls):
 
     return cls(**kwargs)
 
+
+def save_loss_history(history: List[Dict[str, Any]], output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    json_path = output_dir / "loss_history.json"
+    csv_path = output_dir / "loss_history.csv"
+
+    with open(json_path, "w") as f:
+        json.dump(history, f, indent=2)
+
+    if history:
+        fieldnames = list(history[0].keys())
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(history)
+
+    logger.info("Saved loss history to %s and %s", csv_path, json_path)
+
 @dataclass
 class ModelConfig:
     hidden_nodes: Tuple[int, ...]
@@ -103,7 +124,7 @@ class Config:
     scheduler: SchedulerConfig
 
 
-def _train_fold_model(cfg, grouping, training_var, df_sig, df_bkg, weight_column, device, checkpoint_dir, fold_label):
+def _train_fold_model(cfg, grouping, training_var, df_sig, df_bkg, weight_column, squeezing, device, checkpoint_dir, fold_label):
     train, val = create_training_dataset(
         df_sig=df_sig,
         df_bkg=df_bkg,
@@ -134,13 +155,13 @@ def _train_fold_model(cfg, grouping, training_var, df_sig, df_bkg, weight_column
         default_model=base_model,
     )
 
-    model, best_loss = train_dnn(
+    model, best_loss, history = train_dnn_squeezed_loss(
         model=model,
         train=train,
         val=val,
+        squeezing=squeezing,
         epochs=cfg.training.epochs,
         lr=cfg.training.lr,
-        loss_fn=None,
         device=device,
         checkpoint_dir=checkpoint_dir,
         scheduler_patience=cfg.scheduler.patience,
@@ -150,7 +171,10 @@ def _train_fold_model(cfg, grouping, training_var, df_sig, df_bkg, weight_column
         min_lr=cfg.scheduler.min_lr,
     )
 
-    return model
+    for row in history:
+        row["fold_label"] = fold_label
+
+    return model, history
 
 
 def main():
@@ -183,6 +207,10 @@ def main():
         )
     }
 
+    squeezing = 2.20
+    squeezing_label = f"{squeezing:.2f}"
+    logger.info(f'squeezing: {squeezing_label}')
+
     for grouping, group_label in zip([grouping_taudm, grouping_njets], ['tau_decaymode', 'njets']):
 
         logger.info(f'Group splitting: {group_label}')
@@ -194,11 +222,11 @@ def main():
             if process == 'wjets':
                 df_sig = df.data.SR_like_wjets
                 df_bkg = df.data.AR_like_wjets
-                weight_column = 'weight_wjets'
+                weight_column = 'weight_wjets_down'
             elif process == 'qcd':
                 df_sig = df.data.SR_like_qcd
                 df_bkg = df.data.AR_like_qcd
-                weight_column = 'weight_qcd'
+                weight_column = 'weight_qcd_down'
             elif process == 'ttbar':
                 df_sig = df.ttbar.SR_like_ttbar
                 df_bkg = df.ttbar.AR_like_ttbar
@@ -224,29 +252,31 @@ def main():
             )
 
             # even_model: trained on odd events, applied to even events
-            even_model = _train_fold_model(
+            even_model, even_history = _train_fold_model(
                 cfg=cfg,
                 grouping=grouping,
                 training_var=training_var,
                 df_sig=df_sig_odd,
                 df_bkg=df_bkg_odd,
                 weight_column=weight_column,
+                squeezing=squeezing,
                 device=device,
                 checkpoint_dir=CHECKPOINT_DIR,
-                fold_label='fold_odd',
+                fold_label='fold_even',
             )
 
             # odd_model: trained on even events, applied to odd events
-            odd_model = _train_fold_model(
+            odd_model, odd_history = _train_fold_model(
                 cfg=cfg,
                 grouping=grouping,
                 training_var=training_var,
                 df_sig=df_sig_even,
                 df_bkg=df_bkg_even,
                 weight_column=weight_column,
+                squeezing=squeezing,
                 device=device,
                 checkpoint_dir=CHECKPOINT_DIR,
-                fold_label='fold_even',
+                fold_label='fold_odd',
             )
 
             model = FoldCombinedDNN(
@@ -255,10 +285,14 @@ def main():
                 fold_id_name='event',
             )
 
-            base_path = Path(CHECKPOINT_DIR) / group_label / process
+            base_path = Path(CHECKPOINT_DIR) / squeezing_label / group_label / process
             save_model(even_model, base_path / 'fold_even')
             save_model(odd_model, base_path / 'fold_odd')
             save_model(model, base_path)
+
+            save_loss_history(even_history, base_path / 'fold_even')
+            save_loss_history(odd_history, base_path / 'fold_odd')
+            save_loss_history(even_history + odd_history, base_path)
 
 
 if __name__ == '__main__':

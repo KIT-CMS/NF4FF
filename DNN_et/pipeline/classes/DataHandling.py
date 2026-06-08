@@ -172,10 +172,10 @@ class ProcessView:
 
 class AnalysisDataFrame:
 
-    def __init__(self, df, manager):
-
+    def __init__(self, df, manager, resolver):
         self._df = df
         self._manager = manager
+        self._resolver = resolver
 
         self._region_cache = {}
         self._process_cache = {}
@@ -303,21 +303,10 @@ class AnalysisDataFrame:
 
     def ensure_column(self, column):
 
-        #
-        # Already present
-        #
         if column in self._df.columns:
             return
 
-        #
-        # Feature column?
-        #
-        if column in self._manager.feature_columns:
-
-            path = self._manager.feature_columns[column]
-
-            self.load_feature_file(path)
-
+        self._df[column] = self._resolver.resolve(column, self._df)
 
 def load_variables(yaml_path):
     with open(yaml_path, "r") as f:
@@ -332,7 +321,118 @@ def load_data(feather_file, config_file):
 
     manager = SelectionManager(config_file)
 
-    return AnalysisDataFrame(df, manager)
+    project_root = Path(__file__).resolve().parents[2]
+    registry = FeatureRegistry(project_root / "data" / "features" / "feature_registry.json")
+    resolver = FeatureResolver(registry)
+
+    return AnalysisDataFrame(df, manager, resolver)
+
+
+import json
+from pathlib import Path
+from collections import defaultdict
+
+
+class FeatureRegistry:
+
+    def __init__(self, path="feature_registry.json"):
+        self.path = Path(path)
+
+        if self.path.exists():
+            self.index = json.loads(self.path.read_text())
+        else:
+            self.index = {}  # column -> file
+
+    def get_file(self, column):
+        return self.index.get(column)
+
+    def register(self, columns, file_path):
+        for c in columns:
+            self.index[c] = str(file_path)
+
+    def save(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(self.index, indent=2))
+
+class FeatureStore:
+
+    def __init__(self, path, registry: FeatureRegistry):
+        self.path = Path(path)
+        self.registry = registry
+
+        if self.path.exists():
+            self.df = pd.read_feather(self.path)
+        else:
+            self.df = pd.DataFrame(columns=["event"])
+
+    def upsert(self, df):
+        df = self._normalize(df)
+
+        if self.df.empty:
+            self.df = df.copy()
+        else:
+            current = self.df.set_index("event")
+            incoming = df.set_index("event")
+
+            for col in incoming.columns:
+                if col not in current.columns:
+                    current[col] = np.nan
+
+            current.update(incoming)
+
+            missing_idx = incoming.index.difference(current.index)
+            if len(missing_idx) > 0:
+                current = pd.concat([current, incoming.loc[missing_idx]], axis=0)
+
+            self.df = current.reset_index()
+
+        self.registry.register(df.columns.drop("event"), self.path)
+
+    def write(self, df):
+        df = self._normalize(df)
+        self.df = df
+
+        self.registry.register(df.columns.drop("event"), self.path)
+
+    def save(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.df.to_feather(self.path)
+
+    def _normalize(self, df):
+        return df.groupby("event", as_index=False).last()
+
+class FeatureResolver:
+
+    def __init__(self, registry: FeatureRegistry):
+        self.registry = registry
+        self.file_cache = {}   # file → dataframe
+        self.col_cache = {}    # column → series
+
+    def resolve(self, column, base_df):
+        if column in base_df.columns:
+            return base_df[column]
+
+        if column in self.col_cache:
+            return self.col_cache[column]
+
+        file = self.registry.get_file(column)
+
+        if file is None:
+            raise KeyError(f"Unknown feature: {column}")
+
+        if file not in self.file_cache:
+            self.file_cache[file] = pd.read_feather(file).set_index("event")
+
+        df = self.file_cache[file]
+
+        if column not in df.columns:
+            raise KeyError(f"{column} not in {file}")
+
+        series = df[column]
+
+        self.col_cache[column] = series
+
+        return series
 
 
 def write_features(

@@ -1,0 +1,24 @@
+qcd_reweighting:
+  use_grouping: true
+
+  default_grouping:
+    index_name: tau_decaymode_2
+    groups:
+      - [0, 1]
+      - [1]
+      - [10]
+      - [11]
+
+  groupings:
+    - index_name: tau_decaymode_2
+      groups:
+        - [0, 1]
+        - [1]
+        - [10]
+        - [11]
+
+    - index_name: njets
+      groups:
+        - [0]
+        - [1]
+        - [2, 100]

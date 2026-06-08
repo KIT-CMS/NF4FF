@@ -35,6 +35,7 @@ masks:
     - extraelec_veto < 0.5
     - mt_1 < 70
     - q_1 * q_2 > 0
+
   DR_wjets:
     - id_tau_vsJet_VLoose_2 > 0.5
     - nbtag == 0
@@ -45,6 +46,16 @@ masks:
     - mt_1 > 70
     - q_1 * q_2 < 0
 
+  DR_wjets_no_signs:
+    - id_tau_vsJet_VLoose_2 > 0.5
+    - nbtag == 0
+    - iso_1 >= 0.0
+    - iso_1 < 0.15
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+    - mt_1 > 70
+
+
   DR_qcd:
     - id_tau_vsJet_VLoose_2 > 0.5
     - q_1 * q_2 > 0
@@ -53,6 +64,20 @@ masks:
     - extramuon_veto < 0.5
     - extraelec_veto < 0.5
     - mt_1 < 50
+
+  DR_qcd_no_signs:
+    - id_tau_vsJet_VLoose_2 > 0.5
+    - iso_1 > 0.02
+    - iso_1 < 0.15
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+    - mt_1 < 50
+
+  DR_ttbar:
+    - id_tau_vsJet_VLoose_2 > 0.5
+    - njets >= 2
+    - nbtag >= 1
+    - extramuon_veto > 0.5 | extraelec_veto > 0.5
   
   AR-like:
     - id_tau_vsJet_VLoose_2 > 0.5
@@ -94,6 +119,33 @@ regions:
     - preselection
     - DR_qcd
     - AR-like
+    
+  SR_like_ttbar:
+    - preselection
+    - DR_ttbar
+    - SR-like
+
+  AR_like_ttbar:
+    - preselection
+    - DR_ttbar
+    - AR-like
+
+  DR_wjets:
+    - DR_wjets
+    - preselection
+
+  DR_wjets_without_signs:
+    - DR_wjets_no_signs
+    - preselection
+
+  DR_qcd:
+    - DR_qcd
+    - preselection
+
+  DR_qcd_without_signs:
+    - DR_qcd_no_signs
+    - preselection
+
 
 processes:
   data: process == 0
@@ -112,3 +164,73 @@ processes:
   ST_L: process == 7
   ttbar_J: process == 8
   ttbar_L: process == 9
+
+features:
+  ff_dnn: 
+    path: "/work/mmoser/NF4FF/data/features/fake_factors.feather"
+    columns:
+      - ff_dnn_wjets
+      - ff_dnn_qcd
+      - ff_dnn_ttbar
+      - ff_classic
+      - ff_dnn
+  fake_factor_unc: 
+    path: "/work/mmoser/NF4FF/data/features/fake_factor_unc.feather"
+    columns:
+      - ff_wjets_mean
+      - ff_wjets_std
+      - ff_qcd_mean
+      - ff_qcd_std
+      - ff_ttbar_mean
+      - ff_ttbar_std
+      - ff_wjets_mean_dmv
+      - ff_wjets_std_dmv
+      - ff_qcd_mean_dmv
+      - ff_qcd_std_dmv
+      - ff_ttbar_mean_dmv
+      - ff_ttbar_std_dmv
+  fake_factor_unc_diff_train_size:
+    path: "../../data/features/fake_factor_unc_diff_train_size.feather"
+    columns:
+
+      - ff_wjets_mean
+      - ff_wjets_std
+      - ff_wjets_mean_half
+      - ff_wjets_std_half
+      - ff_wjets_mean_quarter
+      - ff_wjets_std_quarter
+  ff_dnn_clipping:
+    path: "../../data/features/fake_factors_clipping.feather"
+    columns:
+      - ff_dnn_wjets_c
+      - ff_dnn_qcd_c
+      - ff_dnn_ttbar_c
+      - ff_dnn_c
+  ff_dnn_clipping_0:
+    path: "/work/mmoser/NF4FF/data/features/fake_factors_0.feather"
+    columns:
+      - ff_dnn_wjets_0
+      - ff_dnn_qcd_0
+      - ff_dnn_ttbar_0
+      - ff_dnn_0
+  ff_dnn_clipping_90:
+    path: "/work/mmoser/NF4FF/data/features/fake_factors_90.feather"
+    columns:
+      - ff_dnn_wjets_90
+      - ff_dnn_qcd_90
+      - ff_dnn_ttbar_90
+      - ff_dnn_90
+  ff_dnn_clipping_95:
+    path: "/work/mmoser/NF4FF/data/features/fake_factors_95.feather"
+    columns:
+      - ff_dnn_wjets_95
+      - ff_dnn_qcd_95
+      - ff_dnn_ttbar_95
+      - ff_dnn_95
+  ff_dnn_clipping_99:
+    path: "/work/mmoser/NF4FF/data/features/fake_factors_99.feather"
+    columns:
+      - ff_dnn_wjets_99
+      - ff_dnn_qcd_99
+      - ff_dnn_ttbar_99
+      - ff_dnn_99

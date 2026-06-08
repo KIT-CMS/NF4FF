@@ -665,13 +665,38 @@ def main() -> None:
 
     bin_widths = np.diff(bins)
 
-    hist_nFF, _ = np.histogram(probs_nFF,weights=weights_nFF, bins= bins)
 
+    hist_nFF, _ = np.histogram(probs_nFF,weights=weights_nFF, bins= bins)
+    hist_qcd, _ = np.histogram(probs_qcd, weights = weights_qcd, bins = bins)
+
+    var_nFF, _ = np.histogram(probs_nFF, weights=weights_nFF**2, bins=bins)
+    var_qcd, _ = np.histogram(probs_qcd, weights=weights_qcd**2, bins=bins)
+
+    sub_nom = hist_nFF + hist_qcd
+    err_sub = np.sqrt(var_nFF + var_qcd)
+
+    sub_plus = np.clip(sub_nom + err_sub, 0.0, None)
+    sub_minus = np.clip(sub_nom - err_sub, 0.0, None) 
+    
     QCD_weights = _calculate_scaled_event_weights_generalized(
         event_values = probs_data,
         event_original_weights = np.ones_like(probs_data),
         bins = bins,
-        total_subtraction_per_bin=hist_nFF,
+        total_subtraction_per_bin=sub_nom,
+    )
+
+    QCD_weights_up = _calculate_scaled_event_weights_generalized(
+        event_values = probs_data,
+        event_original_weights = np.ones_like(probs_data),
+        bins = bins,
+        total_subtraction_per_bin=sub_minus,
+    )
+
+    QCD_weights_down = _calculate_scaled_event_weights_generalized(
+        event_values = probs_data,
+        event_original_weights = np.ones_like(probs_data),
+        bins = bins,
+        total_subtraction_per_bin=sub_plus,
     )
 
 
@@ -694,18 +719,31 @@ def main() -> None:
     data_DR.loc[indices_qcd_DR, "weight_qcd"] = QCD_weights
 
 
+
     if args.write_back:
-        # Insert qcd_weights into the FULL data_complete
+
+
+        data_DR["weight_qcd"] = np.nan
+        data_DR["weight_qcd_up"] = np.nan
+        data_DR["weight_qcd_down"] = np.nan
+
+        data_DR.loc[indices_qcd_DR, "weight_qcd"] = QCD_weights
+        data_DR.loc[indices_qcd_DR, "weight_qcd_up"] = QCD_weights_up
+        data_DR.loc[indices_qcd_DR, "weight_qcd_down"] = QCD_weights_down
+
         data_complete["weight_qcd"] = np.nan
-
-        # Copy values from data_DR into their original row positions
+        data_complete["weight_qcd_up"] = np.nan
+        data_complete["weight_qcd_down"] = np.nan
+        
         data_complete.loc[data_DR.index, "weight_qcd"] = data_DR["weight_qcd"]
-
-        # Save updated file
+        data_complete.loc[data_DR.index, "weight_qcd_up"] = data_DR["weight_qcd_up"]
+        data_complete.loc[data_DR.index, "weight_qcd_down"] = data_DR["weight_qcd_down"]
         data_complete.reset_index(drop=True).to_feather(args.data_complete_path)
-        logger.info("Successfully inserted weight_qcd into full data_complete.feather")
+        logger.info("Successfully inserted weight_qcdwith up and down variation into %s", args.data_complete_path)
+
+
     else:
-        logger.info("Skipped writing weight_qcd back to file (write_back=False).")
+        logger.info("Skipping write-back to data frame/file (--write_back is False).")
 
 
 
