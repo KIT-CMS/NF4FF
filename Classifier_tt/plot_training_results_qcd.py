@@ -16,6 +16,7 @@ import torch as t
 import torch.nn as nn
 from torch.utils.data import TensorDataset
 from typing import Any, Dict, List, Literal, Tuple, Union
+from collections.abc import Iterable
 
 import classes.helper as helper
 from classes.helper import _same_sign_opposite_sign_split, _collection
@@ -364,15 +365,19 @@ def get_my_other_data(df, training_var):
 # ----- plotting -----
 
 def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
-    ax[0].set_title(
-        r"$\tau_h\tau_h$",
+    if isinstance(ax, Iterable):
+        ax = ax[0]
+    ax.set_title(
+        r"$\mathrm{\tau_h\tau_h}$",
         fontsize=20,
         loc="left",
         fontproperties="Tex Gyre Heros"
     )
 
 def CMS_NJETS_TITLE(ax, *args, **kwargs):
-    ax[0].set_title(
+    if isinstance(ax, Iterable):
+        ax = ax[0]
+    ax.set_title(
         r"$N_{jets}$ inclusive",
         fontsize=20,
         loc="center",
@@ -381,7 +386,9 @@ def CMS_NJETS_TITLE(ax, *args, **kwargs):
 
 
 def CMS_LUMI_TITLE(ax, *args, **kwargs):
-    ax[0].set_title(
+    if isinstance(ax, Iterable):
+        ax = ax[0]
+    ax.set_title(
         "59.8 $fb^{-1}$ (2018, 13 TeV)",
         fontsize=20,
         loc="right",
@@ -390,14 +397,16 @@ def CMS_LUMI_TITLE(ax, *args, **kwargs):
 
 
 def CMS_LABEL(ax, *args, **kwargs):
-    ax[0].text(
+    if isinstance(ax, Iterable):
+        ax = ax[0]
+    ax.text(
         0.025, 0.95,
         "Private work (CMS data/simulation)",
         fontsize=20,
         verticalalignment='top',
         fontproperties="Tex Gyre Heros:italic",
         bbox=dict(facecolor="white", alpha=0, edgecolor="white", boxstyle="round,pad=0.5"),
-        transform=ax[0].transAxes
+        transform=ax.transAxes
     )
 
 
@@ -830,6 +839,30 @@ def main() -> None:
         fig.savefig(os.path.join(path_red, 'results_data_reduced.png'))
         fig.savefig(os.path.join(path_red, 'results_data_reduced.pdf'))
 
+
+        # ------ plot QCD weights -----
+        logger.info("Plotting QCD")
+
+        fig, ax = plt.subplots(1,1, figsize = (12,10))
+        
+
+        CMS_CHANNEL_TITLE(ax)
+        CMS_LUMI_TITLE(ax)
+        CMS_LABEL(ax)
+
+        n = ax.hist(weights_qcd, bins = 30, color ='#b9ac70', label = 'QCD')
+        ax.set_xlabel('weights')
+        ax.set_ylabel('events')
+        ax.set_yscale('log')
+        ax.legend(loc="upper right", fontsize=20)
+        ax.set_ylim(top=3*np.max(n[0]))
+        #adjust_ylim_for_legend(ax[0])
+
+
+        path_red = os.path.join(cfg["plots"][args.loc], f'{args.embedding}/')
+        os.makedirs(path_red, exist_ok=True)
+        fig.savefig(os.path.join(path_red, 'results_qcd_weights.png'))
+        fig.savefig(os.path.join(path_red, 'results_qcd_weights.pdf'))
 
         # ------ plot training results -----
         logger.info("Plotting training results")

@@ -65,7 +65,7 @@ class Args(Tap):
 
     taus = 1 #[1, 2] #[1, 2, 12] # list of tau fakes
     embedding: Literal["embedding", "no_embedding"] = "embedding"
-    var = "variables_61"
+    var = "variables_7"
 
 
 # Runtime context (initialized in `initialize_runtime_context()` and consumed by plotting functions)
