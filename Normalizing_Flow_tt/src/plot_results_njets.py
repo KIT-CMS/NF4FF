@@ -54,12 +54,12 @@ class Args(Tap):
     classifier_training_tag: str = ''  # Optional classifier training folder suffix after 'training_'. Empty -> pick most recent.
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
     plot_training_diagnostics: bool = True   # Plot training loss / learning-rate / time-per-epoch curves.
-    plot_nf_sampling: bool = False           # Plot NF-sampled vs data histograms in training variables.
+    plot_nf_sampling: bool = True           # Plot NF-sampled vs data histograms in training variables.
     plot_ff_results: bool = True             # Plot fake-factor comparison stacks for each njets category.
-    plot_ff_values: bool = False              # Plot FF values in histogram
-    plot_ar_data_with_clipping: bool = False  # Plot AR data with both kept and excluded events (by clipping mask).
-    plot_taylor_coefficients: bool = False   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
-    plot_complete_variables: bool = False
+    plot_ff_values: bool = True              # Plot FF values in histogram
+    plot_ar_data_with_clipping: bool = True  # Plot AR data with both kept and excluded events (by clipping mask).
+    plot_taylor_coefficients: bool = True   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
+    plot_complete_variables: bool = True
     ratio_ylim_min: float = 0.5  # Lower y-limit for ratio panels.
     ratio_ylim_max: float = 1.5  # Upper y-limit for ratio panels.
 
@@ -2371,6 +2371,7 @@ def run_plots_for_njets_category(category_name, njets_title):
         data_embed_AR_OS_tau1 = data_AR_tau1[(data_AR_tau1.process == process_map["embedding"])]
         data_ST_AR_OS_tau1 = data_AR_tau1[(data_AR_tau1.process == process_map["ST_J"]) | (data_AR_tau1.process == process_map["ST_L"])]
         data_ttbar_AR_OS_tau1 = data_AR_tau1[(data_AR_tau1.process == process_map["ttbar_J"]) | (data_AR_tau1.process == process_map["ttbar_L"])]
+        data_wjets_AR_OS_tau1 = data_AR_tau1[(data_AR_tau1.process == process_map["Wjets"])]
 
         # ----- AR OS tau 2-----
         data_diboson_AR_OS_tau2 = data_AR_tau2[((data_AR_tau2.process == process_map["diboson_J"]) | (data_AR_tau2.process == process_map["diboson_L"]))]
@@ -2378,13 +2379,15 @@ def run_plots_for_njets_category(category_name, njets_title):
         data_embed_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == process_map["embedding"])]
         data_ST_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == process_map["ST_J"]) | (data_AR_tau2.process == process_map["ST_L"])]
         data_ttbar_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == process_map["ttbar_J"]) | (data_AR_tau2.process == process_map["ttbar_L"])]
-        
+        data_wjets_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == process_map["Wjets"])]
+
         # ----- FF -----
         data_diboson_AR_OS_nf_tau1, data_diboson_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_diboson_AR_OS_tau1, data_diboson_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
         data_DY_AR_OS_nf_tau1, data_DY_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_DY_AR_OS_tau1, data_DY_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
         data_embed_AR_OS_nf_tau1, data_embed_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_embed_AR_OS_tau1, data_embed_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
         data_ST_AR_OS_nf_tau1, data_ST_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_ST_AR_OS_tau1, data_ST_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
         data_ttbar_AR_OS_nf_tau1, data_ttbar_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_ttbar_AR_OS_tau1, data_ttbar_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
+        data_wjets_AR_OS_nf_tau1, data_wjets_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_wjets_AR_OS_tau1, data_wjets_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
 
         # ----- SR OS -----
         data_events = data_SR_OS[(data_SR_OS.process == process_map["data"])]
@@ -2393,7 +2396,7 @@ def run_plots_for_njets_category(category_name, njets_title):
         data_embed_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["embedding"])]
         data_ST_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["ST_J"]) | (data_SR_OS.process == process_map["ST_L"])]
         data_ttbar_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["ttbar_J"]) | (data_SR_OS.process == process_map["ttbar_L"])]
-
+        data_wjets_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["Wjets"])]
 
         total_variables = len(list_variables)
         for index, (var, bins, xlabel) in enumerate(zip(list_variables, list_bins, list_xlabels), start=1):
@@ -2446,7 +2449,9 @@ def run_plots_for_njets_category(category_name, njets_title):
             counts_ff_ST2_tau1, _ = np.histogram(data_ST_AR_OS_nf_tau1[var], weights=(data_ST_AR_OS_nf_tau1.weight * data_ST_AR_OS_nf_tau1['ff_nf_tau1'])**2, bins=bins)
             counts_ff_ttbar_tau1, _ = np.histogram(data_ttbar_AR_OS_nf_tau1[var], weights=data_ttbar_AR_OS_nf_tau1.weight * data_ttbar_AR_OS_nf_tau1['ff_nf_tau1'], bins=bins)
             counts_ff_ttbar2_tau1, _ = np.histogram(data_ttbar_AR_OS_nf_tau1[var], weights=(data_ttbar_AR_OS_nf_tau1.weight * data_ttbar_AR_OS_nf_tau1['ff_nf_tau1'])**2, bins=bins)
-            counts_FF_tau1 = counts_ff_data_tau1 - counts_ff_diboson_tau1 - counts_ff_DY_tau1 - counts_ff_embed_tau1 - counts_ff_ST_tau1 - counts_ff_ttbar_tau1
+            counts_ff_wjets_tau1, _ = np.histogram(data_wjets_AR_OS_nf_tau1[var], weights=data_wjets_AR_OS_nf_tau1.weight * data_wjets_AR_OS_nf_tau1['ff_nf_tau1'], bins=bins)
+            counts_ff_wjets2_tau1, _ = np.histogram(data_wjets_AR_OS_nf_tau1[var], weights=(data_wjets_AR_OS_nf_tau1.weight * data_wjets_AR_OS_nf_tau1['ff_nf_tau1'])**2, bins=bins)
+            counts_FF_tau1 = counts_ff_data_tau1 - counts_ff_diboson_tau1 - counts_ff_DY_tau1 - counts_ff_embed_tau1 - counts_ff_ST_tau1 - counts_ff_ttbar_tau1 - counts_ff_wjets_tau1
 
             # ----- counts FF tau2 -----
             counts_ff_data_tau2, bin_edges = np.histogram(data_AR_OS_nf_tau2[var], weights=data_AR_OS_nf_tau2['ff_nf_tau2'], bins=bins)
@@ -2462,7 +2467,9 @@ def run_plots_for_njets_category(category_name, njets_title):
             counts_ff_ST2_tau2, _ = np.histogram(data_ST_AR_OS_nf_tau2[var], weights=(data_ST_AR_OS_nf_tau2.weight * data_ST_AR_OS_nf_tau2['ff_nf_tau2'])**2, bins=bins)
             counts_ff_ttbar_tau2, _ = np.histogram(data_ttbar_AR_OS_nf_tau2[var], weights=data_ttbar_AR_OS_nf_tau2.weight * data_ttbar_AR_OS_nf_tau2['ff_nf_tau2'], bins=bins)
             counts_ff_ttbar2_tau2, _ = np.histogram(data_ttbar_AR_OS_nf_tau2[var], weights=(data_ttbar_AR_OS_nf_tau2.weight * data_ttbar_AR_OS_nf_tau2['ff_nf_tau2'])**2, bins=bins)
-            counts_FF_tau2 = counts_ff_data_tau2 - counts_ff_diboson_tau2 - counts_ff_DY_tau2 - counts_ff_embed_tau2 - counts_ff_ST_tau2 - counts_ff_ttbar_tau2
+            counts_ff_wjets_tau2, _ = np.histogram(data_wjets_AR_OS_nf_tau2[var], weights=data_wjets_AR_OS_nf_tau2.weight * data_wjets_AR_OS_nf_tau2['ff_nf_tau2'], bins=bins)
+            counts_ff_wjets2_tau2, _ = np.histogram(data_wjets_AR_OS_nf_tau2[var], weights=(data_wjets_AR_OS_nf_tau2.weight * data_wjets_AR_OS_nf_tau2['ff_nf_tau2'])**2, bins=bins)
+            counts_FF_tau2 = counts_ff_data_tau2 - counts_ff_diboson_tau2 - counts_ff_DY_tau2 - counts_ff_embed_tau2 - counts_ff_ST_tau2 - counts_ff_ttbar_tau2 -counts_ff_wjets_tau2
 
             # ----- total FF, with factor 0.5 assuming both FF are weighted equally -----
             
@@ -2482,6 +2489,8 @@ def run_plots_for_njets_category(category_name, njets_title):
             counts_ST2, _ = np.histogram(data_ST_SR_OS[var], weights=data_ST_SR_OS.weight**2, bins=bins)
             counts_ttbar, _ = np.histogram(data_ttbar_SR_OS[var], weights=data_ttbar_SR_OS.weight, bins=bins)
             counts_ttbar2, _ = np.histogram(data_ttbar_SR_OS[var], weights=data_ttbar_SR_OS.weight**2, bins=bins)
+            counts_wjets, _ = np.histogram(data_wjets_SR_OS[var], weights=data_wjets_SR_OS.weight, bins=bins)
+            counts_wjets2, _ = np.histogram(data_wjets_SR_OS[var], weights=data_wjets_SR_OS.weight**2, bins=bins)
             
             counts_data, _ = np.histogram(data_events[var], bins=bins)
 
@@ -2510,12 +2519,13 @@ def run_plots_for_njets_category(category_name, njets_title):
                 counts_ff_ST2_tau1 + counts_ff_ST2_tau2 +
                 counts_ff_DY2_tau1 + counts_ff_DY2_tau2 +
                 counts_ff_embed2_tau1 + counts_ff_embed2_tau2 +
-                counts_diboson2 + counts_ttbar2 + counts_DY2 + counts_ST2 + counts_embed2
+                counts_ff_wjets2_tau1 + counts_ff_wjets2_tau2 +
+                counts_diboson2 + counts_ttbar2 + counts_DY2 + counts_ST2 + counts_embed2 + counts_wjets2
             )
 
             den = (
                 counts_FF + counts_diboson + 
-                counts_ttbar + counts_ST + counts_DY + counts_embed
+                counts_ttbar + counts_ST + counts_DY + counts_embed + counts_wjets
             )
 
             y_error_stat = np.divide(num, den, out=np.zeros_like(num), where=den != 0)
@@ -2525,6 +2535,7 @@ def run_plots_for_njets_category(category_name, njets_title):
                 (counts_ttbar, '#832db6', r'$t\bar{t} \to \tau$'),
                 (counts_ST, "#717581", r"Single t"),
                 (counts_DY, '#3f90da', r'$Z \to \ell \ell$'),
+                (counts_wjets, '#e76300', r"W+jets"),
                 (counts_embed, '#ffa90e', r'$\tau$ embedded'),
                 (counts_FF, "#a96b59", r'Jet $\rightarrow \tau_h$'),
             ]
@@ -2573,18 +2584,21 @@ def run_plots_for_njets_category(category_name, njets_title):
         data_DY_AR_OS_tau1 = data_AR_tau1[(data_AR_tau1.process == process_map["DYjets_J"]) | (data_AR_tau1.process == process_map["DYjets_L"]) | (data_AR_tau1.process == process_map["DYjets_T"])]
         data_ST_AR_OS_tau1 = data_AR_tau1[(data_AR_tau1.process == process_map["ST_J"]) | (data_AR_tau1.process == process_map["ST_L"]) | (data_AR_tau1.process == process_map["ST_T"])]
         data_ttbar_AR_OS_tau1 = data_AR_tau1[(data_AR_tau1.process == process_map["ttbar_J"]) | (data_AR_tau1.process == process_map["ttbar_L"]) | (data_AR_tau1.process == process_map["ttbar_T"])]
+        data_wjets_AR_OS_tau1 = data_AR_tau1[(data_AR_tau1.process == process_map["Wjets"])]
 
         # ----- AR OS tau 2-----
         data_diboson_AR_OS_tau2 = data_AR_tau2[((data_AR_tau2.process == process_map["diboson_J"]) | (data_AR_tau2.process == process_map["diboson_L"]) | (data_AR_tau2.process == process_map["diboson_T"]))]
         data_DY_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == process_map["DYjets_J"]) | (data_AR_tau2.process == process_map["DYjets_L"]) | (data_AR_tau2.process == process_map["DYjets_T"])]
         data_ST_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == process_map["ST_J"]) | (data_AR_tau2.process == process_map["ST_L"]) | (data_AR_tau2.process == process_map["ST_T"])]
         data_ttbar_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == process_map["ttbar_J"]) | (data_AR_tau2.process == process_map["ttbar_L"]) | (data_AR_tau2.process == process_map["ttbar_T"])]
-        
+        data_wjets_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == process_map["Wjets"])]
+
         # ----- FF -----
         data_diboson_AR_OS_nf_tau1, data_diboson_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_diboson_AR_OS_tau1, data_diboson_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
         data_DY_AR_OS_nf_tau1, data_DY_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_DY_AR_OS_tau1, data_DY_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
         data_ST_AR_OS_nf_tau1, data_ST_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_ST_AR_OS_tau1, data_ST_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
         data_ttbar_AR_OS_nf_tau1, data_ttbar_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_ttbar_AR_OS_tau1, data_ttbar_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
+        data_wjets_AR_OS_nf_tau1, data_wjets_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_wjets_AR_OS_tau1, data_wjets_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
 
         # ----- SR OS -----
         data_events = data_SR_OS[(data_SR_OS.process == process_map["data"])]
@@ -2592,7 +2606,7 @@ def run_plots_for_njets_category(category_name, njets_title):
         data_DY_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["DYjets_J"]) | (data_SR_OS.process == process_map["DYjets_L"]) | (data_SR_OS.process == process_map["DYjets_T"])]
         data_ST_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["ST_J"]) | (data_SR_OS.process == process_map["ST_L"]) | (data_SR_OS.process == process_map["ST_T"])]
         data_ttbar_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["ttbar_J"]) | (data_SR_OS.process == process_map["ttbar_L"]) | (data_SR_OS.process == process_map["ttbar_T"])]
-
+        data_wjets_SR_OS = data_SR_OS[(data_SR_OS.process == process_map["Wjets"])]
     
         total_variables = len(list_variables)
         for index, (var, bins, xlabel) in enumerate(zip(list_variables, list_bins, list_xlabels), start=1):
@@ -2644,7 +2658,9 @@ def run_plots_for_njets_category(category_name, njets_title):
             counts_ff_ST2_tau1, _ = np.histogram(data_ST_AR_OS_nf_tau1[var], weights=(data_ST_AR_OS_nf_tau1.weight * data_ST_AR_OS_nf_tau1['ff_nf_tau1'])**2, bins=bins)
             counts_ff_ttbar_tau1, _ = np.histogram(data_ttbar_AR_OS_nf_tau1[var], weights=data_ttbar_AR_OS_nf_tau1.weight * data_ttbar_AR_OS_nf_tau1['ff_nf_tau1'], bins=bins)
             counts_ff_ttbar2_tau1, _ = np.histogram(data_ttbar_AR_OS_nf_tau1[var], weights=(data_ttbar_AR_OS_nf_tau1.weight * data_ttbar_AR_OS_nf_tau1['ff_nf_tau1'])**2, bins=bins)
-            counts_FF_tau1 = counts_ff_data_tau1 - counts_ff_diboson_tau1 - counts_ff_DY_tau1 - counts_ff_ST_tau1 - counts_ff_ttbar_tau1
+            counts_ff_wjets_tau1, _ = np.histogram(data_wjets_AR_OS_nf_tau1[var], weights=data_wjets_AR_OS_nf_tau1.weight * data_wjets_AR_OS_nf_tau1['ff_nf_tau1'], bins=bins)
+            counts_ff_wjets2_tau1, _ = np.histogram(data_wjets_AR_OS_nf_tau1[var], weights=(data_wjets_AR_OS_nf_tau1.weight * data_wjets_AR_OS_nf_tau1['ff_nf_tau1'])**2, bins=bins)
+            counts_FF_tau1 = counts_ff_data_tau1 - counts_ff_diboson_tau1 - counts_ff_DY_tau1 - counts_ff_ST_tau1 - counts_ff_ttbar_tau1 - counts_ff_wjets_tau1
 
             # ----- counts FF tau2 -----
             counts_ff_data_tau2, bin_edges = np.histogram(data_AR_OS_nf_tau2[var], weights=data_AR_OS_nf_tau2['ff_nf_tau2'], bins=bins)
@@ -2658,7 +2674,9 @@ def run_plots_for_njets_category(category_name, njets_title):
             counts_ff_ST2_tau2, _ = np.histogram(data_ST_AR_OS_nf_tau2[var], weights=(data_ST_AR_OS_nf_tau2.weight * data_ST_AR_OS_nf_tau2['ff_nf_tau2'])**2, bins=bins)
             counts_ff_ttbar_tau2, _ = np.histogram(data_ttbar_AR_OS_nf_tau2[var], weights=data_ttbar_AR_OS_nf_tau2.weight * data_ttbar_AR_OS_nf_tau2['ff_nf_tau2'], bins=bins)
             counts_ff_ttbar2_tau2, _ = np.histogram(data_ttbar_AR_OS_nf_tau2[var], weights=(data_ttbar_AR_OS_nf_tau2.weight * data_ttbar_AR_OS_nf_tau2['ff_nf_tau2'])**2, bins=bins)
-            counts_FF_tau2 = counts_ff_data_tau2 - counts_ff_diboson_tau2 - counts_ff_DY_tau2 - counts_ff_ST_tau2 - counts_ff_ttbar_tau2
+            counts_ff_wjets_tau2, _ = np.histogram(data_wjets_AR_OS_nf_tau2[var], weights=data_wjets_AR_OS_nf_tau2.weight * data_wjets_AR_OS_nf_tau2['ff_nf_tau2'], bins=bins)
+            counts_ff_wjets2_tau2, _ = np.histogram(data_wjets_AR_OS_nf_tau2[var], weights=(data_wjets_AR_OS_nf_tau2.weight * data_wjets_AR_OS_nf_tau2['ff_nf_tau2'])**2, bins=bins)
+            counts_FF_tau2 = counts_ff_data_tau2 - counts_ff_diboson_tau2 - counts_ff_DY_tau2 - counts_ff_ST_tau2 - counts_ff_ttbar_tau2 - counts_ff_wjets_tau2
 
             # ----- total FF, with factor 0.5 assuming both FF are weighted equally -----
             counts_FF = 0.5*(counts_FF_tau1 + counts_FF_tau2)
@@ -2672,6 +2690,8 @@ def run_plots_for_njets_category(category_name, njets_title):
             counts_ST2, _ = np.histogram(data_ST_SR_OS[var], weights=data_ST_SR_OS.weight**2, bins=bins)
             counts_ttbar, _ = np.histogram(data_ttbar_SR_OS[var], weights=data_ttbar_SR_OS.weight, bins=bins)
             counts_ttbar2, _ = np.histogram(data_ttbar_SR_OS[var], weights=data_ttbar_SR_OS.weight**2, bins=bins)
+            counts_wjets, _ = np.histogram(data_wjets_SR_OS[var], weights=data_wjets_SR_OS.weight, bins=bins)
+            counts_wjets2, _ = np.histogram(data_wjets_SR_OS[var], weights=data_wjets_SR_OS.weight**2, bins=bins)
             
             counts_data, _ = np.histogram(data_events[var], bins=bins)
 
@@ -2699,12 +2719,13 @@ def run_plots_for_njets_category(category_name, njets_title):
                 counts_ff_ttbar2_tau1 + counts_ff_ttbar2_tau2 +
                 counts_ff_ST2_tau1 + counts_ff_ST2_tau2 +
                 counts_ff_DY2_tau1 + counts_ff_DY2_tau2 +
-                counts_diboson2 + counts_ttbar2 + counts_DY2 + counts_ST2
+                counts_ff_wjets2_tau1 + counts_ff_wjets2_tau2 +
+                counts_diboson2 + counts_ttbar2 + counts_DY2 + counts_ST2 + counts_wjets2
             )
 
             den = (
                 counts_FF + counts_diboson + 
-                counts_ttbar + counts_ST + counts_DY
+                counts_ttbar + counts_ST + counts_DY + counts_wjets
             )
 
             y_error_stat = np.divide(num, den, out=np.zeros_like(num), where=den != 0)
@@ -2714,6 +2735,7 @@ def run_plots_for_njets_category(category_name, njets_title):
                 (counts_diboson, "#94a4a2", 'Diboson'),
                 (counts_ttbar, '#832db6', r'$t\bar{t} \to \tau$'),
                 (counts_ST, "#717581", r"Single t"),
+                (counts_wjets, '#e76300', r"W+jets"),
                 (counts_DY, '#3f90da', r'$Z \to \ell \ell$'),
                 (counts_FF, "#a96b59", r'Jet $\rightarrow \tau_h$'),
             ]
