@@ -30,8 +30,8 @@ input_dir:
     present: /ceph/tapp/TauFF/smhtt_ul/2018/2026_04_14/preselection/2018/tt/
     remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/ceph/tapp/TauFF/smhtt_ul/2018/2026_04_14/preselection/2018/tt/
   embedding:
-    present: /ceph/tapp/TauFF/smhtt_ul/2018/20260602_FF/preselection/2018/tt/
-    remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/ceph/tapp/TauFF/smhtt_ul/2018/20260602_FF/preselection/2018/tt/
+    present: /ceph/tapp/TauFF/smhtt_ul/2018/20260609_FF/preselection/2018/tt/ #02: normal config 09: changed "added"
+    remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/ceph/tapp/TauFF/smhtt_ul/2018/20260609_FF/preselection/2018/tt/
 
 
 output_dir:

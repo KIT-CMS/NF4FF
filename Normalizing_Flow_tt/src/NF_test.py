@@ -1,31 +1,26 @@
-'''
-trains normalizing flows with three modes
-'''
-
-from dataclasses import dataclass
-import hashlib
 import logging
-from pathlib import Path
 import random
-import re
 import time
+import hashlib
+import re
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Literal
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from tap import Tap
 import torch as t
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
 import yaml
+from tap import Tap
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, TensorDataset
 
-from classes.Collection import get_my_data_qcd, load_config
+from classes.Collection import get_my_data_qcd, get_my_data_wjets
 from classes.Dataclasses import RealNVP_config
 from classes.NeuralNetworks import ConditionalRealNVP, GroupedNFRouter, RealNVP
-from classes.Logging import LogContext, setup_logging
-
+from CustomLogging import LogContext, setup_logging
+from classes.Collection import MaskManager
 
 SEED = 42
 
@@ -35,49 +30,37 @@ np.random.seed(SEED)
 random.seed(SEED)
 t.set_num_threads(8)
 
-# ----- path setup -----
+with open('../configs/training_variables.yaml', 'r') as f:
+    variables = yaml.safe_load(f)['variables']
 
-cfg_path = load_config('/work/tapp/TauFF/NF4FF/Normalizing_Flow_tt/configs/config_path.yaml')
+logger = setup_logging(logger=logging.getLogger(__name__))
+log = LogContext(logger)
 
-# ----- global training parameters -----
-PATIENCE = 50
+PATIENCE = 30
 
-# ----- how to handle njets -----
-TRAINING_MODEL_GROUPED = 'grouped_njets_split' #train three flows -> njet=0, njet=1, njet>=2; input: variables only, but separate density for each njets category
-TRAINING_MODEL_SINGLE = 'single_nf' # train one flow -> njet inclusive
-TRAINING_MODEL_CONDITIONAL = 'conditional_nf' # train one flow -> input: [njets]+variables, but density only over variables
+TRAINING_MODEL_GROUPED = 'grouped_njets_split'
+TRAINING_MODEL_SINGLE = 'single_nf'
+TRAINING_MODEL_CONDITIONAL = 'conditional_nf'
 
-# ----- directory names for different training modes -----
 MODE_DIR_BY_TRAINING_MODEL = {
     TRAINING_MODEL_GROUPED: 'split_njets_0_1_ge2',
     TRAINING_MODEL_SINGLE: 'no_njets_split',
     TRAINING_MODEL_CONDITIONAL: 'conditional_njets_input',
 }
 
+masks = MaskManager('configs/masks.yaml')
 
-# ----- used taining parameters
+
 class Args(Tap):
 
     split_njets: bool = False  # Deprecated compatibility flag; maps to grouped mode when used alone.
+    training_model: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = TRAINING_MODEL_CONDITIONAL  # Training mode: grouped split, single inclusive NF, or conditional NF with njets input.
+    output_root_base: str = 'Training_results_new'  # Base directory where training folders are written.
     test_size: float = 0.25  # Validation fraction for the train/validation split.
     random_state: int = SEED  # Random seed used for train/validation splitting.
 
-    training_model: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = TRAINING_MODEL_CONDITIONAL  # Training mode: grouped split, single inclusive NF, or conditional NF with njets input.
-    taus = [1, 2] #[1, 2, 12] # list of tau fakes
-    embedding: Literal["embedding", "no_embedding"] = "embedding"
-    var = "variables_61"
-
     def configure(self) -> None:
         self.add_argument('--split_njets', action='store_true')
-
-args = Args().parse_args()
-
-# ----- variables used in flows -----
-with open(cfg_path['variables'], 'r') as f:
-    variables = yaml.safe_load(f)[args.var]
-
-logger = setup_logging(logger=logging.getLogger(__name__))
-log = LogContext(logger)
 
 
 def resolve_training_model(args: Args) -> str:
@@ -103,7 +86,6 @@ class ProcessTrainingSpec:
     output_root: str
     dr_mask: Callable[[pd.DataFrame], pd.DataFrame]
     data_getter: Callable
-    tau: int
 
 
 def build_training_variables_tag(variables: list[str]) -> str:
@@ -115,84 +97,72 @@ def build_training_variables_tag(variables: list[str]) -> str:
         readable_tail = re.sub(r"[^A-Za-z0-9_]+", "_", readable_tail).strip("_")
     else:
         readable_tail = "none"
-    if 'deltaR_ditaupair' in variables:
-        return f"vars{len(variables)}_{readable_tail}_{variables_hash}"
-    else:
-        return f"vars{len(variables)}1_{readable_tail}_{variables_hash}"
+    return f"vars{len(variables)}_{readable_tail}_{variables_hash}"
 
 
 # ----- shared helpers -----
 
+
+
 def mask_preselection_loose(df):
-    mask_eta = (df.eta_1 <= 2.3) & (df.eta_2 <= 2.3)
-    mask_pt = (df.pt_1 >= 40) & (df.pt_2 >= 40)
+    mask_eta = (df.eta_1 <= 2.1) & (df.eta_2 <= 2.3)
+    mask_pt = (df.pt_1 >= 33) & (df.pt_2 >= 30)
     mask_tau_decay_mode = (
         (df.tau_decaymode_2 == 0)
         | (df.tau_decaymode_2 == 1)
         | (df.tau_decaymode_2 == 10)
         | (df.tau_decaymode_2 == 11)
     )
-    return df[mask_pt & mask_tau_decay_mode]
+    return df[mask_eta & mask_pt & mask_tau_decay_mode]
 
 
-#todo: muss hier noch näheres spezifiziert werden? Ein cut zum anderen tau?
 def SR_like(df):
-    '''
-    tau id passed at tight WP of the tau specified
-    tau = 1, 2
-    '''
-    mask1 = df['id_tau_vsJet_Tight_1'] > 0.5
-    mask2 = df['id_tau_vsJet_Tight_2'] > 0.5
-    mask = (mask1 & mask2)
+    return df[df.id_tau_vsJet_Tight_2 > 0.5]
+
+
+def AR_like(df):
+    mask = (df.id_tau_vsJet_VLoose_2 > 0.5) & (df.id_tau_vsJet_Tight_2 < 0.5)
     return df[mask]
 
 
-def AR_like(df, tau):
-    '''
-    tau id passed at very loose WP but failed tight WP of the tau specified
-    tau = 1, 2
-    '''
-    if tau not in [1, 2, 12]:
-        raise ValueError(f"Invalid tau number: {tau}. Expected 1 or 2.")
-    
-    if tau == 1:
-        mask1 = (df['id_tau_vsJet_VLoose_1'] > 0.5) 
-        mask2 = (df['id_tau_vsJet_Tight_1'] < 0.5)
-        mask3 = (df['id_tau_vsJet_Tight_2'] > 0.5)
-    elif tau == 2:
-        mask1 = (df['id_tau_vsJet_VLoose_2'] > 0.5) 
-        mask2 = (df['id_tau_vsJet_Tight_2'] < 0.5)
-        mask3 = (df['id_tau_vsJet_Tight_1'] > 0.5)
-    elif tau == 12:
-        mask1 = (df['id_tau_vsJet_VLoose_1'] > 0.5) & (df['id_tau_vsJet_VLoose_2'] > 0.5)
-        mask2 = (df['id_tau_vsJet_Tight_1'] < 0.5) & (df['id_tau_vsJet_Tight_2'] < 0.5)
-        mask3 = None
-    
-    mask = (mask1 & mask2 & mask3)
-    return df[mask]
+def mask_DR_wjets(df):
+    mask = (
+        (df.id_tau_vsJet_VLoose_2 > 0.5)
+        & (df.nbtag == 0)
+        & (df.iso_1 >= 0.0)
+        & (df.iso_1 < 0.15)
+        & (df.extramuon_veto < 0.5)
+        & (df.extraelec_veto < 0.5)
+        & (df.mt_1 > 70)
+    )
+    return df[mask].copy()
 
 
-def mask_DR(df):
-    mask_a1 = (df.q_1 * df.q_2 > 0)
-    mask_a2 = ((df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
-    mask_a3 = ((df.id_tau_vsJet_VLoose_1 > 0.5))
-    mask_a4 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
-    mask_DR = (mask_a1 & mask_a2 & mask_a3 & mask_a4)
-
-    return df[mask_DR].copy()
+def mask_DR_qcd(df):
+    mask = (
+        (df.id_tau_vsJet_VLoose_2 > 0.5)
+        & (df.q_1 * df.q_2 > 0)
+        & (df.iso_1 > 0.02)
+        & (df.iso_1 < 0.15)
+        & (df.extramuon_veto < 0.5)
+        & (df.extraelec_veto < 0.5)
+        & (df.mt_1 < 50)
+    )
+    return df[mask].copy()
 
 
 def evaluate_loader(model, loader, device):
     model.eval()
     loss_sum = 0.0
     weight_sum = 0.0
+    use_amp = (device.type == 'cuda')
 
     with t.no_grad():
         for Xb, Wb in loader:
             Xb = Xb.to(device, non_blocking=True)
             Wb = Wb.to(device, non_blocking=True)
 
-            with t.amp.autocast('cuda', enabled=False):
+            with t.amp.autocast('cuda', enabled=use_amp):
                 log_px = model(Xb).reshape(-1)
                 loss = (-(log_px) * Wb).sum()
 
@@ -351,8 +321,8 @@ def prepare_region_samples(data_complete, spec: ProcessTrainingSpec, test_size: 
 
     train_df, val_df = train_test_split(data_dr, test_size=test_size, random_state=random_state)
 
-    train_ar = mask_preselection_loose(AR_like(train_df, spec.tau))
-    val_ar = mask_preselection_loose(AR_like(val_df, spec.tau))
+    train_ar = mask_preselection_loose(AR_like(train_df))
+    val_ar = mask_preselection_loose(AR_like(val_df))
     train_sr = mask_preselection_loose(SR_like(train_df))
     val_sr = mask_preselection_loose(SR_like(val_df))
 
@@ -469,7 +439,12 @@ def train_region(spec: ProcessTrainingSpec, region: str, train_df, val_df, weigh
         valid_fraction,
     )
 
-    optimizer = t.optim.AdamW(model.parameters(), lr=config.lr)
+    optimizer = t.optim.AdamW(
+        model.parameters(),
+        lr=config.lr,
+        weight_decay=config.weight_decay,
+        eps=config.eps,
+    )
     scheduler = t.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
         mode='min',
@@ -481,89 +456,83 @@ def train_region(spec: ProcessTrainingSpec, region: str, train_df, val_df, weigh
         min_lr=config.scheduler_min_lr,
         eps=config.scheduler_eps,
     )
-    scaler = t.amp.GradScaler('cuda', enabled=config.use_amp)
+    use_amp = (device.type == 'cuda') and bool(config.use_amp)
+    scaler = t.amp.GradScaler('cuda', enabled=use_amp)
 
     best_val_nll = float('inf')
     counter = 0
     log_rows = []
     checkpoint = None
 
-    #with log.training_dashboard() as dash:
-    for epoch in range(1, config.n_epochs + 1):
-        epoch_start = time.time()
-        model.train()
-        train_loss_sum = 0.0
-        train_weight_sum = 0.0
+    with log.training_dashboard() as dash:
+        for epoch in range(1, config.n_epochs + 1):
+            epoch_start = time.time()
+            model.train()
+            train_loss_sum = 0.0
+            train_weight_sum = 0.0
 
-        for xb, wb in train_loader:
-            xb = xb.to(device, non_blocking=True)
-            wb = wb.to(device, non_blocking=True)
+            for xb, wb in train_loader:
+                xb = xb.to(device, non_blocking=True)
+                wb = wb.to(device, non_blocking=True)
 
-            optimizer.zero_grad(set_to_none=True)
-            with t.amp.autocast('cuda', enabled=False):
-                log_px = model(xb).reshape(-1)
-                loss = (-(log_px) * wb).sum()
+                optimizer.zero_grad(set_to_none=True)
+                with t.amp.autocast('cuda', enabled=use_amp):
+                    log_px = model(xb).reshape(-1)
+                    loss = (-(log_px) * wb).sum()
 
-            scaler.scale(loss).backward()
-            nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
-            scaler.step(optimizer)
-            scaler.update()
+                scaler.scale(loss).backward()
+                nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
+                scaler.step(optimizer)
+                scaler.update()
 
-            train_loss_sum += loss.item()
-            train_weight_sum += wb.sum().item()
+                train_loss_sum += loss.item()
+                train_weight_sum += wb.sum().item()
 
-        avg_train_opt_nll = train_loss_sum / max(train_weight_sum, 1e-12)
-        avg_train_nll = evaluate_loader(model, train_loader, device)
-        avg_val_nll = evaluate_loader(model, val_loader, device)
+            avg_train_opt_nll = train_loss_sum / max(train_weight_sum, 1e-12)
+            avg_train_nll = evaluate_loader(model, train_loader, device)
+            avg_val_nll = evaluate_loader(model, val_loader, device)
 
-        scheduler.step(avg_val_nll)
-        epoch_time = time.time() - epoch_start
-        current_lr = scheduler.get_last_lr()[0]
+            scheduler.step(avg_val_nll)
+            epoch_time = time.time() - epoch_start
+            current_lr = scheduler.get_last_lr()[0]
 
-        logger.info(
-                f"Epoch {epoch}: train={avg_train_nll:.6f}, "
-                f"val={avg_val_nll:.6f}, LR={current_lr:.6e}"
+            log_rows.append({
+                'epoch': epoch,
+                'train_loss': avg_train_nll,
+                'train_loss_optim': avg_train_opt_nll,
+                'val_loss': avg_val_nll,
+                'lr': current_lr,
+                'time_s': epoch_time,
+                'type': 'epoch',
+            })
+
+            if avg_val_nll < best_val_nll:
+                best_val_nll = avg_val_nll
+                counter = 0
+                checkpoint = {
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'variables': list(variables),
+                    'schema': schema,
+                    'training_model': training_model,
+                }
+                if training_model == TRAINING_MODEL_GROUPED:
+                    checkpoint['router_state_dict'] = model.state_dict()
+                else:
+                    checkpoint['model_state_dict'] = model.state_dict()
+            else:
+                counter += 1
+
+            dash.update(
+                epoch=epoch,
+                train_loss=np.round(avg_train_nll, 6),
+                val_loss=np.round(avg_val_nll, 6),
+                lr=current_lr,
+                region=f"{spec.name} {region}",
             )
 
-        log_rows.append({
-            'epoch': epoch,
-            'train_loss': avg_train_nll,
-            'train_loss_optim': avg_train_opt_nll,
-            'val_loss': avg_val_nll,
-            'lr': current_lr,
-            'time_s': epoch_time,
-            'type': 'epoch',
-        })
-
-        if avg_val_nll < best_val_nll:
-            best_val_nll = avg_val_nll
-            counter = 0
-            checkpoint = {
-                'optimizer_state_dict': optimizer.state_dict(),
-                'variables': list(variables),
-                'schema': schema,
-                'training_model': training_model,
-            }
-            if training_model == TRAINING_MODEL_GROUPED:
-                checkpoint['router_state_dict'] = model.state_dict()
-            else:
-                checkpoint['model_state_dict'] = model.state_dict()
-        else:
-            counter += 1
-
-        
-
-        #dash.update(
-        #    epoch=epoch,
-        #    train_loss=np.round(avg_train_nll, 6),
-        #    val_loss=np.round(avg_val_nll, 6),
-        #    lr=current_lr,
-        #    region=f"{spec.name} {region}",
-        #)
-
-        if counter >= PATIENCE:
-            logger.info("Early stopping triggered for %s %s.", spec.name, region)
-            break
+            if counter >= PATIENCE:
+                logger.info("Early stopping triggered for %s %s.", spec.name, region)
+                break
 
     if checkpoint is None:
         raise RuntimeError(f"No checkpoint was created for {spec.name} {region}.")
@@ -590,14 +559,14 @@ def train_process(spec: ProcessTrainingSpec, data_complete, config, device, trai
 # ----- main -----
 
 def main():
-    #args = Args().parse_args()
+    args = Args().parse_args()
     training_model = resolve_training_model(args)
 
     t.manual_seed(SEED)
     np.random.seed(SEED)
     random.seed(SEED)
 
-    config_path = cfg_path['config_NF']
+    config_path = '../configs/config_NF.yaml'
     config = RealNVP_config.from_yaml(config_path)
 
     device = t.device('cuda' if t.cuda.is_available() else 'cpu')
@@ -606,97 +575,30 @@ def main():
 
     mode_dir = MODE_DIR_BY_TRAINING_MODEL[training_model]
     training_variables_tag = build_training_variables_tag(variables)
-    model_root_dir = Path(cfg_path['NF_results']) / mode_dir / f"training_{training_variables_tag}"
+    model_root_dir = Path(args.output_root_base) / mode_dir / f"training_{training_variables_tag}"
     logger.info("Model output root: %s", model_root_dir)
 
-    # ----- load data -----
-    data_complete = pd.read_feather(cfg_path['datasets'] + args.embedding + '/combined_data_updated.feather')
+    data_complete = pd.read_feather('../../data/data_complete.feather')
     logger.info("Loaded %d total events", len(data_complete))
 
-    #data_DR = mask_DR(data_complete)
-    #plt.hist(data_DR["deltaR_ditaupair"])
-    #plt.savefig('test.png')
-    #print('done')
-    #exit()
-
-    if args.taus == [1, 2]:
-        process_specs = [
-            ProcessTrainingSpec(
-                name='tau1',
-                region_sign_column='SS',
-                weight_column='weight_qcd',
-                output_root=str(model_root_dir / 'tau1' / 'all'),
-                dr_mask=mask_DR,
-                data_getter=get_my_data_qcd,
-                tau=args.taus[0],
-            ),
-            ProcessTrainingSpec(
-                name='tau2',
-                region_sign_column='SS',
-                weight_column='weight_qcd',
-                output_root=str(model_root_dir / 'tau2' / 'all'),
-                dr_mask=mask_DR,
-                data_getter=get_my_data_qcd,
-                tau=args.taus[1],
-            ),
-        ]
-    elif args.taus == [1, 2, 12]:
-        process_specs = [
-            ProcessTrainingSpec(
-                name='tau1',
-                region_sign_column='SS',
-                weight_column='weight_qcd',
-                output_root=str(model_root_dir / 'tau1' / 'all'),
-                dr_mask=mask_DR,
-                data_getter=get_my_data_qcd,
-                tau=args.taus[0],
-            ),
-            ProcessTrainingSpec(
-                name='tau2',
-                region_sign_column='SS',
-                weight_column='weight_qcd',
-                output_root=str(model_root_dir / 'tau2' / 'all'),
-                dr_mask=mask_DR,
-                data_getter=get_my_data_qcd,
-                tau=args.taus[1],
-            ),
-            ProcessTrainingSpec(
-                name='both_taus',
-                region_sign_column='SS',
-                weight_column='weight_qcd',
-                output_root=str(model_root_dir / 'tau12' / 'all'),
-                dr_mask=mask_DR,
-                data_getter=get_my_data_qcd,
-                tau=args.taus[2],
-            ),
-        ]
-    elif args.taus == 1:
-        process_specs = [
-            ProcessTrainingSpec(
-                name='tau1',
-                region_sign_column='SS',
-                weight_column='weight_qcd',
-                output_root=str(model_root_dir / 'QCD' / 'all'),
-                dr_mask=mask_DR,
-                data_getter=get_my_data_qcd,
-                tau=args.taus,
-            ),
-        ]
-    elif args.taus == 2:
-        process_specs = [
-            ProcessTrainingSpec(
-                name='tau2',
-                region_sign_column='SS',
-                weight_column='weight_qcd',
-                output_root=str(model_root_dir / 'QCD' / 'all'),
-                dr_mask=mask_DR,
-                data_getter=get_my_data_qcd,
-                tau=args.taus,
-            ),
-        ]    
-    else:
-        raise ValueError(f"Invalid taus configuration: {args.taus}. Expected 1, 2, [1, 2] or [1, 2, 12].")
-
+    process_specs = [
+        ProcessTrainingSpec(
+            name='Wjets',
+            region_sign_column='OS',
+            weight_column='weight_wjets',
+            output_root=str(model_root_dir / 'Wjets' / 'all'),
+            dr_mask=mask_DR_wjets,
+            data_getter=get_my_data_wjets,
+        ),
+        ProcessTrainingSpec(
+            name='QCD',
+            region_sign_column='SS',
+            weight_column='weight_qcd',
+            output_root=str(model_root_dir / 'QCD' / 'all'),
+            dr_mask=mask_DR_qcd,
+            data_getter=get_my_data_qcd,
+        ),
+    ]
 
     for spec in process_specs:
         logger.info("Launching %s training in mode %s", spec.name, training_model)

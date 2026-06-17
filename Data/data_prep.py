@@ -124,6 +124,7 @@ def main():
         else: datasets[i]['Label'] = 0
 
         logger.info(f"{dataset_names[i]} with {len(datasets[i])} events loaded.")
+        logger.info(f"{dataset_names[i]} with {np.sum(datasets[i].weight)}.")
 
     combined_data = pd.concat(datasets, ignore_index=True)
 

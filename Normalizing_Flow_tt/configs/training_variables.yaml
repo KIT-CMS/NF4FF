@@ -1,5 +1,8 @@
+variables_4: ['pt_1', 'pt_2', 'm_vis', 'pt_vis']
 variables_5: ['pt_1', 'pt_2', 'm_vis', 'deltaR_ditaupair', 'pt_vis']
-
-# current best
-
-variables_8: ['pt_1', 'pt_2', 'm_vis', 'deltaR_ditaupair', 'pt_vis', 'met', 'pt_tt', 'm_fastmtt']
+variables_51: ['pt_1', 'pt_2', 'm_vis', 'pt_vis', 'met']
+variables_6: ['pt_1', 'pt_2', 'm_vis', 'deltaR_ditaupair', 'pt_vis', 'met']
+variables_61: ['pt_1', 'pt_2', 'm_vis', 'pt_vis', 'met', 'pt_tt']
+variables_7: ['pt_1', 'pt_2', 'm_vis', 'deltaR_ditaupair', 'pt_vis', 'met', 'pt_tt']
+variables_all: ['pt_1', 'pt_2', 'm_vis', 'deltaR_ditaupair', 'pt_vis', 'met', 'pt_tt', deltaEta_2j1, deltaEta_1j2, deltaEta_2j2, deltaEta_12j2, deltaEta_12j1, eta_1, eta_2, mt_1]
+variables_all1: ['pt_1', 'pt_2', 'm_vis', 'pt_vis', 'met', 'pt_tt', deltaEta_2j1, deltaEta_1j2, deltaEta_2j2, deltaEta_12j2, deltaEta_12j1, eta_1, eta_2, mt_1]

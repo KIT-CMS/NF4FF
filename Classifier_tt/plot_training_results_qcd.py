@@ -813,8 +813,8 @@ def main() -> None:
         ax[1].errorbar(bin_centers, counts_data_reduced/QCD_counts, yerr = y_error/data_counts, xerr = x_error, label = 'ratio', color = 'black', fmt = 'o')
         ax[1].fill_between(
         bin_centers,
-        1 - y_error_stat / (Wjets_counts + 1e-10),
-        1 + y_error_stat / (Wjets_counts + 1e-10),
+        1 - y_error_stat / (QCD_counts + 1e-10),
+        1 + y_error_stat / (QCD_counts + 1e-10),
         color="gray",
         alpha=0.3,
         step='mid',
@@ -823,6 +823,7 @@ def main() -> None:
         ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
         ax[1].set_ylabel("data / model")
         ax[1].set_ylim([0.8, 1.2])
+        ax[1].legend(loc='upper left')
 
         path_red = os.path.join(cfg["plots"][args.loc], f'{args.embedding}/')
         os.makedirs(path_red, exist_ok=True)

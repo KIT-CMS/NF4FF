@@ -50,13 +50,13 @@ matplotlib.rcParams.update({
 logger = setup_logging(logger=logging.getLogger(__name__))
 
 class Args(Tap):
-    model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'single_nf'  # Training mode to load: grouped NF split by njets, single inclusive NF, or conditional NF with njets as input.
+    model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'conditional_nf'  # Training mode to load: grouped NF split by njets, single inclusive NF, or conditional NF with njets as input.
     classifier_training_tag: str = ''  # Optional classifier training folder suffix after 'training_'. Empty -> pick most recent.
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
-    plot_training_diagnostics: bool = False   # Plot training loss / learning-rate / time-per-epoch curves.
+    plot_training_diagnostics: bool = True   # Plot training loss / learning-rate / time-per-epoch curves.
     plot_nf_sampling: bool = False           # Plot NF-sampled vs data histograms in training variables.
-    plot_ff_results: bool = False             # Plot fake-factor comparison stacks for each njets category.
-    plot_ff_values: bool = True              # Plot FF values in histogram
+    plot_ff_results: bool = True             # Plot fake-factor comparison stacks for each njets category.
+    plot_ff_values: bool = False              # Plot FF values in histogram
     plot_ar_data_with_clipping: bool = False  # Plot AR data with both kept and excluded events (by clipping mask).
     plot_taylor_coefficients: bool = False   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
     plot_complete_variables: bool = False
@@ -65,7 +65,7 @@ class Args(Tap):
 
     taus = 1 #[1, 2] #[1, 2, 12] # list of tau fakes
     embedding: Literal["embedding", "no_embedding"] = "embedding"
-    var: Literal["variables_5", "variables_8"] = "variables_5"
+    var = "variables_61"
 
 
 # Runtime context (initialized in `initialize_runtime_context()` and consumed by plotting functions)
@@ -145,7 +145,11 @@ def build_training_variables_tag(variables: list[str]) -> str:
         readable_tail = re.sub(r"[^A-Za-z0-9_]+", "_", readable_tail).strip("_")
     else:
         readable_tail = "none"
-    return f"vars{len(variables)}_{readable_tail}_{variables_hash}"
+    
+    if 'deltaR_ditaupair' in variables:
+        return f"vars{len(variables)}_{readable_tail}_{variables_hash}"
+    else:
+        return f"vars{len(variables)}1_{readable_tail}_{variables_hash}"
 
 
 def _build_training_variables_prefix(variables: list[str]) -> str:
@@ -156,7 +160,10 @@ def _build_training_variables_prefix(variables: list[str]) -> str:
         readable_tail = re.sub(r"[^A-Za-z0-9_]+", "_", readable_tail).strip("_")
     else:
         readable_tail = "none"
-    return f"vars{len(variables)}_{readable_tail}"
+    if 'deltaR_ditaupair' in variables:
+        return f"vars{len(variables)}_{readable_tail}"
+    else:
+        return f"vars{len(variables)}1_{readable_tail}"
 
 
 def resolve_training_tag(variables: list[str], mode_dir: str, base_dir: str = cfg_path['NF_results']) -> str:
@@ -660,6 +667,8 @@ def plot_ff_clipping_histogram(
     clip_value_qcd: float,
     qcd_clipped_percent: float,
     plot_dir: str | Path,
+    njets_title: str,
+    tau: str
 ) -> None:
 
 
@@ -668,7 +677,12 @@ def plot_ff_clipping_histogram(
     ff_kept_qcd = ff_full_qcd[clip_mask_qcd]
     ff_clipped_qcd = ff_full_qcd[~clip_mask_qcd]
 
-    fig, ax = plt.subplots(1, 1, figsize=(8, 7))
+    fig, ax = plt.subplots(1, 1, figsize=(12, 10.5))
+
+    CMS_CHANNEL_TITLE([ax])
+    CMS_LUMI_TITLE([ax])
+    CMS_LABEL([ax])
+    CMS_NJETS_TITLE([ax], title=njets_title)
 
     ax.hist(ff_kept_qcd, bins=bins, label="QCD FF (kept)", color="#b9ac70", alpha=0.9)
     ax.hist(ff_clipped_qcd, bins=bins, label="QCD FF (clipped)", color="#b9ac70", alpha=0.25)
@@ -685,7 +699,6 @@ def plot_ff_clipping_histogram(
         transform=ax.transAxes,
         ha='right',
         va='top',
-        fontsize=10,
     )
     ymin, ymax = ax.get_ylim()
     ax.set_ylim(ymin, ymax * 1.2)  # add 20% headroom
@@ -693,13 +706,13 @@ def plot_ff_clipping_histogram(
    
     handles1, labels1 = ax.get_legend_handles_labels()
     fig.legend(handles1, labels1,
-               loc='upper center', bbox_to_anchor=(0.5, 1.0),
+               loc='upper left', #bbox_to_anchor=(0.5, 1.0),
                ncol=3, frameon=False, fontsize=9)
 
     plt.tight_layout(rect=[0, 0, 1, 0.90])
     plot_dir = Path(plot_dir)
     plot_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(plot_dir / 'hist_FF.png')
+    plt.savefig(plot_dir / f"hist_FF_{tau}.png")
     plt.close(fig)
 
 def total_ff_corrected(df):
@@ -754,7 +767,8 @@ def normalizing_flow_ff(
     device,
     plotting=True,
     plot_dir="plots",
-    include_njets=True
+    include_njets=True,
+    njets_title=None,
 ):
     """
     Computes eventwise fake factors for W+jets and QCD, and returns
@@ -852,7 +866,9 @@ def normalizing_flow_ff(
             clip_mask_qcd=clip_mask_tau1,
             clip_value_qcd=clip_value_tau1,
             qcd_clipped_percent=tau1_clipped_percent,
-            plot_dir=plot_dir,)
+            plot_dir=plot_dir,
+            njets_title=njets_title,
+            tau = "tau1")
         
         plot_pdf_distributions(
             model_AR=model_AR_like_tau1,
@@ -868,7 +884,9 @@ def normalizing_flow_ff(
             clip_mask_qcd=clip_mask_tau2,
             clip_value_qcd=clip_value_tau2,
             qcd_clipped_percent=tau2_clipped_percent,
-            plot_dir=plot_dir,)
+            plot_dir=plot_dir,
+            njets_title=njets_title,
+            tau = "tau2")
         
         plot_pdf_distributions(
             model_AR=model_AR_like_tau2,
@@ -2335,7 +2353,8 @@ def run_plots_for_njets_category(category_name, njets_title):
         device,
         plotting=True,
         plot_dir=category_plot_dir,
-        include_njets=include_njets_feature
+        include_njets=include_njets_feature,
+        njets_title=njets_title
         )
     
     if args.plot_ff_values:
@@ -2344,9 +2363,7 @@ def run_plots_for_njets_category(category_name, njets_title):
         return
 
     process_map = load_config(cfg_path['process_map'][args.embedding])    
-    if args.embedding == 'embedding':
-        logger.info("Todo: To be implemented. Please use the 'no_embedding' option for now.")
-        
+    if args.embedding == 'embedding':        
         
         # ----- AR OS tau 1-----
         data_diboson_AR_OS_tau1 = data_AR_tau1[((data_AR_tau1.process == process_map["diboson_J"]) | (data_AR_tau1.process == process_map["diboson_L"]))]
@@ -2363,11 +2380,11 @@ def run_plots_for_njets_category(category_name, njets_title):
         data_ttbar_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == process_map["ttbar_J"]) | (data_AR_tau2.process == process_map["ttbar_L"])]
         
         # ----- FF -----
-        data_diboson_AR_OS_nf_tau1, data_diboson_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_diboson_AR_OS_tau1, data_diboson_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
-        data_DY_AR_OS_nf_tau1, data_DY_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_DY_AR_OS_tau1, data_DY_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
-        data_embed_AR_OS_nf_tau1, data_embed_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_embed_AR_OS_tau1, data_embed_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
-        data_ST_AR_OS_nf_tau1, data_ST_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_ST_AR_OS_tau1, data_ST_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
-        data_ttbar_AR_OS_nf_tau1, data_ttbar_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_ttbar_AR_OS_tau1, data_ttbar_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
+        data_diboson_AR_OS_nf_tau1, data_diboson_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_diboson_AR_OS_tau1, data_diboson_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
+        data_DY_AR_OS_nf_tau1, data_DY_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_DY_AR_OS_tau1, data_DY_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
+        data_embed_AR_OS_nf_tau1, data_embed_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_embed_AR_OS_tau1, data_embed_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
+        data_ST_AR_OS_nf_tau1, data_ST_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_ST_AR_OS_tau1, data_ST_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
+        data_ttbar_AR_OS_nf_tau1, data_ttbar_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_ttbar_AR_OS_tau1, data_ttbar_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
 
         # ----- SR OS -----
         data_events = data_SR_OS[(data_SR_OS.process == process_map["data"])]
@@ -2448,6 +2465,10 @@ def run_plots_for_njets_category(category_name, njets_title):
             counts_FF_tau2 = counts_ff_data_tau2 - counts_ff_diboson_tau2 - counts_ff_DY_tau2 - counts_ff_embed_tau2 - counts_ff_ST_tau2 - counts_ff_ttbar_tau2
 
             # ----- total FF, with factor 0.5 assuming both FF are weighted equally -----
+            
+            #rat = len(data_AR_OS_nf_tau1[var])/(len(data_AR_OS_nf_tau1[var])+len(data_AR_OS_nf_tau2[var]))
+            #counts_FF = rat*counts_FF_tau1 + (1-rat)*counts_FF_tau2
+
             counts_FF = 0.5*(counts_FF_tau1 + counts_FF_tau2)
 
             # ----- counts SR -----
@@ -2463,10 +2484,6 @@ def run_plots_for_njets_category(category_name, njets_title):
             counts_ttbar2, _ = np.histogram(data_ttbar_SR_OS[var], weights=data_ttbar_SR_OS.weight**2, bins=bins)
             
             counts_data, _ = np.histogram(data_events[var], bins=bins)
-
-            print(len(data_diboson_AR_OS_nf_tau1[var])/(len(data_diboson_AR_OS_nf_tau1[var])+len(data_diboson_AR_OS_nf_tau2[var])))
-            print(len(data_diboson_AR_OS_nf_tau2[var])/(len(data_diboson_AR_OS_nf_tau1[var])+len(data_diboson_AR_OS_nf_tau2[var])))
-            exit()
 
             bin_widths = np.diff(bins)
             bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
@@ -2508,8 +2525,8 @@ def run_plots_for_njets_category(category_name, njets_title):
                 (counts_ttbar, '#832db6', r'$t\bar{t} \to \tau$'),
                 (counts_ST, "#717581", r"Single t"),
                 (counts_DY, '#3f90da', r'$Z \to \ell \ell$'),
-                (counts_FF, "#a96b59", r'Jet $\rightarrow \tau_h$'),
                 (counts_embed, '#ffa90e', r'$\tau$ embedded'),
+                (counts_FF, "#a96b59", r'Jet $\rightarrow \tau_h$'),
             ]
             counts_stack_total = draw_stacked_stepfill(ax[0], bin_edges, stack_components)
             ax[0].stairs(counts_stack_total, bin_edges, color='black', linewidth=0.7)
@@ -2564,10 +2581,10 @@ def run_plots_for_njets_category(category_name, njets_title):
         data_ttbar_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == process_map["ttbar_J"]) | (data_AR_tau2.process == process_map["ttbar_L"]) | (data_AR_tau2.process == process_map["ttbar_T"])]
         
         # ----- FF -----
-        data_diboson_AR_OS_nf_tau1, data_diboson_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_diboson_AR_OS_tau1, data_diboson_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
-        data_DY_AR_OS_nf_tau1, data_DY_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_DY_AR_OS_tau1, data_DY_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
-        data_ST_AR_OS_nf_tau1, data_ST_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_ST_AR_OS_tau1, data_ST_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
-        data_ttbar_AR_OS_nf_tau1, data_ttbar_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_ttbar_AR_OS_tau1, data_ttbar_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature)
+        data_diboson_AR_OS_nf_tau1, data_diboson_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_diboson_AR_OS_tau1, data_diboson_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
+        data_DY_AR_OS_nf_tau1, data_DY_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_DY_AR_OS_tau1, data_DY_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
+        data_ST_AR_OS_nf_tau1, data_ST_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_ST_AR_OS_tau1, data_ST_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
+        data_ttbar_AR_OS_nf_tau1, data_ttbar_AR_OS_nf_tau2, _, _ = normalizing_flow_ff(data_ttbar_AR_OS_tau1, data_ttbar_AR_OS_tau2, variables, model_AR_like_tau1, model_SR_like_tau1, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau1, global_ff_tau2, device, plotting=False, plot_dir=category_plot_dir, include_njets=include_njets_feature, njets_title=njets_title)
 
         # ----- SR OS -----
         data_events = data_SR_OS[(data_SR_OS.process == process_map["data"])]

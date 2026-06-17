@@ -431,7 +431,9 @@ def get_ff_dataset_with_qcd_weights_ss(
                 _dataset.weights.ss[qcd_mask_sr] = qcd_weights
                 if hasattr(_dataset, "class_weights"):
                     _dataset.class_weights.ss[qcd_mask_sr] *= qcd_weights
-
+    #print("QCD yield:")
+    #print(sum(_dataset.Y.ss) / _dataset.Y.ss.shape[0] )
+    #exit()
     return _dataset.apply_func(
         lambda x: x.contiguous() if isinstance(x, torch.Tensor) else x
     )
@@ -644,9 +646,9 @@ def main():
     # --- load data 
 
     data_complete = pd.read_feather(cfg["paths"]["input_dir"][args.loc] + args.embedding + "/combined_data.feather")
+    #print(data_complete['Label'].value_counts())
     data_DR = mask_DR(data_complete)
     #print(data_DR['class_weights'].value_counts())
-    #print(list(data_DR['class_weights']))
     #print(data_DR['Label'].value_counts())
     #print(data_DR['process'].value_counts())
     #exit()
@@ -700,7 +702,6 @@ def main():
         log_rows = []
         logger.info("Start training ")
 
-        njets_groups = ((0,), (1,), (2, 1000))
         qcd_mask_ss_train = (train_pt.process.ss == 0)
         qcd_mask_ss_val = (val_pt.process.ss == 0)
 
