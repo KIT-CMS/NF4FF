@@ -19,6 +19,7 @@ from .NeuralNetworks import (
     convert_models_to_onnx,
     LikelihoodRatioCalculation,
     EnsembleStatUncWrapper,
+    temporary_extract_scaler_callable,
 )
 from .Training import train_dnn, train_dnn_new, train_dnn_squeezed_loss
 

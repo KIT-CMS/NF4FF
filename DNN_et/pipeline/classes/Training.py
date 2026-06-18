@@ -292,7 +292,7 @@ def train_dnn_squeezed_loss(
     model,
     train,
     val,
-    squeezing,
+    squeezing_limit=None,
     epochs: int = 50,
     lr: float = 1e-3,
     checkpoint_dir: str = "./checkpoints",
@@ -318,12 +318,11 @@ def train_dnn_squeezed_loss(
         patience=scheduler_patience,
         min_lr=min_lr,
     )
-    if squeezing >= 1.0:
-        penalty_upper_bound = 1000
-    elif squeezing <= 0.0:
-        raise ValueError(f"squeezing must be > 0, got {squeezing}")
-    else:
-        penalty_upper_bound = np.log(squeezing / (1 - squeezing))
+    penalty_upper_bound = (
+        1000
+        if squeezing_limit is None
+        else float(squeezing_limit)
+    )
 
     loss_fn = PretrainingSqueezedLossWeightNormalized(
         penalty_upper_bound = penalty_upper_bound,
@@ -465,4 +464,3 @@ def train_dnn_squeezed_loss(
     print(f"\nBest validation loss: {best_val_loss:.6f}")
 
     return model, best_val_loss, history
-

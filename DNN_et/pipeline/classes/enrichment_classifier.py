@@ -18,8 +18,12 @@ from torch.utils.data import TensorDataset, DataLoader
 from classes.CustomLogging import setup_logging
 #from classes.path_managment import StorePathHelper
 from classes.config_loader import load_config
-from classes.helper import get_class_weights, _same_sign_opposite_sign_split, _collection, _component_collection
-import CODE.HELPER as helper
+from classes.helper import (
+    CollectionMeta,
+    get_class_weights,
+    _same_sign_opposite_sign_split,
+    _collection,
+)
 import torch as t
 from tap import Tap
 from typing import Any, Callable, Dict, Generator, List, Literal, Tuple, Union
@@ -35,17 +39,20 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 
 
-QCD_WEIGHT_BINNING = 'dynamic'
-QCD_WEIGHT_N_BINS = 20
+QCD_WEIGHT_BINNING = 'quantile'
+QCD_WEIGHT_N_BINS = 40
 QCD_WEIGHT_DYNAMIC_DELTA = 10.0
 QCD_WEIGHT_DYNAMIC_DELTA_LAST = 10.0
 QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD = 10.0
 QCD_WEIGHT_REFRESH_EVERY = 5
 QCD_WEIGHT_REFRESH_UNTIL_EPOCH = 100
+QCD_SS_WEIGHT_DYNAMIC_DELTA = 10.0
+QCD_SS_WEIGHT_DYNAMIC_DELTA_LAST = 10.0
+QCD_SS_WEIGHT_DYNAMIC_MIN_QCD_YIELD = 10.0
 
 # ----- data clas
 @dataclass
-class _component_collection(metaclass=helper.CollectionMeta):
+class _component_collection(metaclass=CollectionMeta):
     _: KW_ONLY
     X: Union[torch.Tensor, pd.DataFrame, np.ndarray, None] = None
     Y: Union[torch.Tensor, pd.DataFrame, np.ndarray, None] = None
@@ -164,9 +171,9 @@ def refresh_qcd_weights(
             subtract_njets_based=use_grouping,
             qcd_weight_binning=QCD_WEIGHT_BINNING,
             qcd_weight_n_bins=QCD_WEIGHT_N_BINS,
-            qcd_weight_dynamic_delta=QCD_WEIGHT_DYNAMIC_DELTA,
-            qcd_weight_dynamic_delta_last=QCD_WEIGHT_DYNAMIC_DELTA_LAST,
-            qcd_weight_dynamic_min_qcd_yield=QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD,
+            qcd_weight_dynamic_delta=QCD_SS_WEIGHT_DYNAMIC_DELTA,
+            qcd_weight_dynamic_delta_last=QCD_SS_WEIGHT_DYNAMIC_DELTA_LAST,
+            qcd_weight_dynamic_min_qcd_yield=QCD_SS_WEIGHT_DYNAMIC_MIN_QCD_YIELD,
         )
 
 
@@ -500,7 +507,7 @@ def get_ff_dataset_with_qcd_weights_ss(
             )
 
             logger.info(
-                "QCD weight bins (%s, njets=%s, SR_like=%s): %d",
+                "QCD weight bins (%s, group=%s, SR_like=%s): %d",
                 qcd_weight_binning,
                 njets_group,
                 sr_value,
@@ -521,10 +528,15 @@ def get_ff_dataset_with_qcd_weights_ss(
                 non_qcd_hist,
             )
 
-            qcd_weights = set_negatives_to_one(qcd_weights)
+            qcd_weights = t.where(
+                qcd_weights < 0,
+                t.zeros_like(qcd_weights),
+                qcd_weights,
+            )
 
             # Save weights
             _dataset.weights.ss[qcd_mask_sr] = qcd_weights
+            _dataset.qcd_weights_ss[qcd_mask_sr] = qcd_weights
             if hasattr(_dataset, "class_weights"):
                 _dataset.class_weights.ss[qcd_mask_sr] *= qcd_weights
 
@@ -596,7 +608,9 @@ def _calculate_scaled_event_weights_generalized(
     _digitize, digitize_kwargs = (lib.bucketize, {'right': False}) if is_torch else (lib.digitize, {})
     raw_indices = _digitize(flat.values, bins, **digitize_kwargs) - 1
 
-    is_out_of_bounds = (raw_indices < 0) | (raw_indices >= n_bins)
+    # np.digitize places values equal to the final edge above the last bin,
+    # whereas np.histogram includes that edge in the final bin.
+    is_out_of_bounds = (flat.values < bins[0]) | (flat.values > bins[-1])
     event_bin_indices = lib.clip(raw_indices, 0, n_bins - 1)
 
     event_weights_for_summation = flat.weights.clone() if is_torch else flat.weights.copy()
