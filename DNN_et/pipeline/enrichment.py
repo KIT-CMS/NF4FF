@@ -28,14 +28,18 @@ console = Console()
 # ---------- dataclasses -------------
 
 
-QCD_WEIGHT_BINNING = 'dynamic'
-QCD_WEIGHT_N_BINS = 20
+QCD_WEIGHT_BINNING = 'quantile'
+QCD_WEIGHT_N_BINS = 40
 QCD_WEIGHT_DYNAMIC_DELTA = 10.0
 QCD_WEIGHT_DYNAMIC_DELTA_LAST = 10.0
 QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD = 10.0
 QCD_WEIGHT_REFRESH_EVERY = 5
 QCD_WEIGHT_REFRESH_UNTIL_EPOCH = 100
-QCD_GROUPING_CONFIG_PATH = "../configs/config_qcd_groupings_enrichment.yaml"
+QCD_GROUPING_CONFIG_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "configs"
+    / "config_qcd_groupings_enrichment.yaml"
+)
 TRAINING_SEED = 42
 QCD_EARLY_STOPPING_PATIENCE = 20
 
@@ -65,6 +69,7 @@ def _load_qcd_grouping_config(path: str) -> Dict[str, Any]:
         },
         "groupings": [
             {
+                "name": item.get("name", item["index_name"]),
                 "index_name": item["index_name"],
                 "groups": _normalize_groups(item["groups"]),
             }
@@ -76,10 +81,14 @@ def _load_qcd_grouping_config(path: str) -> Dict[str, Any]:
 def _validate_grouping_config(training_variables, grouping_cfg):
     known_vars = set(training_variables)
     for item in grouping_cfg["groupings"]:
-        name = item["index_name"]
+        name = item["name"]
+        index_name = item["index_name"]
         groups = item["groups"]
-        if name not in known_vars:
-            raise ValueError(f"Grouping variable '{name}' not found in training variables")
+        if index_name not in known_vars:
+            raise ValueError(
+                f"Grouping variable '{index_name}' for '{name}' "
+                "not found in training variables"
+            )
         if not isinstance(groups, tuple) or len(groups) == 0:
             raise ValueError(f"Grouping for '{name}' must be a non-empty tuple of groups")
         for group in groups:
@@ -87,6 +96,19 @@ def _validate_grouping_config(training_variables, grouping_cfg):
                 raise ValueError(
                     f"Invalid group {group} for '{name}'. Each group must be (value,) or (min,max)."
                 )
+        intervals = [
+            (group[0], group[0]) if len(group) == 1 else group
+            for group in groups
+        ]
+        for group_index, (low, high) in enumerate(intervals):
+            for other_index in range(group_index + 1, len(intervals)):
+                other_low, other_high = intervals[other_index]
+                if max(low, other_low) <= min(high, other_high):
+                    raise ValueError(
+                        f"Overlapping groups for '{name}': "
+                        f"{groups[group_index]} and "
+                        f"{groups[other_index]}"
+                    )
 
 
 @dataclass
@@ -899,7 +921,13 @@ def _train_fold_model_wjets(
     )
 
 
-def _assign_qcd_weights(df_target, row_indices, weights, suffix):
+def _assign_qcd_weights(
+    df_target,
+    row_indices,
+    weights,
+    *,
+    column_name,
+):
     """Assign qcd weights by matching on dataframe row index."""
     if row_indices is None or weights is None:
         return
@@ -908,12 +936,63 @@ def _assign_qcd_weights(df_target, row_indices, weights, suffix):
     w_np   = weights.numpy()   if isinstance(weights,   t.Tensor) else np.asarray(weights)
     if ids_np.shape[0] != w_np.shape[0]:
         raise ValueError(
-            f"row_indices and weights size mismatch for {suffix}: "
+            f"row_indices and weights size mismatch for {column_name}: "
             f"{ids_np.shape[0]} vs {w_np.shape[0]}"
         )
     weight_map = dict(zip(ids_np, w_np))
     mask = target_df.index.isin(weight_map)
-    target_df.loc[mask, f'qcd_weight_{suffix}'] = target_df.index.to_series().map(weight_map)
+    target_df.loc[mask, column_name] = target_df.index.to_series().map(weight_map)
+
+
+def _select_enrichment_region(df, region_name, additional_masks=()):
+    """Return an all-process region from either a configured region or raw masks."""
+    manager = df._manager
+
+    if region_name in manager.regions:
+        region_mask = manager.get_region_mask(df.events, region_name)
+    elif region_name in manager.masks:
+        region_mask = manager.get_mask(df.events, region_name)
+    else:
+        raise ValueError(f"Unknown enrichment region or mask: {region_name}")
+
+    for mask_name in additional_masks:
+        if mask_name not in manager.masks:
+            raise ValueError(f"Unknown enrichment mask: {mask_name}")
+        region_mask &= manager.get_mask(df.events, mask_name)
+
+    return df.full.events.loc[region_mask]
+
+
+def _validate_qcd_fraction_sign_regions(df, region_df):
+    """Ensure the fractions training region differs from AR only by charge sign."""
+    selected_ss = region_df.index[region_df["SS"]]
+    selected_os = region_df.index[region_df["OS"]]
+    expected_ss = df.full.AR_SS.events.index
+    expected_os = df.full.AR.events.index
+
+    if not selected_ss.equals(expected_ss):
+        missing = len(expected_ss.difference(selected_ss))
+        extra = len(selected_ss.difference(expected_ss))
+        raise ValueError(
+            "DR_qcd_fractions_no_signs SS selection does not match AR_SS: "
+            f"missing={missing}, extra={extra}"
+        )
+
+    if not selected_os.equals(expected_os):
+        missing = len(expected_os.difference(selected_os))
+        extra = len(selected_os.difference(expected_os))
+        raise ValueError(
+            "DR_qcd_fractions_no_signs OS selection does not match AR: "
+            f"missing={missing}, extra={extra}"
+        )
+
+    logger.info(
+        "QCD fractions sign-region validation passed: SS=%d, OS=%d",
+        len(selected_ss),
+        len(selected_os),
+    )
+
+
 # -------------- tasks ----------------
 
 def _run_enrichment_process(
@@ -922,12 +1001,17 @@ def _run_enrichment_process(
     train_fold_model_fn,
     region_name: str,
     output_root: Path = None,
+    output_name: str = None,
+    feature_column_name: str = None,
+    feature_file_prefix: str = None,
+    additional_region_masks: Tuple[str, ...] = (),
+    validate_qcd_fraction_sign_regions: bool = False,
 ):
     _set_training_seed(TRAINING_SEED)
 
     project_root = Path(__file__).resolve().parent.parent
     output_root = Path(output_root) if output_root is not None else project_root
-    process_slug = process_name.lower()
+    process_slug = (output_name or process_name).lower()
     DATA_PATH = Path(input_file_path)
     MASKS_PATH = project_root / 'configs' / 'masks.yaml'
     TRAINING_VARIABLES_ENRICHMENT = project_root / 'configs' / 'training_variables_enrichment.yaml'
@@ -948,10 +1032,24 @@ def _run_enrichment_process(
     config = Config.from_dict(raw)
     grouping_cfg = _load_qcd_grouping_config(QCD_GROUPING_CONFIG_PATH)
     _validate_grouping_config(training_variables, grouping_cfg)
+    logger.info(
+        "Loaded enrichment groupings from %s: %s",
+        Path(QCD_GROUPING_CONFIG_PATH).resolve(),
+        {
+            item["name"]: item["groups"]
+            for item in grouping_cfg["groupings"]
+        },
+    )
 
 
 
-    region_df = getattr(df.full, region_name).events
+    region_df = _select_enrichment_region(
+        df,
+        region_name,
+        additional_masks=additional_region_masks,
+    )
+    if validate_qcd_fraction_sign_regions:
+        _validate_qcd_fraction_sign_regions(df, region_df)
     data_pt_even = get_my_data(region_df[region_df.event % 2 == 0], training_variables)
     data_pt_odd = get_my_data(region_df[region_df.event % 2 == 1], training_variables)
 
@@ -959,11 +1057,20 @@ def _run_enrichment_process(
     feature_files = []
 
     for item in grouping_cfg["groupings"]:
+        grouping_name = item["name"]
         group_idx_name = item["index_name"]
         grouping = item["groups"]
         group_idx = training_variables.index(group_idx_name)
+        current_feature_column = (
+            f"{feature_column_name}_{grouping_name}"
+            if feature_column_name is not None
+            else f"qcd_weight_{grouping_name}"
+        )
+        region_df[current_feature_column] = np.nan
         logger.info(
-            "Starting enrichment training with grouping '%s' at index %d and bins=%s",
+            "Starting enrichment training with grouping '%s' from %s "
+            "at index %d and bins=%s",
+            grouping_name,
             group_idx_name,
             group_idx,
             grouping,
@@ -978,7 +1085,7 @@ def _run_enrichment_process(
             df=data_pt_odd,
             device=device,
             checkpoint_dir=CHECKPOINT_DIR,
-            fold_label=f'fold_even_{group_idx_name}',
+            fold_label=f'fold_even_{grouping_name}',
             seed=TRAINING_SEED,
         )
 
@@ -991,7 +1098,7 @@ def _run_enrichment_process(
             df=data_pt_even,
             device=device,
             checkpoint_dir=CHECKPOINT_DIR,
-            fold_label=f'fold_odd_{group_idx_name}',
+            fold_label=f'fold_odd_{grouping_name}',
             seed=TRAINING_SEED,
         )
 
@@ -1001,17 +1108,41 @@ def _run_enrichment_process(
             fold_id_name='parity',
         )
 
-        group_base_path = base_path / group_idx_name
+        group_base_path = base_path / grouping_name
         save_model(even_model, group_base_path / 'fold_even')
         save_model(odd_model, group_base_path / 'fold_odd')
         save_model(model, group_base_path / 'combined')
 
-        _assign_qcd_weights(region_df, train_rows_even, qcd_weights_train_even, group_idx_name)
-        _assign_qcd_weights(region_df, val_rows_even,   qcd_weights_val_even, group_idx_name)
-        _assign_qcd_weights(region_df, train_rows_odd, qcd_weights_train_odd, group_idx_name)
-        _assign_qcd_weights(region_df, val_rows_odd,   qcd_weights_val_odd, group_idx_name)
+        _assign_qcd_weights(
+            region_df,
+            train_rows_even,
+            qcd_weights_train_even,
+            column_name=current_feature_column,
+        )
+        _assign_qcd_weights(
+            region_df,
+            val_rows_even,
+            qcd_weights_val_even,
+            column_name=current_feature_column,
+        )
+        _assign_qcd_weights(
+            region_df,
+            train_rows_odd,
+            qcd_weights_train_odd,
+            column_name=current_feature_column,
+        )
+        _assign_qcd_weights(
+            region_df,
+            val_rows_odd,
+            qcd_weights_val_odd,
+            column_name=current_feature_column,
+        )
         
-        feature_store_path = FEATURE_STORE_DIR / f'qcd_weights_{group_idx_name}.feather'
+        current_feature_prefix = feature_file_prefix or "qcd_weights"
+        feature_store_path = (
+            FEATURE_STORE_DIR
+            / f'{current_feature_prefix}_{grouping_name}.feather'
+        )
 
         registry = FeatureRegistry(FEATURE_REGISTRY_PATH)
         store = FeatureStore(feature_store_path, registry)
@@ -1019,14 +1150,17 @@ def _run_enrichment_process(
         store.write(pd.DataFrame({
             "row_index": region_df.index,
             "event": region_df["event"],
-            f"qcd_weight_{group_idx_name}": region_df[f"qcd_weight_{group_idx_name}"],
+            current_feature_column: region_df[current_feature_column],
         }))
 
         store.save()
         registry.save()
 
         default_registry = FeatureRegistry(DEFAULT_FEATURE_REGISTRY_PATH)
-        default_registry.register([f"qcd_weight_{group_idx_name}"], feature_store_path)
+        default_registry.register(
+            [current_feature_column],
+            feature_store_path,
+        )
         default_registry.save()
 
         feature_files.append(feature_store_path)
@@ -1034,6 +1168,7 @@ def _run_enrichment_process(
         _write_group_metadata(
             group_base_path / "metadata.json",
             {
+                "grouping_name": grouping_name,
                 "grouping_variable": group_idx_name,
                 "group_index": group_idx,
                 "groups": [list(g) for g in grouping],
@@ -1044,10 +1179,14 @@ def _run_enrichment_process(
                 },
                 "training_variables_file": str(TRAINING_VARIABLES_ENRICHMENT),
                 "model_config_file": str(CONFIG_MODEL_PATH),
+                "region_name": region_name,
+                "additional_region_masks": list(additional_region_masks),
+                "feature_column": current_feature_column,
+                "feature_file": str(feature_store_path),
             },
         )
 
-        logger.info("Finished grouping '%s'. Model artifacts at %s", group_idx_name, group_base_path)
+        logger.info("Finished grouping '%s'. Model artifacts at %s", grouping_name, group_base_path)
 
     return {
         "process_name": process_slug,
@@ -1074,6 +1213,26 @@ def train_enrichment_qcd(input_file_path: Path, output_root: Path = None):
         region_name="DR_qcd_without_signs",
         output_root=output_root,
     )
+
+
+def train_enrichment_qcd_fractions(
+    input_file_path: Path,
+    output_root: Path = None,
+):
+    """Train QCD enrichment in the fractions region for every grouping."""
+    return _run_enrichment_process(
+        process_name="qcd",
+        input_file_path=input_file_path,
+        train_fold_model_fn=train_fold_model_qcd,
+        region_name="DR_qcd_fractions_no_signs",
+        additional_region_masks=("preselection",),
+        output_name="qcd_fraction",
+        feature_column_name="weight_qcd_fraction",
+        feature_file_prefix="qcd_fraction_weights",
+        validate_qcd_fraction_sign_regions=True,
+        output_root=output_root,
+    )
+
 
 if __name__ == "__main__":
     train_enrichment_wjets('../data/dataframe_complete.feather')

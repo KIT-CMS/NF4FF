@@ -583,9 +583,25 @@ def calculate_fake_factor_dnn(
 
 def calculate_fake_factor_classic(
         df,
-        ):
+        fake_factors_path='/work/mmoser/TauFakeFactors.back/workdir/ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz',
+        corrections_path='/work/mmoser/TauFakeFactors.back/workdir/ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz',
+):
     _df = df.copy()
-    ff = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors.back/workdir/ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz')
+    required_columns = {
+        'pt_2',
+        'njets',
+        'pt_1',
+        'pt_tt',
+        'mt_1',
+    }
+    missing_columns = sorted(required_columns.difference(_df.columns))
+    if missing_columns:
+        raise KeyError(
+            'Missing columns for classic fake-factor calculation: '
+            f'{missing_columns}'
+        )
+
+    ff = cr.CorrectionSet.from_file(str(fake_factors_path))
 
     frac = ff['process_fractions']
 
@@ -594,7 +610,7 @@ def calculate_fake_factor_classic(
     ff_qcd = ff['QCD_fake_factors']
     ff_ttbar = ff['ttbar_fake_factors']
 
-    corr = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors.back/workdir/ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz')
+    corr = cr.CorrectionSet.from_file(str(corrections_path))
 
 
     _df["wjets_classic_ff"] = ff_wjets.evaluate(

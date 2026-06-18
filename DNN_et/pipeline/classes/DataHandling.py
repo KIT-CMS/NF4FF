@@ -1,4 +1,6 @@
 from pathlib import Path
+import fcntl
+import os
 import yaml
 import pandas as pd
 import operator
@@ -263,6 +265,28 @@ class AnalysisDataFrame:
     def events(self):
         return self._df
 
+    def subset(self, mask):
+        """Return a filtered analysis dataframe with fresh region/process views."""
+        if isinstance(mask, pd.Series):
+            mask = (
+                mask.reindex(self._df.index, fill_value=False)
+                .fillna(False)
+                .astype(bool)
+            )
+        else:
+            mask = np.asarray(mask, dtype=bool)
+            if len(mask) != len(self._df):
+                raise ValueError(
+                    "Subset mask length does not match the dataframe length."
+                )
+
+        subset_df = self._df.loc[mask].copy()
+        return AnalysisDataFrame(
+            subset_df,
+            self._manager,
+            self._resolver,
+        )
+
     def load_feature_file(self, path):
 
         #
@@ -360,17 +384,59 @@ class FeatureRegistry:
             self.index = json.loads(self.path.read_text())
         else:
             self.index = {}  # column -> file
+        self._updates = {}
+        self._removed = {}
 
     def get_file(self, column):
         return self.index.get(column)
 
     def register(self, columns, file_path):
         for c in columns:
-            self.index[c] = str(file_path)
+            path = str(file_path)
+            self.index[c] = path
+            self._updates[c] = path
+            self._removed.pop(c, None)
+
+    def remove(self, column, expected_path=None):
+        self.index.pop(column, None)
+        self._updates.pop(column, None)
+        self._removed[column] = (
+            None if expected_path is None else str(expected_path)
+        )
+
+    def replace_file_columns(self, file_path, columns):
+        stored_path = str(file_path)
+        columns = set(columns)
+        for column, path in tuple(self.index.items()):
+            if path == stored_path and column not in columns:
+                self.remove(column, expected_path=stored_path)
+        self.register(columns, stored_path)
 
     def save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self.index, indent=2))
+        lock_path = self.path.with_suffix(f"{self.path.suffix}.lock")
+        temporary_path = self.path.with_name(
+            f".{self.path.name}.{os.getpid()}.tmp"
+        )
+        with lock_path.open("a+") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            if self.path.exists():
+                current = json.loads(self.path.read_text())
+            else:
+                current = {}
+            for column, expected_path in self._removed.items():
+                if (
+                    expected_path is None
+                    or current.get(column) == expected_path
+                ):
+                    current.pop(column, None)
+            current.update(self._updates)
+            temporary_path.write_text(json.dumps(current, indent=2))
+            os.replace(temporary_path, self.path)
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        self.index = current
+        self._updates.clear()
+        self._removed.clear()
 
 class FeatureStore:
 
@@ -419,7 +485,7 @@ class FeatureStore:
             c for c in df.columns
             if c not in ("event", "row_index")
         ]
-        self.registry.register(feature_columns, self.path)
+        self.registry.replace_file_columns(self.path, feature_columns)
 
     def save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -598,6 +664,7 @@ def training_data(
     weight_column="weight",
     balance=True,
     balance_column=None,
+    balance_groups=None,
     balance_with_absolute_yields=False,
 ):
 
@@ -626,7 +693,19 @@ def training_data(
         ):
             group_values_sig = df_sig[balance_column].to_numpy()
             group_values_bkg = df_bkg[balance_column].to_numpy()
-            if balance_column == "tau_decaymode_2":
+            if balance_groups is not None:
+                group_defs = tuple(
+                    (
+                        (lambda values, value=group[0]: values == value)
+                        if len(group) == 1
+                        else (
+                            lambda values, low=group[0], high=group[1]:
+                            (values >= low) & (values <= high)
+                        )
+                    )
+                    for group in balance_groups
+                )
+            elif balance_column == "tau_decaymode_2":
                 group_defs = (
                     lambda values: values == 0,
                     lambda values: values == 1,
@@ -728,6 +807,7 @@ def create_training_dataset(
     weight_column="weight",
     balance=True,
     balance_column=None,
+    balance_groups=None,
     balance_with_absolute_yields=False,
     test_size=0.25,
     random_state=42,
@@ -751,6 +831,7 @@ def create_training_dataset(
         weight_column=weight_column,
         balance=balance,
         balance_column=balance_column,
+        balance_groups=balance_groups,
         balance_with_absolute_yields=balance_with_absolute_yields,
     )
 
@@ -761,6 +842,7 @@ def create_training_dataset(
         weight_column=weight_column,
         balance=False,
         balance_column=balance_column,
+        balance_groups=balance_groups,
         balance_with_absolute_yields=balance_with_absolute_yields,
     )
 

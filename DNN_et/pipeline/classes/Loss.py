@@ -8,14 +8,21 @@ import torch as t
 import torch.nn.functional as F
 from torch.nn.modules.loss import _Loss
 import torch.nn as nn
-from .CODE import HELPER as helper
-from .CODE.LOSS.LikelihoodsAndUncertainties import (Likelihood,
-                                                    UncertaintyObjects)
-from .CODE.TAYLORANALYSIS import TCExtraction
 
 # ---------------------
 
 einsum = partial(oe.contract, backend="torch", optimize="auto")
+
+
+def _is_one_class_multiclass(
+    n_classes: int,
+    *categories: Union[Tuple[int, ...], List[int], int],
+) -> bool:
+    n_categories = sum(
+        1 if isinstance(category, int) else len(category)
+        for category in categories
+    )
+    return n_classes == 1 and n_categories > 2
 
 
 
@@ -104,7 +111,11 @@ class PretrainingLoss(_Loss):
 
         self.signal_category = signal_category
         self.multiclass = n_classes > 1
-        self.one_class_multiclass = helper.is_one_class_multiclass(n_classes, signal_category, background_category)
+        self.one_class_multiclass = _is_one_class_multiclass(
+            n_classes,
+            signal_category,
+            background_category,
+        )
 
         self.final_activation = final_activation
         self.is_sigmoid = final_activation.lower() == "sigmoid"

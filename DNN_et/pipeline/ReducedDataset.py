@@ -5,6 +5,7 @@ import torch as t
 import pandas as pd
 import logging
 from classes import FeatureRegistry, FeatureStore
+from groupings import GROUPING_NAMES
 
 
 logger = logging.getLogger(__name__)
@@ -12,7 +13,6 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 CHECKPOINT_DIR = PROJECT_ROOT / 'Enrichment_models'
-GROUPING_NAMES = ['tau_decaymode_2', 'njets']
 
 DATA_PATH = PROJECT_ROOT / 'data' / 'dataframe_complete.feather'
 MASKS_PATH = PROJECT_ROOT / 'configs' / 'masks.yaml'
@@ -65,7 +65,7 @@ def _nn_output_name(process, grouping):
 
 def _register_reduced_features(feature_names, feature_store_path, legacy_name):
     default_registry = FeatureRegistry(DEFAULT_FEATURE_REGISTRY_PATH)
-    default_registry.index.pop(legacy_name, None)
+    default_registry.remove(legacy_name)
     default_registry.register(feature_names, feature_store_path)
     default_registry.save()
 
@@ -337,7 +337,7 @@ def reduced_data_wjets(output_root=PROJECT_ROOT):
         feature_df[feature_name] = feature_df["row_index"].map(reduced_by_row)
         store.write(feature_df)
         store.save()
-        registry.index.pop(legacy_name, None)
+        registry.remove(legacy_name)
         registry.save()
 
         _register_reduced_features(
@@ -425,7 +425,7 @@ def reduced_data_qcd(output_root=PROJECT_ROOT):
         feature_df[feature_name] = feature_df["row_index"].map(reduced_by_row)
         store.write(feature_df)
         store.save()
-        registry.index.pop(legacy_name, None)
+        registry.remove(legacy_name)
         registry.save()
 
         _register_reduced_features(

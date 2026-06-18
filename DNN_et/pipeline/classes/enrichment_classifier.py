@@ -18,8 +18,12 @@ from torch.utils.data import TensorDataset, DataLoader
 from classes.CustomLogging import setup_logging
 #from classes.path_managment import StorePathHelper
 from classes.config_loader import load_config
-from classes.helper import get_class_weights, _same_sign_opposite_sign_split, _collection, _component_collection
-import CODE.HELPER as helper
+from classes.helper import (
+    CollectionMeta,
+    get_class_weights,
+    _same_sign_opposite_sign_split,
+    _collection,
+)
 import torch as t
 from tap import Tap
 from typing import Any, Callable, Dict, Generator, List, Literal, Tuple, Union
@@ -35,20 +39,20 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 
 
-QCD_WEIGHT_BINNING = 'dynamic'
-QCD_WEIGHT_N_BINS = 20
+QCD_WEIGHT_BINNING = 'quantile'
+QCD_WEIGHT_N_BINS = 40
 QCD_WEIGHT_DYNAMIC_DELTA = 10.0
 QCD_WEIGHT_DYNAMIC_DELTA_LAST = 10.0
 QCD_WEIGHT_DYNAMIC_MIN_QCD_YIELD = 10.0
 QCD_WEIGHT_REFRESH_EVERY = 5
 QCD_WEIGHT_REFRESH_UNTIL_EPOCH = 100
-QCD_SS_WEIGHT_DYNAMIC_DELTA = 4.0
-QCD_SS_WEIGHT_DYNAMIC_DELTA_LAST = 4.0
-QCD_SS_WEIGHT_DYNAMIC_MIN_QCD_YIELD = 4.0
+QCD_SS_WEIGHT_DYNAMIC_DELTA = 10.0
+QCD_SS_WEIGHT_DYNAMIC_DELTA_LAST = 10.0
+QCD_SS_WEIGHT_DYNAMIC_MIN_QCD_YIELD = 10.0
 
 # ----- data clas
 @dataclass
-class _component_collection(metaclass=helper.CollectionMeta):
+class _component_collection(metaclass=CollectionMeta):
     _: KW_ONLY
     X: Union[torch.Tensor, pd.DataFrame, np.ndarray, None] = None
     Y: Union[torch.Tensor, pd.DataFrame, np.ndarray, None] = None
@@ -503,7 +507,7 @@ def get_ff_dataset_with_qcd_weights_ss(
             )
 
             logger.info(
-                "QCD weight bins (%s, njets=%s, SR_like=%s): %d",
+                "QCD weight bins (%s, group=%s, SR_like=%s): %d",
                 qcd_weight_binning,
                 njets_group,
                 sr_value,
@@ -532,6 +536,7 @@ def get_ff_dataset_with_qcd_weights_ss(
 
             # Save weights
             _dataset.weights.ss[qcd_mask_sr] = qcd_weights
+            _dataset.qcd_weights_ss[qcd_mask_sr] = qcd_weights
             if hasattr(_dataset, "class_weights"):
                 _dataset.class_weights.ss[qcd_mask_sr] *= qcd_weights
 

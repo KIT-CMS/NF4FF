@@ -66,6 +66,8 @@ from .Plotting import (
     plot_fake_factors_in_DR,
     plot_fake_factors_grouped,
     plot_fake_factors_in_dr_grouped,
+    plot_fake_factors_grouped_range,
+    plot_fake_factors_in_dr_grouped_range,
     plot_fake_factors_in_dr_grouped_c,
     plot_closure_c,
     plot_fake_factors_grouped_c,

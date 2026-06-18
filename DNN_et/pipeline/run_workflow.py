@@ -4,8 +4,7 @@ import law
 import logic
 
 def main():
-    task_name = sys.argv[1]
-    law.run(task_name)
+    law.run(sys.argv[1:])
 
 if __name__ == "__main__":
     main()

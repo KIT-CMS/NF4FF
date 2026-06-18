@@ -278,25 +278,30 @@ class AnalysisDataFrame:
 
         feat = feat[new_cols]
 
-        feature_cols = [c for c in feat.columns if c != "event"]
+        feature_cols = [c for c in feat.columns if c not in {"event", "row_index"}]
         if len(feature_cols) == 0:
             self._loaded_feature_files.add(path)
             return
 
         #
-        # Duplicate-safe lazy loading:
-        # collapse feature file to one row per event and map values to the
-        # existing dataframe without changing row count/order.
+        # Prefer exact row-index keyed assignment when the feature file was
+        # produced for this dataframe. Fall back to duplicate-safe event
+        # mapping for legacy feature files.
         #
-        feat_compact = (
-            feat[["event"] + feature_cols]
-            .groupby("event", as_index=False, sort=False)
-            .last()
-            .set_index("event")
-        )
+        if "row_index" in feat.columns and feat["row_index"].is_unique:
+            feat_indexed = feat.set_index("row_index")
+            for col in feature_cols:
+                self._df[col] = self._df.index.to_series().map(feat_indexed[col])
+        else:
+            feat_compact = (
+                feat[["event"] + feature_cols]
+                .groupby("event", as_index=False, sort=False)
+                .last()
+                .set_index("event")
+            )
 
-        for col in feature_cols:
-            self._df[col] = self._df["event"].map(feat_compact[col])
+            for col in feature_cols:
+                self._df[col] = self._df["event"].map(feat_compact[col])
 
         self._loaded_feature_files.add(path)
 

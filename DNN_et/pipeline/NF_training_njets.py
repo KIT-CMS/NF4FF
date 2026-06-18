@@ -18,6 +18,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 
 from classes import load_data, load_variables
+from groupings import GROUPING_NAMES
 
 
 SEED = 42
@@ -30,7 +31,7 @@ VARIABLES_PATH = PROJECT_ROOT / "configs" / "training_variables_nf.yaml"
 CONFIG_PATH = PROJECT_ROOT / "configs" / "config_NF.yaml"
 OUTPUT_ROOT = PROJECT_ROOT / "Training_resuluts_NF"
 
-REDUCED_WEIGHT_GROUPINGS = ("tau_decaymode_2", "njets")
+REDUCED_WEIGHT_GROUPINGS = GROUPING_NAMES
 PROCESSES = ("wjets", "qcd")
 REGIONS = ("AR-like", "SR-like")
 

@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from classes import load_data
+from groupings import GROUPING_NAMES
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -12,7 +13,7 @@ DEFAULT_DATA_PATH = PROJECT_ROOT / "data" / "dataframe_complete.feather"
 DEFAULT_MASKS_PATH = PROJECT_ROOT / "configs" / "masks.yaml"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "plots" / "enrichment_wjets"
 QCD_WEIGHT_STORE_DIR_WJETS = PROJECT_ROOT / "data" / "features" / "wjets"
-GROUPINGS = ("tau_decaymode_2", "njets")
+GROUPINGS = GROUPING_NAMES
 
 PROCESS_COMPONENTS = (
     ("wjets", "W+jets", "#e76300"),

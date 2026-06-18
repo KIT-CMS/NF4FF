@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Union, Tuple, Dict, Any
 from dataclasses import is_dataclass, fields
 from pathlib import Path
+from groupings import GROUPING_NAMES, grouping_bounds, grouping_source
 
 SEED = 42
 logger = logging.getLogger(__name__)
@@ -191,6 +192,7 @@ def _train_fold_model(
     df_bkg,
     weight_column,
     balance_column,
+    balance_groups,
     balance_with_absolute_yields,
     squeezing_limit,
     device,
@@ -204,6 +206,7 @@ def _train_fold_model(
         weight_column=weight_column,
         balance=True,
         balance_column=balance_column,
+        balance_groups=balance_groups,
         balance_with_absolute_yields=balance_with_absolute_yields,
         test_size=0.25,
         random_state=SEED,
@@ -228,6 +231,8 @@ def _train_fold_model(
         grouping=grouping,
         default_model=base_model,
     )
+
+
 
     model, best_loss, history = train_dnn_squeezed_loss(
         model=model,
@@ -272,37 +277,27 @@ def train_squeezed_models(
     taudm_idx = training_var.index('tau_decaymode_2')
     njets_idx = training_var.index('njets')
 
-    grouping_taudm = {
-        taudm_idx: (
-            (0,),
-            (1,),
-            (10,),
-            (11,),
-        )
-    }
-
-    grouping_njets = {
-        njets_idx: (
-            (0,),
-            (1,),
-            (2, 1000),
-        )
-    }
-
     logger.info(
         "Squeezing probability=%s, penalty upper bound=%s",
         squeezing,
         penalty_upper_bound,
     )
 
-    for grouping, group_label in zip(
-        [grouping_taudm, grouping_njets],
-        ['tau_decaymode_2', 'njets'],
-    ):
+    grouping_indices = {
+        "tau_decaymode_2": taudm_idx,
+        "tau_decaymode_2_alt": taudm_idx,
+        "njets": njets_idx,
+    }
+    for group_label in GROUPING_NAMES:
         logger.info('Group splitting: %s', group_label)
 
         for process in ['wjets', 'qcd', 'ttbar']:
             logger.info('Training process: %s', process)
+            group_bounds = grouping_bounds(group_label, process)
+            grouping = {
+                grouping_indices[group_label]: group_bounds,
+            }
+            source_column = grouping_source(group_label)
 
             if process == 'wjets':
                 source_weight = f'reduced_weight_wjets_{group_label}_nominal'
@@ -381,7 +376,8 @@ def train_squeezed_models(
                 df_sig=df_sig_odd,
                 df_bkg=df_bkg_odd,
                 weight_column=weight_column,
-                balance_column=group_label,
+                balance_column=source_column,
+                balance_groups=group_bounds,
                 balance_with_absolute_yields=(source_weight is not None),
                 squeezing_limit=penalty_upper_bound,
                 device=device,
@@ -395,7 +391,8 @@ def train_squeezed_models(
                 df_sig=df_sig_even,
                 df_bkg=df_bkg_even,
                 weight_column=weight_column,
-                balance_column=group_label,
+                balance_column=source_column,
+                balance_groups=group_bounds,
                 balance_with_absolute_yields=(source_weight is not None),
                 squeezing_limit=penalty_upper_bound,
                 device=device,

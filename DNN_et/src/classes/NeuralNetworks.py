@@ -97,6 +97,10 @@ class DNN(t.nn.Module):
         self.register_buffer("_scaler_scale", t.full((input_nodes,), 1.0))
 
 
+        # StandardScaler or RobustScaler for TCA mode in nested models
+        self.register_buffer("_scaler_shift_copy", t.full((input_nodes,), 0.0))
+        self.register_buffer("_scaler_scale_copy", t.full((input_nodes,), 1.0))
+
     @property
     def _is_initialized(self) -> bool:
         initialized = (t.isnan(self._scaler_shift) | t.isnan(self._scaler_scale)).sum() == 0
@@ -133,6 +137,9 @@ class DNN(t.nn.Module):
 
         self._scaler_shift.data[:] = shift
         self._scaler_scale.data[:] = scale
+
+        self._scaler_shift_copy.data[:] = shift
+        self._scaler_scale_copy.data[:] = scale
 
     def apply_scaler(self, x: t.Tensor) -> t.Tensor:
         return (x - self._scaler_shift.to(x.device)) / self._scaler_scale.to(x.device)
@@ -182,6 +189,7 @@ class GroupedLayerABC(t.nn.Module, ABC):
         self._logic_pipeline: List[Tuple[Any, Any]] = []
         self._fallback_payload: Any = None
         self._wrapped_delegate: Any = None
+        self._tca_mode = False
 
     @abstractmethod
     def _execute_group(self, X: t.Tensor, payload: Any) -> t.Tensor:
@@ -203,9 +211,14 @@ class GroupedLayerABC(t.nn.Module, ABC):
 
         for conditions, payload in self._logic_pipeline:
             current_mask = t.ones(batch_size, dtype=t.bool, device=X.device)
-            for colume_idx, bounds in conditions:
-                vals = X[:, colume_idx]
+            for column_idx, bounds in conditions:
+                vals = X[:, column_idx]
 
+                if self._tca_mode:
+                    shift = self._fallback_payload._scaler_shift_copy[column_idx].to(vals.device)
+                    scale = self._fallback_payload._scaler_scale_copy[column_idx].to(vals.device)
+                    vals = vals * scale + shift
+    
                 if len(bounds) == 1:  # checks at trace time, not ONNX run time
                     current_mask = current_mask & (t.abs(vals - bounds[0]) < 1e-4)
                 elif len(bounds) == 2:
@@ -577,10 +590,11 @@ def load_model(
 def load_fold_combined_model(
     even_model_path: Path,  # usually fold0
     odd_model_path: Path,   # usually fold1
+    force_recreate: bool = False,
 ) -> FoldCombinedDNN:
     return FoldCombinedDNN(
-        even_model=load_model(even_model_path).eval(),
-        odd_model=load_model(odd_model_path).eval(),
+        even_model=load_model(even_model_path, force_recreate=force_recreate).eval(),
+        odd_model=load_model(odd_model_path, force_recreate=force_recreate).eval(),
     )
 
 
@@ -638,8 +652,8 @@ def build_manual_scaler(model: t.nn.Module) -> Callable[[t.Tensor], t.Tensor]:
 
             for conditions, payload_scaler in pipeline:
                 current_mask = t.ones(batch_size, dtype=t.bool, device=X.device)
-                for colume_idx, bounds in conditions:
-                    vals = X[:, colume_idx]
+                for column_idx, bounds in conditions:
+                    vals = X[:, column_idx]
                     if len(bounds) == 1:
                         current_mask = current_mask & (t.abs(vals - bounds[0]) < 1e-4)
                     elif len(bounds) == 2:
@@ -680,6 +694,9 @@ def temporary_extract_scaler_callable(
 ) -> Iterable[Tuple[t.nn.Module, Callable[[t.Tensor], t.Tensor]]]:
     manual_scaler, originals = build_manual_scaler(model), {}
 
+    for item in model.modules():
+        if hasattr(item, "_tca_mode"):
+            item._tca_mode = True
     try:
         for name, buffer in model.named_buffers():
             if name.endswith("_scaler_shift"):
@@ -692,6 +709,9 @@ def temporary_extract_scaler_callable(
         yield model, manual_scaler
 
     finally:
+        for item in model.modules():
+            if hasattr(item, "_tca_mode"):
+                item._tca_mode = False
         for name, buffer in model.named_buffers():
             if name in originals:
                 buffer.copy_(originals[name])
@@ -703,6 +723,8 @@ def convert_models_to_onnx(
     onnx_model_path: Union[str, Path] = "__model.onnx",
 ) -> None:
     assert (torch_model is not None) ^ (torch_model_dir is not None), "Provide either torch_model or torch_model_dir, not both"
+    onnx_model_path = Path(onnx_model_path)
+    onnx_model_path.parent.mkdir(parents=True, exist_ok=True)
 
     if torch_model is not None:
         model = torch_model.eval()
@@ -741,13 +763,14 @@ def convert_models_to_onnx(
             profile=True,
         )
 
+        model_proto = onnx_program.model_proto
         if (input_names := getattr(model, "_input_names", None)) is not None:
             logger.info(f"Adding input names metadata to ONNX model: {input_names}")
-            model_proto = onnx_program.model_proto
             meta = model_proto.metadata_props.add()
             meta.key = "input_tensor"
             meta.value = "Input features in order:\n\n" + "\n".join(input_names)
 
+        onnx_model_path.parent.mkdir(parents=True, exist_ok=True)
         onnx.save(
             model_proto,
             onnx_model_path,
@@ -771,6 +794,8 @@ class LikelihoodRatioCalculation(GroupedLayerABC):
         super().__init__()
         self.wrapped_model = model
         self._wrapped_delegate = model
+        self._input_nodes = getattr(model, "_input_nodes", None)
+        self._input_names = getattr(model, "_input_names", None)
         self.clip = clip
         self._init_constants = normalization_constants
 
@@ -779,8 +804,13 @@ class LikelihoodRatioCalculation(GroupedLayerABC):
         self._fallback_norm = float(self._norm_dict.get("fallback", 1.0)) if self._is_grouped_norm else float(normalization_constants)
         self._group_specs: List[Tuple[List[Tuple[int, Tuple[Any, ...]]], float]] = []
 
-        if self._is_grouped_norm and hasattr(model, "_logic_pipeline"):
-            for conditions, _ in model._logic_pipeline:
+        grouping_model = (
+            model.even_model
+            if isinstance(model, FoldCombinedDNN)
+            else model
+        )
+        if self._is_grouped_norm and hasattr(grouping_model, "_logic_pipeline"):
+            for conditions, _ in grouping_model._logic_pipeline:
                 key = tuple(cond[1] for cond in conditions)
                 norm = self._resolve_norm_value(key)
                 self._group_specs.append((conditions, norm))
@@ -985,4 +1015,3 @@ class EnsembleStatUncWrapper(t.nn.Module):
 
     def __recreate__(self) -> str:
         return f"{self._imports}__model = {self.model_name}\n\n"
-
