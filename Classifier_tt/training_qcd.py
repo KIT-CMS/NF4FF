@@ -542,12 +542,38 @@ def _calculate_scaled_event_weights_generalized(
 def mask_DR(df):
 
     mask_a1 = (df.q_1 * df.q_2 > 0)
-    mask_a2 = ((df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
+    mask_a2 = ((df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5)
     mask_a3 = ((df.id_tau_vsJet_VLoose_1 > 0.5))
     mask_a4 = ((df.id_tau_vsJet_VLoose_2 > 0.5))
     mask_DR = (mask_a1 & mask_a2 & mask_a3 & mask_a4)
 
     return df[mask_DR].copy()
+
+def mask_SR(df):
+    mask1 = df.id_tau_vsJet_Tight_1 > 0.5
+    mask2 = df.id_tau_vsJet_Tight_2 > 0.5
+    mask3 = (df.q_1*df.q_2) < 0
+    mask4 = ((df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
+    mask_SR = (mask1 & mask2 & mask3 & mask4)
+    return df[mask_SR].copy()
+
+def mask_AR1(df):
+    mask0 = df.id_tau_vsJet_VLoose_1 > 0.5
+    mask1 = df.id_tau_vsJet_Tight_1 < 0.5
+    mask2 = df.id_tau_vsJet_Tight_2 > 0.5
+    mask3 = (df.q_1*df.q_2) < 0
+    mask4 = ((df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
+    mask_AR = (mask0 & mask1 & mask2 & mask3 & mask4)
+    return df[mask_AR].copy()
+
+def mask_AR2(df):
+    mask0 = df.id_tau_vsJet_VLoose_2 > 0.5
+    mask1 = df.id_tau_vsJet_Tight_1 > 0.5
+    mask2 = df.id_tau_vsJet_Tight_2 < 0.5
+    mask3 = (df.q_1*df.q_2) < 0
+    mask4 = ((df.extramuon_veto < 0.5) & df.extraelec_veto < 0.5 )
+    mask_AR = (mask0 & mask1 & mask2 & mask3 & mask4)
+    return df[mask_AR].copy()
 
 
 def split_even_odd(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -596,6 +622,19 @@ def update_last_training_folder(run_dir: Union[str, Path], last_dir: Union[str, 
     last_dir.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(run_dir, last_dir)
     logger.info("Updated latest training folder: %s", last_dir)
+
+def qcd_fraction(data, region):
+    data = region(data)
+    tot = 0
+    other = 0
+    for i in range(np.max(data.process)):
+        if i == 0: tot = np.sum(data[data.process==i].weight)
+        else: other = other + np.sum(data[data.process==i].weight)
+
+    qcd = tot - other
+    frac = qcd/tot
+
+    return frac
 
 # ---------------------------------------
 
@@ -646,12 +685,10 @@ def main():
     # --- load data 
 
     data_complete = pd.read_feather(cfg["paths"]["input_dir"][args.loc] + args.embedding + "/combined_data.feather")
-    #print(data_complete['Label'].value_counts())
     data_DR = mask_DR(data_complete)
-    #print(data_DR['class_weights'].value_counts())
-    #print(data_DR['Label'].value_counts())
-    #print(data_DR['process'].value_counts())
-    #exit()
+
+    print(qcd_fraction(data_complete, mask_AR2))
+    exit()
 
     data_DR.loc[data_DR['process'] != 0, 'Label'] = 0
     data_DR.loc[data_DR['process'] == 0, 'Label'] = 1
