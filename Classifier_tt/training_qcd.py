@@ -687,8 +687,8 @@ def main():
     data_complete = pd.read_feather(cfg["paths"]["input_dir"][args.loc] + args.embedding + "/combined_data.feather")
     data_DR = mask_DR(data_complete)
 
-    print(qcd_fraction(data_complete, mask_AR2))
-    exit()
+    #print(qcd_fraction(data_complete, mask_AR2))
+    #exit()
 
     data_DR.loc[data_DR['process'] != 0, 'Label'] = 0
     data_DR.loc[data_DR['process'] == 0, 'Label'] = 1

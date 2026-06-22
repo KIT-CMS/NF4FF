@@ -47,6 +47,54 @@ def CMS_LABEL(ax, *args, **kwargs):
         transform=ax.transAxes
     )
 
+def add_cms_privatework_lumi_row(axis, y: float = 1.005, fontsize: int = 9) -> None:
+    if axis == None:
+        plt.text(
+            0.0,
+            y,
+            'Private work (CMS data/simulation)',
+            ha='left',
+            va='bottom',
+            fontsize=fontsize,
+            fontproperties='Tex Gyre Heros:italic',
+            #transform=axis.transAxes,
+            clip_on=False,
+        )
+        plt.text(
+            1.0,
+            y,
+            r'59.8 $fb^{-1}$ (2018, 13 TeV)',
+            ha='right',
+            va='bottom',
+            fontsize=fontsize,
+            fontproperties='Tex Gyre Heros',
+            #transform=axis.transAxes,
+            clip_on=False,
+        )
+    else:
+        axis.text(
+            0.0,
+            y,
+            'Private work (CMS data/simulation)',
+            ha='left',
+            va='bottom',
+            fontsize=fontsize,
+            fontproperties='Tex Gyre Heros:italic',
+            transform=axis.transAxes,
+            clip_on=False,
+        )
+        axis.text(
+            1.0,
+            y,
+            r'59.8 $fb^{-1}$ (2018, 13 TeV)',
+            ha='right',
+            va='bottom',
+            fontsize=fontsize,
+            fontproperties='Tex Gyre Heros',
+            transform=axis.transAxes,
+            clip_on=False,
+        )
+
 
 def reorder_for_rowwise_legend(handles, labels, ncol, reverse=False):
     if reverse:

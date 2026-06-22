@@ -25,12 +25,12 @@ import torch as t
 import yaml
 
 from classes.Logging import setup_logging
-from classes.NeuralNetworks import RealNVP, BinaryClassifier
+from classes.NeuralNetworks import RealNVP
 from classes.Dataclasses import ModelConfig
 from classes.Collection import load_model_config, load_flow, load_conditional_flow, evaluate_pdf, compute_eventwise_fake_factors, get_my_data_qcd
 from classes.Collection import load_config, load_grouped_qcd_njets_router
-from classes.Plotting import CMS_CHANNEL_TITLE, CMS_LABEL, CMS_LUMI_TITLE, CMS_NJETS_TITLE, reorder_for_rowwise_legend, adjust_ylim_for_legend
-
+from classes.Plotting import CMS_CHANNEL_TITLE, CMS_LABEL, CMS_LUMI_TITLE, CMS_NJETS_TITLE, add_cms_privatework_lumi_row, reorder_for_rowwise_legend, adjust_ylim_for_legend
+from classes.NF import corr_matrix_nfsample_data
 
 matplotlib.rcParams.update({
     'font.size': 16,
@@ -65,7 +65,7 @@ class Args(Tap):
 
     taus = 1 #[1, 2] #[1, 2, 12] # list of tau fakes
     embedding: Literal["embedding", "no_embedding"] = "embedding"
-    var = "variables_7"
+    var = "variables_61"
 
 
 # Runtime context (initialized in `initialize_runtime_context()` and consumed by plotting functions)
@@ -160,6 +160,7 @@ def _build_training_variables_prefix(variables: list[str]) -> str:
         readable_tail = re.sub(r"[^A-Za-z0-9_]+", "_", readable_tail).strip("_")
     else:
         readable_tail = "none"
+
     if 'deltaR_ditaupair' in variables:
         return f"vars{len(variables)}_{readable_tail}"
     else:
@@ -1320,116 +1321,129 @@ def plot_nf_sampling_training_variables(category_name: str, njets_title: str, da
     sr_data = sr_data[(sr_data.process == 0) & (sr_data.SS == True)].copy()
 
     panel_specs = [
-        ("Tau 1 AR-like", tau1_ar_data, model_AR_like_tau1, '#d62728'),
-        ("Tau 2 AR-like", tau2_ar_data, model_AR_like_tau2, '#2ca02c'),
-        ("Tau 1 SR-like", sr_data, model_SR_like_tau1, '#ff7f0e'),
-        ("Tau 2 SR-like", sr_data, model_SR_like_tau2, '#1f77b4'),
+        ("Tau 1 AR-like", tau1_ar_data, model_AR_like_tau1, '#d62728', 'tau1_arlike'),
+        ("Tau 2 AR-like", tau2_ar_data, model_AR_like_tau2, '#2ca02c', 'tau2_arlike'),
+        ("Tau 1 SR-like", sr_data, model_SR_like_tau1, '#ff7f0e', 'tau1_srlike'),
+        ("Tau 2 SR-like", sr_data, model_SR_like_tau2, '#1f77b4', 'tau2_srlike'),
     ]
     
-    
-    n_samples = 10_000
+    n_samples = 100000
+    if len(variables) <= 8:
+        # ----- one plot vor every variable -----
+        for var in variables:
+            fig, axes = plt.subplots(2, 2, figsize=(19.2, 14.4), sharex=False, sharey=False)
+            flat_axes = axes.flatten()
+            fixed_bins = sampling_plot_bins_by_variable.get(var)
 
-    # ----- one plot vor every variable -----
-    for var in variables:
-        fig, axes = plt.subplots(2, 2, figsize=(19.2, 14.4), sharex=False, sharey=False)
-        flat_axes = axes.flatten()
-        fixed_bins = sampling_plot_bins_by_variable.get(var)
+            # ----- in each plot: one plot of each region ------
+            for axis, (title, data_df, model, color, tag) in zip(flat_axes, panel_specs):
 
-        # ----- in each plot: one plot of each region ------
-        for axis, (title, data_df, model, color) in zip(flat_axes, panel_specs):
+                CMS_CHANNEL_TITLE(axis)
+                CMS_LUMI_TITLE(axis)
+                CMS_LABEL(axis)
+                CMS_NJETS_TITLE(axis, title=njets_title)
 
-            CMS_CHANNEL_TITLE(axis)
-            CMS_LUMI_TITLE(axis)
-            CMS_LABEL(axis)
-            CMS_NJETS_TITLE(axis, title=njets_title)
+                if data_df.empty:
+                    axis.text(0.5, 0.5, 'No data events', ha='center', va='center', transform=axis.transAxes)
+                    axis.set_title(title)
+                    axis.set_xlabel(labels.get(var, var))
+                    axis.set_ylabel('Density')
+                    axis.set_yscale('log')
+                    axis.grid(True, linestyle=':', alpha=0.35)
+                    if fixed_bins is not None:
+                        axis.set_xlim(float(fixed_bins[0]), float(fixed_bins[-1]))
+                    continue
 
-            if data_df.empty:
-                axis.text(0.5, 0.5, 'No data events', ha='center', va='center', transform=axis.transAxes)
-                axis.set_title(title)
+                sampled_np = _sample_nf_features_for_region(
+                    model=model,
+                    n_samples=n_samples,
+                    reference_df=data_df,
+                    model_mode=args.model_mode,
+                    device=device,
+                )
+
+                data_values = data_df[var].to_numpy(dtype=np.float32)
+                sampled_values = sampled_np[:, variables.index(var)] if sampled_np.size else np.array([], dtype=np.float32)
+
+                data_values = data_values[np.isfinite(data_values)]
+                sampled_values = sampled_values[np.isfinite(sampled_values)]
+
+                if data_values.size == 0 or sampled_values.size == 0:
+                    axis.text(0.5, 0.5, 'No finite values', ha='center', va='center', transform=axis.transAxes)
+                    axis.set_title(title)
+                    axis.set_xlabel(labels.get(var, var))
+                    axis.set_ylabel('Density')
+                    axis.set_yscale('log')
+                    axis.grid(True, linestyle=':', alpha=0.35)
+                    if fixed_bins is not None:
+                        axis.set_xlim(float(fixed_bins[0]), float(fixed_bins[-1]))
+                    continue
+
+                bins = fixed_bins
+                if bins is None:
+                    combined = np.concatenate([data_values, sampled_values])
+                    if np.allclose(combined.min(), combined.max()):
+                        half_width = max(abs(float(combined.min())) * 0.05, 1.0)
+                        bins = np.linspace(float(combined.min()) - half_width, float(combined.max()) + half_width, 31)
+                    else:
+                        bins = np.quantile(combined, np.linspace(0.0, 1.0, 41))
+                        bins = np.unique(bins)
+                        if bins.size < 10:
+                            bins = np.linspace(float(combined.min()), float(combined.max()), 31)
+
+                n_sample,_ ,_ = axis.hist(
+                    sampled_values,
+                    bins=bins,
+                    density=True,
+                    histtype='stepfilled',
+                    alpha=0.35,
+                    color=color,
+                    label=f'NF sampled ({n_samples})',
+                )
+                n_data,_ ,_ = axis.hist(
+                    data_values,
+                    bins=bins,
+                    density=True,
+                    histtype='step',
+                    linewidth=1.8,
+                    color='black',
+                    label=f'Data ({len(data_values)})',
+                )
+                
+                axis.set_title(title, fontsize=25, pad=10)
                 axis.set_xlabel(labels.get(var, var))
                 axis.set_ylabel('Density')
                 axis.set_yscale('log')
                 axis.grid(True, linestyle=':', alpha=0.35)
-                if fixed_bins is not None:
-                    axis.set_xlim(float(fixed_bins[0]), float(fixed_bins[-1]))
-                continue
+                axis.legend(frameon=False, loc='upper right', bbox_to_anchor=(1.0, 0.9))
+                axis.set_xlim(float(bins[0]), float(bins[-1]))
+                axis.set_ylim(top=5*np.max([np.max(n_sample), np.max(n_data)]))
 
-            sampled_np = _sample_nf_features_for_region(
+            fig.suptitle(
+                f'NF sampled vs data ({category_name}, {njets_title})\nTraining variable: {labels.get(var, var)}',
+                fontsize=28,
+                y=1.01,
+            )
+            fig.tight_layout()
+            fig.savefig(sampling_plot_dir / f'nf_sample_vs_data_{var}.png', bbox_inches='tight')
+            fig.savefig(sampling_plot_dir / f'nf_sample_vs_data_{var}.pdf', bbox_inches='tight')
+            plt.close(fig)
+
+        logger.info('Saved NF sampling validation plots to %s', sampling_plot_dir)
+    else:
+        logger.warning('No NF samling for these variables')
+        
+    for title, data_df, model, color, tag in panel_specs:
+        sampled_np = _sample_nf_features_for_region(
                 model=model,
                 n_samples=n_samples,
                 reference_df=data_df,
                 model_mode=args.model_mode,
                 device=device,
             )
-
-            data_values = data_df[var].to_numpy(dtype=np.float32)
-            sampled_values = sampled_np[:, variables.index(var)] if sampled_np.size else np.array([], dtype=np.float32)
-
-            data_values = data_values[np.isfinite(data_values)]
-            sampled_values = sampled_values[np.isfinite(sampled_values)]
-
-            if data_values.size == 0 or sampled_values.size == 0:
-                axis.text(0.5, 0.5, 'No finite values', ha='center', va='center', transform=axis.transAxes)
-                axis.set_title(title)
-                axis.set_xlabel(labels.get(var, var))
-                axis.set_ylabel('Density')
-                axis.set_yscale('log')
-                axis.grid(True, linestyle=':', alpha=0.35)
-                if fixed_bins is not None:
-                    axis.set_xlim(float(fixed_bins[0]), float(fixed_bins[-1]))
-                continue
-
-            bins = fixed_bins
-            if bins is None:
-                combined = np.concatenate([data_values, sampled_values])
-                if np.allclose(combined.min(), combined.max()):
-                    half_width = max(abs(float(combined.min())) * 0.05, 1.0)
-                    bins = np.linspace(float(combined.min()) - half_width, float(combined.max()) + half_width, 31)
-                else:
-                    bins = np.quantile(combined, np.linspace(0.0, 1.0, 41))
-                    bins = np.unique(bins)
-                    if bins.size < 10:
-                        bins = np.linspace(float(combined.min()), float(combined.max()), 31)
-
-            n_sample,_ ,_ = axis.hist(
-                sampled_values,
-                bins=bins,
-                density=True,
-                histtype='stepfilled',
-                alpha=0.35,
-                color=color,
-                label=f'NF sampled ({n_samples})',
-            )
-            n_data,_ ,_ = axis.hist(
-                data_values,
-                bins=bins,
-                density=True,
-                histtype='step',
-                linewidth=1.8,
-                color='black',
-                label=f'Data ({len(data_values)})',
-            )
-            
-            axis.set_title(title, fontsize=25, pad=10)
-            axis.set_xlabel(labels.get(var, var))
-            axis.set_ylabel('Density')
-            axis.set_yscale('log')
-            axis.grid(True, linestyle=':', alpha=0.35)
-            axis.legend(frameon=False, loc='upper right', bbox_to_anchor=(1.0, 0.9))
-            axis.set_xlim(float(bins[0]), float(bins[-1]))
-            axis.set_ylim(top=5*np.max([np.max(n_sample), np.max(n_data)]))
-
-        fig.suptitle(
-            f'NF sampled vs data ({category_name}, {njets_title})\nTraining variable: {labels.get(var, var)}',
-            fontsize=28,
-            y=1.01,
-        )
-        fig.tight_layout()
-        fig.savefig(sampling_plot_dir / f'nf_sample_vs_data_{var}.png', bbox_inches='tight')
-        fig.savefig(sampling_plot_dir / f'nf_sample_vs_data_{var}.pdf', bbox_inches='tight')
-        plt.close(fig)
-
-    logger.info('Saved NF sampling validation plots to %s', sampling_plot_dir)
+        corr_matrix_nfsample_data(data_df, sampled_np, variables, title, tag, sampling_plot_dir)
+    
+    logger.info(f'Saved NF correlation matrix plots to {sampling_plot_dir}')
 
 
 
@@ -1677,29 +1691,7 @@ def _compute_first_order_output_side_tcs(model, n_events: int = 3000) -> dict:
 
 # Plotting
 
-def _add_cms_privatework_lumi_row(axis, y: float = 1.005, fontsize: int = 9) -> None:
-    axis.text(
-        0.0,
-        y,
-        'Private work (CMS data/simulation)',
-        ha='left',
-        va='bottom',
-        fontsize=fontsize,
-        fontproperties='Tex Gyre Heros:italic',
-        transform=axis.transAxes,
-        clip_on=False,
-    )
-    axis.text(
-        1.0,
-        y,
-        r'59.8 $fb^{-1}$ (2018, 13 TeV)',
-        ha='right',
-        va='bottom',
-        fontsize=fontsize,
-        fontproperties='Tex Gyre Heros',
-        transform=axis.transAxes,
-        clip_on=False,
-    )
+
 
 
 def plot_nf_taylor_analysis(output_dir: Path) -> None:
@@ -1739,13 +1731,13 @@ def plot_nf_taylor_analysis(output_dir: Path) -> None:
             axis.text(0.5, 0.5, f'Failed:\n{exc}', ha='center', va='center',
                       transform=axis.transAxes, fontsize=8)
             axis.set_title(title)
-            _add_cms_privatework_lumi_row(axis)
+            add_cms_privatework_lumi_row(axis)
 
             single_fig, single_axis = plt.subplots(figsize=(9.5, 7.2))
             single_axis.text(0.5, 0.5, f'Failed:\n{exc}', ha='center', va='center',
                              transform=single_axis.transAxes, fontsize=10)
             single_axis.set_title(title)
-            _add_cms_privatework_lumi_row(single_axis, fontsize=10)
+            add_cms_privatework_lumi_row(single_axis, fontsize=10)
             single_fig.suptitle(
                 f'First-order Taylor coefficients  —  {title}  —  {args.model_mode}\n'
                 r'$\tilde{c_i} = \sigma_i\,\langle\,|\,\partial \log p\,/\,\partial x_i\,|\,\rangle$',
@@ -1762,12 +1754,12 @@ def plot_nf_taylor_analysis(output_dir: Path) -> None:
         if not tc_dict:
             axis.text(0.5, 0.5, 'No data', ha='center', va='center', transform=axis.transAxes)
             axis.set_title(title)
-            _add_cms_privatework_lumi_row(axis)
+            add_cms_privatework_lumi_row(axis)
 
             single_fig, single_axis = plt.subplots(figsize=(9.5, 7.2))
             single_axis.text(0.5, 0.5, 'No data', ha='center', va='center', transform=single_axis.transAxes)
             single_axis.set_title(title)
-            _add_cms_privatework_lumi_row(single_axis, fontsize=10)
+            add_cms_privatework_lumi_row(single_axis, fontsize=10)
             single_fig.suptitle(
                 f'First-order Taylor coefficients  —  {title}  —  {args.model_mode}\n'
                 r'$\tilde{c_i} = \sigma_i\,\langle\,|\,\partial \log p\,/\,\partial x_i\,|\,\rangle$',
@@ -1792,7 +1784,7 @@ def plot_nf_taylor_analysis(output_dir: Path) -> None:
         axis.set_yticklabels(display_names, fontsize=9)
         axis.set_xlabel(r'$\sigma_i\,\langle\,|\,\partial_i \log p(x)\,|\,\rangle$')
         #axis.set_title(title)
-        _add_cms_privatework_lumi_row(axis)
+        add_cms_privatework_lumi_row(axis)
         axis.grid(True, axis='x', linestyle=':', alpha=0.4)
         axis.tick_params(direction='in')
 
@@ -1803,7 +1795,7 @@ def plot_nf_taylor_analysis(output_dir: Path) -> None:
         single_axis.set_xlabel(r"$\tilde{c_i}$")
         #single_axis.set_xlabel(r'$\sigma_i\,\langle\,|\,\partial_i \log p(x)\,|\,\rangle$')
         #single_axis.set_title(title)
-        _add_cms_privatework_lumi_row(single_axis, fontsize=10)
+        add_cms_privatework_lumi_row(single_axis, fontsize=10)
         single_axis.grid(True, axis='x', linestyle=':', alpha=0.4)
         single_axis.tick_params(direction='in')
         single_fig.suptitle(
@@ -1871,13 +1863,13 @@ def plot_nf_taylor_analysis_output(output_dir: Path) -> None:
             axis.text(0.5, 0.5, f'Failed:\n{exc}', ha='center', va='center',
                       transform=axis.transAxes, fontsize=8)
             axis.set_title(title)
-            _add_cms_privatework_lumi_row(axis)
+            add_cms_privatework_lumi_row(axis)
 
             single_fig, single_axis = plt.subplots(figsize=(9.5, 7.2))
             single_axis.text(0.5, 0.5, f'Failed:\n{exc}', ha='center', va='center',
                              transform=single_axis.transAxes, fontsize=10)
             single_axis.set_title(title)
-            _add_cms_privatework_lumi_row(single_axis, fontsize=10)
+            add_cms_privatework_lumi_row(single_axis, fontsize=10)
             single_fig.suptitle(
                 f'Output-side first-order Taylor coefficients  —  {title}  —  {args.model_mode}\n'
                 r'$\langle\,|\,\partial x / \partial z_k\,|\,\rangle$',
@@ -1894,12 +1886,12 @@ def plot_nf_taylor_analysis_output(output_dir: Path) -> None:
         if not tc_dict:
             axis.text(0.5, 0.5, 'No data', ha='center', va='center', transform=axis.transAxes)
             axis.set_title(title)
-            _add_cms_privatework_lumi_row(axis)
+            add_cms_privatework_lumi_row(axis)
 
             single_fig, single_axis = plt.subplots(figsize=(9.5, 7.2))
             single_axis.text(0.5, 0.5, 'No data', ha='center', va='center', transform=single_axis.transAxes)
             single_axis.set_title(title)
-            _add_cms_privatework_lumi_row(single_axis, fontsize=10)
+            add_cms_privatework_lumi_row(single_axis, fontsize=10)
             single_fig.suptitle(
                 f'Output-side first-order Taylor coefficients  —  {title}  —  {args.model_mode}\n'
                 r'$\langle\,|\,\partial x / \partial z_k\,|\,\rangle$',
@@ -1923,7 +1915,7 @@ def plot_nf_taylor_analysis_output(output_dir: Path) -> None:
         axis.set_yticks(y_pos)
         axis.set_yticklabels(display_names, fontsize=9)
         axis.set_xlabel(r'$\langle\,|\,\partial x / \partial z_k\,|\,\rangle$')
-        _add_cms_privatework_lumi_row(axis)
+        add_cms_privatework_lumi_row(axis)
         axis.grid(True, axis='x', linestyle=':', alpha=0.4)
         axis.tick_params(direction='in')
 
@@ -1933,7 +1925,7 @@ def plot_nf_taylor_analysis_output(output_dir: Path) -> None:
         single_axis.set_yticks(y_pos)
         single_axis.set_yticklabels(display_names, fontsize=10)
         single_axis.set_xlabel(r"$\langle\,|\,\partial x / \partial z_k\,|\,\rangle$")
-        _add_cms_privatework_lumi_row(single_axis, fontsize=10)
+        add_cms_privatework_lumi_row(single_axis, fontsize=10)
         single_axis.grid(True, axis='x', linestyle=':', alpha=0.4)
         single_axis.tick_params(direction='in')
         single_fig.suptitle(
@@ -1998,13 +1990,13 @@ def plot_nf_second_order_covariance(output_dir: Path) -> None:
             axis.text(0.5, 0.5, f'Failed:\n{exc}', ha='center', va='center',
                       transform=axis.transAxes, fontsize=8)
             axis.set_title(title)
-            _add_cms_privatework_lumi_row(axis)
+            add_cms_privatework_lumi_row(axis)
 
             single_fig, single_axis = plt.subplots(figsize=(9.5, 7.8))
             single_axis.text(0.5, 0.5, f'Failed:\n{exc}', ha='center', va='center',
                              transform=single_axis.transAxes, fontsize=10)
             single_axis.set_title(title)
-            _add_cms_privatework_lumi_row(single_axis, fontsize=10)
+            add_cms_privatework_lumi_row(single_axis, fontsize=10)
             single_fig.suptitle(
                 f'Second-order Taylor coefficients  —  {title}  —  {args.model_mode}\n'
                 r'$\tilde{c_{ij}} = \sigma_i\sigma_j\,\langle\,|\,\partial^2 \log p\,/\,\partial x_i\,\partial x_j\,|\,\rangle$',
@@ -2021,12 +2013,12 @@ def plot_nf_second_order_covariance(output_dir: Path) -> None:
         if result is None:
             axis.text(0.5, 0.5, 'No data', ha='center', va='center', transform=axis.transAxes)
             axis.set_title(title)
-            _add_cms_privatework_lumi_row(axis)
+            add_cms_privatework_lumi_row(axis)
 
             single_fig, single_axis = plt.subplots(figsize=(9.5, 7.8))
             single_axis.text(0.5, 0.5, 'No data', ha='center', va='center', transform=single_axis.transAxes)
             single_axis.set_title(title)
-            _add_cms_privatework_lumi_row(single_axis, fontsize=10)
+            add_cms_privatework_lumi_row(single_axis, fontsize=10)
             single_fig.suptitle(
                 f'Second-order Taylor coefficients  —  {title}  —  {args.model_mode}\n'
                 r'$\tilde{c_{ij}} = \sigma_i\sigma_j\,\langle\,|\,\partial^2 \log p\,/\,\partial x_i\,\partial x_j\,|\,\rangle$',
@@ -2059,7 +2051,7 @@ def plot_nf_second_order_covariance(output_dir: Path) -> None:
                           fontsize=7, color=text_color)
 
         axis.set_title(title)
-        _add_cms_privatework_lumi_row(axis)
+        add_cms_privatework_lumi_row(axis)
 
         single_fig, single_axis = plt.subplots(figsize=(9.5, 7.8))
         im_single = single_axis.imshow(mat, aspect='auto', cmap='viridis')
@@ -2073,7 +2065,7 @@ def plot_nf_second_order_covariance(output_dir: Path) -> None:
                 text_color = 'white' if mat[i, j] < 0.6 * vmax else 'black'
                 single_axis.text(j, i, f'{mat[i, j]:.2f}', ha='center', va='center', fontsize=7, color=text_color)
         single_axis.set_title(title)
-        _add_cms_privatework_lumi_row(single_axis, fontsize=10)
+        add_cms_privatework_lumi_row(single_axis, fontsize=10)
         single_fig.suptitle(
             f'Second-order Taylor coefficients  — {title}  — {args.model_mode}\n'
             r'$\tilde{c_{ij}} = \sigma_i\sigma_j\,\langle\,|\,\partial^2 \log p\,/\,\partial x_i\,\partial x_j\,|\,\rangle$',

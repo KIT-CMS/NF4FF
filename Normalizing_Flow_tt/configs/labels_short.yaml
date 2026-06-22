@@ -19,3 +19,11 @@ tt:
    m_fastmtt: '$\mathrm{m}_{\text{fastMTT}}$'
    pt_fastmtt: '$\mathrm{p}_T^{\text{fastMTT}}$' 
    pt_tt: '$\mathrm{p}_T^{\tau\tau}$'
+   deltaEta_1j2: '$ \Delta \eta_{1j2} $'
+   deltaEta_2j1: '$ \Delta \eta_{2j1} $'
+   deltaEta_2j2: '$ \Delta \eta_{2j2} $'
+   deltaEta_12j1: '$ \Delta \eta_{12j1} $'
+   deltaEta_12j2: '$ \Delta \eta_{12j2} $'
+   eta_1: $\mathrm{\eta}_1$
+   eta_2: $\mathrm{\eta}_2$
+   mt_1: '$m_{T}(\tau_{\mathrm{h},1}, {E}_{T}^{\mathrm{miss}})$'
