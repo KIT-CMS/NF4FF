@@ -23,6 +23,7 @@ def corr_matrix_nfsample_data(data, nf_sample, var, title, tag, dir):
     # 1. Compute correlation matrices
     corr_true = np.corrcoef(data, rowvar=False)
     corr_flow = np.corrcoef(nf_sample, rowvar=False)
+    
 
     # 2. Calculate the differences
     diff_matrix = np.abs(corr_true - corr_flow)
@@ -40,14 +41,32 @@ def corr_matrix_nfsample_data(data, nf_sample, var, title, tag, dir):
         plt.figure(figsize=(13, 10.4))
         #add_cms_privatework_lumi_row(None)
         if len(var) >= 8:
-            sns.heatmap(name, 
-                    cmap="crest", 
-                    xticklabels=labels, yticklabels=labels, 
-                    annot=True, annot_kws={"fontsize":12},
-                    linewidths=0.1, fmt=".3f")
+            if save == "diff_matrix":
+                sns.heatmap(name, 
+                        cmap="crest",
+                        vmin=0, vmax=1,
+                        xticklabels=labels, yticklabels=labels, 
+                        annot=True, annot_kws={"fontsize":12},
+                        linewidths=0.1, fmt=".3f")
+            else:
+                sns.heatmap(name, 
+                        cmap="RdBu",
+                        vmin=-1, vmax=1,
+                        xticklabels=labels, yticklabels=labels, 
+                        annot=True, annot_kws={"fontsize":12},
+                        linewidths=0.1, fmt=".3f")
         else:
-            sns.heatmap(name, 
-                        cmap="crest", 
+            if save == "diff_matrix":
+                sns.heatmap(name, 
+                        cmap="crest",
+                        vmin=0, vmax=1,
+                        xticklabels=labels, yticklabels=labels, 
+                        annot=True, annot_kws={"fontsize":15},
+                        linewidths=0.1, fmt=".3f")
+            else:
+                sns.heatmap(name, 
+                        cmap="RdBu",
+                        vmin=-1, vmax=1,
                         xticklabels=labels, yticklabels=labels, 
                         annot=True, annot_kws={"fontsize":15},
                         linewidths=0.1, fmt=".3f")
@@ -69,5 +88,6 @@ def corr_matrix_nfsample_data(data, nf_sample, var, title, tag, dir):
         plt.title("59.8 $\mathrm{fb}^{-1}$ (2018, 13 TeV)", loc='right')
         plt.tight_layout()
         plt.savefig(cor_dir / f"{save}_{tag}.png")
+        exit()
 
     

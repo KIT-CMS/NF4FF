@@ -65,7 +65,7 @@ class Args(Tap):
     training_model: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = TRAINING_MODEL_CONDITIONAL  # Training mode: grouped split, single inclusive NF, or conditional NF with njets input.
     taus = [1, 2] #[1, 2, 12] # list of tau fakes
     embedding: Literal["embedding", "no_embedding"] = "embedding"
-    var = "variables_6"
+    var = "variables_10"
 
     def configure(self) -> None:
         self.add_argument('--split_njets', action='store_true')

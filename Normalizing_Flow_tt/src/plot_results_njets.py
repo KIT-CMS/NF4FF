@@ -53,19 +53,19 @@ class Args(Tap):
     model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'conditional_nf'  # Training mode to load: grouped NF split by njets, single inclusive NF, or conditional NF with njets as input.
     classifier_training_tag: str = ''  # Optional classifier training folder suffix after 'training_'. Empty -> pick most recent.
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
-    plot_training_diagnostics: bool = True   # Plot training loss / learning-rate / time-per-epoch curves.
+    plot_training_diagnostics: bool = False   # Plot training loss / learning-rate / time-per-epoch curves.
     plot_nf_sampling: bool = True           # Plot NF-sampled vs data histograms in training variables.
-    plot_ff_results: bool = True             # Plot fake-factor comparison stacks for each njets category.
-    plot_ff_values: bool = True              # Plot FF values in histogram
-    plot_ar_data_with_clipping: bool = True  # Plot AR data with both kept and excluded events (by clipping mask).
-    plot_taylor_coefficients: bool = True   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
-    plot_complete_variables: bool = True
+    plot_ff_results: bool = False             # Plot fake-factor comparison stacks for each njets category.
+    plot_ff_values: bool = False              # Plot FF values in histogram
+    plot_ar_data_with_clipping: bool = False  # Plot AR data with both kept and excluded events (by clipping mask).
+    plot_taylor_coefficients: bool = False   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
+    plot_complete_variables: bool = False
     ratio_ylim_min: float = 0.5  # Lower y-limit for ratio panels.
     ratio_ylim_max: float = 1.5  # Upper y-limit for ratio panels.
 
     taus = 1 #[1, 2] #[1, 2, 12] # list of tau fakes
     embedding: Literal["embedding", "no_embedding"] = "embedding"
-    var = "variables_6"
+    var = "variables_61"
 
 
 # Runtime context (initialized in `initialize_runtime_context()` and consumed by plotting functions)
@@ -1221,6 +1221,9 @@ def initialize_runtime_context() -> None:
     
     # Step 3: load data and plotting labels/binning
     data_complete = pd.read_feather(f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather')
+
+    print(list(data_complete.columns))
+    exit()
     
     if args.plot_complete_variables:
         list_variables = cfg_set['variables']
