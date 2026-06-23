@@ -88,6 +88,6 @@ def corr_matrix_nfsample_data(data, nf_sample, var, title, tag, dir):
         plt.title("59.8 $\mathrm{fb}^{-1}$ (2018, 13 TeV)", loc='right')
         plt.tight_layout()
         plt.savefig(cor_dir / f"{save}_{tag}.png")
-        exit()
+        plt.close()
 
     

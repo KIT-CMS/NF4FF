@@ -9,7 +9,8 @@ from contextlib import contextmanager
 from copy import deepcopy
 import correctionlib as cr
 from pathlib import Path
-import os   
+import os
+import random 
 import re
 from typing import Literal, Tuple, Iterable
 
@@ -48,6 +49,8 @@ matplotlib.rcParams.update({
 })
 
 logger = setup_logging(logger=logging.getLogger(__name__))
+
+SEED = 42
 
 class Args(Tap):
     model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'conditional_nf'  # Training mode to load: grouped NF split by njets, single inclusive NF, or conditional NF with njets as input.
@@ -1130,6 +1133,38 @@ def _build_sampling_bins_from_main(
     return sampling_bins
 
 
+def plot_all_var(data):
+    hep.style.use(hep.style.CMS)
+
+    all_var = list(data_complete.columns)
+
+    all_var_dir = Path("/work/tapp/TauFF/NF4FF/Normalizing_Flow_tt/plots/embedding") / "all_var"
+    all_var_dir.mkdir(parents=True, exist_ok=True)
+
+    for x in all_var:
+        fig, ax = plt.subplots(1, 1, figsize=(13, 10.4))
+
+        CMS_CHANNEL_TITLE(ax)
+        CMS_LUMI_TITLE(ax)
+        CMS_LABEL(ax)
+
+        try:
+            n = ax.hist(data[x], bins=50)
+            logger.info(f"Plotting {x}")
+        except:
+            logger.info(f"Can't histogram {x}")
+            continue
+
+        ax.set_xlabel(x)
+        ax.set_ylabel("Events")
+
+        ax.set_ylim(top=1.2*np.max(n[0]))
+        #ax.set_yscale('log')
+
+        fig.savefig(all_var_dir / f"{x}.png")
+        plt.close(fig)
+
+
 def initialize_runtime_context() -> None:
     """Load args, models, data and plotting metadata into module-level runtime context."""
     global args, variables, dim, training_variables_tag, variables_with_njets, device
@@ -1222,7 +1257,7 @@ def initialize_runtime_context() -> None:
     # Step 3: load data and plotting labels/binning
     data_complete = pd.read_feather(f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather')
 
-    print(list(data_complete.columns))
+    plot_all_var(data_complete)
     exit()
     
     if args.plot_complete_variables:
@@ -1331,110 +1366,107 @@ def plot_nf_sampling_training_variables(category_name: str, njets_title: str, da
     ]
     
     n_samples = 100000
-    if len(variables) <= 8:
-        # ----- one plot vor every variable -----
-        for var in variables:
-            fig, axes = plt.subplots(2, 2, figsize=(19.2, 14.4), sharex=False, sharey=False)
-            flat_axes = axes.flatten()
-            fixed_bins = sampling_plot_bins_by_variable.get(var)
+    # ----- one plot vor every variable -----
+    for var in variables:
+        fig, axes = plt.subplots(2, 2, figsize=(19.2, 14.4), sharex=False, sharey=False)
+        flat_axes = axes.flatten()
+        fixed_bins = sampling_plot_bins_by_variable.get(var)
 
-            # ----- in each plot: one plot of each region ------
-            for axis, (title, data_df, model, color, tag) in zip(flat_axes, panel_specs):
+        # ----- in each plot: one plot of each region ------
+        for axis, (title, data_df, model, color, tag) in zip(flat_axes, panel_specs):
 
-                CMS_CHANNEL_TITLE(axis)
-                CMS_LUMI_TITLE(axis)
-                CMS_LABEL(axis)
-                CMS_NJETS_TITLE(axis, title=njets_title)
+            CMS_CHANNEL_TITLE(axis)
+            CMS_LUMI_TITLE(axis)
+            CMS_LABEL(axis)
+            CMS_NJETS_TITLE(axis, title=njets_title)
 
-                if data_df.empty:
-                    axis.text(0.5, 0.5, 'No data events', ha='center', va='center', transform=axis.transAxes)
-                    axis.set_title(title)
-                    axis.set_xlabel(labels.get(var, var))
-                    axis.set_ylabel('Density')
-                    axis.set_yscale('log')
-                    axis.grid(True, linestyle=':', alpha=0.35)
-                    if fixed_bins is not None:
-                        axis.set_xlim(float(fixed_bins[0]), float(fixed_bins[-1]))
-                    continue
-
-                sampled_np = _sample_nf_features_for_region(
-                    model=model,
-                    n_samples=n_samples,
-                    reference_df=data_df,
-                    model_mode=args.model_mode,
-                    device=device,
-                )
-
-                data_values = data_df[var].to_numpy(dtype=np.float32)
-                sampled_values = sampled_np[:, variables.index(var)] if sampled_np.size else np.array([], dtype=np.float32)
-
-                data_values = data_values[np.isfinite(data_values)]
-                sampled_values = sampled_values[np.isfinite(sampled_values)]
-
-                if data_values.size == 0 or sampled_values.size == 0:
-                    axis.text(0.5, 0.5, 'No finite values', ha='center', va='center', transform=axis.transAxes)
-                    axis.set_title(title)
-                    axis.set_xlabel(labels.get(var, var))
-                    axis.set_ylabel('Density')
-                    axis.set_yscale('log')
-                    axis.grid(True, linestyle=':', alpha=0.35)
-                    if fixed_bins is not None:
-                        axis.set_xlim(float(fixed_bins[0]), float(fixed_bins[-1]))
-                    continue
-
-                bins = fixed_bins
-                if bins is None:
-                    combined = np.concatenate([data_values, sampled_values])
-                    if np.allclose(combined.min(), combined.max()):
-                        half_width = max(abs(float(combined.min())) * 0.05, 1.0)
-                        bins = np.linspace(float(combined.min()) - half_width, float(combined.max()) + half_width, 31)
-                    else:
-                        bins = np.quantile(combined, np.linspace(0.0, 1.0, 41))
-                        bins = np.unique(bins)
-                        if bins.size < 10:
-                            bins = np.linspace(float(combined.min()), float(combined.max()), 31)
-
-                n_sample,_ ,_ = axis.hist(
-                    sampled_values,
-                    bins=bins,
-                    density=True,
-                    histtype='stepfilled',
-                    alpha=0.35,
-                    color=color,
-                    label=f'NF sampled ({n_samples})',
-                )
-                n_data,_ ,_ = axis.hist(
-                    data_values,
-                    bins=bins,
-                    density=True,
-                    histtype='step',
-                    linewidth=1.8,
-                    color='black',
-                    label=f'Data ({len(data_values)})',
-                )
-                
-                axis.set_title(title, fontsize=25, pad=10)
+            if data_df.empty:
+                axis.text(0.5, 0.5, 'No data events', ha='center', va='center', transform=axis.transAxes)
+                axis.set_title(title)
                 axis.set_xlabel(labels.get(var, var))
                 axis.set_ylabel('Density')
                 axis.set_yscale('log')
                 axis.grid(True, linestyle=':', alpha=0.35)
-                axis.legend(frameon=False, loc='upper right', bbox_to_anchor=(1.0, 0.9))
-                axis.set_xlim(float(bins[0]), float(bins[-1]))
-                axis.set_ylim(top=5*np.max([np.max(n_sample), np.max(n_data)]))
+                if fixed_bins is not None:
+                    axis.set_xlim(float(fixed_bins[0]), float(fixed_bins[-1]))
+                continue
 
-            fig.suptitle(
-                f'NF sampled vs data ({category_name}, {njets_title})\nTraining variable: {labels.get(var, var)}',
-                fontsize=28,
-                y=1.01,
+            sampled_np = _sample_nf_features_for_region(
+                model=model,
+                n_samples=n_samples,
+                reference_df=data_df,
+                model_mode=args.model_mode,
+                device=device,
             )
-            fig.tight_layout()
-            fig.savefig(sampling_plot_dir / f'nf_sample_vs_data_{var}.png', bbox_inches='tight')
-            fig.savefig(sampling_plot_dir / f'nf_sample_vs_data_{var}.pdf', bbox_inches='tight')
-            plt.close(fig)
 
-        logger.info('Saved NF sampling validation plots to %s', sampling_plot_dir)
-    else:
-        logger.warning('No NF samling for these variables')
+            data_values = data_df[var].to_numpy(dtype=np.float32)
+            sampled_values = sampled_np[:, variables.index(var)] if sampled_np.size else np.array([], dtype=np.float32)
+
+            data_values = data_values[np.isfinite(data_values)]
+            sampled_values = sampled_values[np.isfinite(sampled_values)]
+
+            if data_values.size == 0 or sampled_values.size == 0:
+                axis.text(0.5, 0.5, 'No finite values', ha='center', va='center', transform=axis.transAxes)
+                axis.set_title(title)
+                axis.set_xlabel(labels.get(var, var))
+                axis.set_ylabel('Density')
+                axis.set_yscale('log')
+                axis.grid(True, linestyle=':', alpha=0.35)
+                if fixed_bins is not None:
+                    axis.set_xlim(float(fixed_bins[0]), float(fixed_bins[-1]))
+                continue
+
+            bins = fixed_bins
+            if bins is None:
+                combined = np.concatenate([data_values, sampled_values])
+                if np.allclose(combined.min(), combined.max()):
+                    half_width = max(abs(float(combined.min())) * 0.05, 1.0)
+                    bins = np.linspace(float(combined.min()) - half_width, float(combined.max()) + half_width, 31)
+                else:
+                    bins = np.quantile(combined, np.linspace(0.0, 1.0, 41))
+                    bins = np.unique(bins)
+                    if bins.size < 10:
+                        bins = np.linspace(float(combined.min()), float(combined.max()), 31)
+
+            n_sample,_ ,_ = axis.hist(
+                sampled_values,
+                bins=bins,
+                density=True,
+                histtype='stepfilled',
+                alpha=0.35,
+                color=color,
+                label=f'NF sampled ({n_samples})',
+            )
+            n_data,_ ,_ = axis.hist(
+                data_values,
+                bins=bins,
+                density=True,
+                histtype='step',
+                linewidth=1.8,
+                color='black',
+                label=f'Data ({len(data_values)})',
+            )
+            
+            axis.set_title(title, fontsize=25, pad=10)
+            axis.set_xlabel(labels.get(var, var))
+            axis.set_ylabel('Density')
+            axis.set_yscale('log')
+            axis.grid(True, linestyle=':', alpha=0.35)
+            axis.legend(frameon=False, loc='upper right', bbox_to_anchor=(1.0, 0.9))
+            axis.set_xlim(float(bins[0]), float(bins[-1]))
+            axis.set_ylim(top=5*np.max([np.max(n_sample), np.max(n_data)]))
+
+        fig.suptitle(
+            f'NF sampled vs data ({category_name}, {njets_title})\nTraining variable: {labels.get(var, var)}',
+            fontsize=28,
+            y=1.01,
+        )
+        fig.tight_layout()
+        fig.savefig(sampling_plot_dir / f'nf_sample_vs_data_{var}.png', bbox_inches='tight')
+        fig.savefig(sampling_plot_dir / f'nf_sample_vs_data_{var}.pdf', bbox_inches='tight')
+        plt.close(fig)
+
+    logger.info('Saved NF sampling validation plots to %s', sampling_plot_dir)
         
     for title, data_df, model, color, tag in panel_specs:
         sampled_np = _sample_nf_features_for_region(
@@ -2802,6 +2834,10 @@ def run_all_njets_categories() -> None:
 
 
 def main() -> None:
+    t.manual_seed(SEED)
+    np.random.seed(SEED)
+    random.seed(SEED)
+
     # Step 1: initialize runtime context (args, models, data, labels, bins, output dirs)
     logger.info('Step 1/4: Initializing runtime context')
     initialize_runtime_context()
