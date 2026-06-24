@@ -1,6 +1,7 @@
 import json
 import law
 import luigi
+import yaml
 from pathlib import Path
 
 from BuildDataset import build_dataset
@@ -23,6 +24,15 @@ from training_squeezed_loss import (
 from training_squeezed_loss_single_dnn import (
     train_squeezed_single_dnn_models,
 )
+from multiclass_classification import (
+    qcd_fraction_data_frame,
+    train_fraction_classifier,
+    validate_qcd_fraction_weights,
+)
+from plot_fractions import (
+    calculate_and_store_fraction_nn_outputs,
+    plot_fraction_comparisons,
+)
 from ff_models_to_onnx import ff_models_to_onnx
 from single_dnn_workflow import (
     calculate_single_dnn_fake_factors,
@@ -37,6 +47,14 @@ from taylor_coefficient_analysis import (
 from ff_calculation import (
     calculate_and_store_classic_fake_factors,
     calculate_and_store_fake_factors,
+)
+from ff_model_uncertainty import (
+    calculate_and_store_ff_dropout_mask_variation_features,
+    calculate_and_store_ff_uncertainty_features,
+)
+from ff_gradient_covariance_uncertainty import (
+    calculate_and_store_ff_gradient_covariance_dropout_mask_variation_features,
+    calculate_and_store_ff_gradient_covariance_features,
 )
 from calculate_ff_corrected import (
     calculate_and_store_corrected_fake_factors,
@@ -61,6 +79,7 @@ from uncertainty_model_workflow import (
     plot_uncertainty_model_taylor_process_normalized_single_order,
     plot_uncertainty_model_taylor_process_normalized_to_max,
     plot_uncertainty_model_taylor_process,
+    save_uncertainty_combined_models,
     train_uncertainty_models,
     uncertainty_taylor_artifact_paths,
     uncertainty_taylor_coefficient_paths,
@@ -159,10 +178,14 @@ class TrainEnrichmentProcess(law.Task):
             self.input().path,
             output_root=WORKFLOW_ROOT,
         )
+        self.validate_training_result(result)
         schema_path = Path(self.output()["features_schema"].path)
         schema_path.parent.mkdir(parents=True, exist_ok=True)
         schema_path.write_text("row-index keyed enrichment features\n")
         print("TRAIN OUTPUT:", result["combined_model_path"])
+
+    def validate_training_result(self, result):
+        pass
 
 
 class TrainEnrichmentWjetsV2(TrainEnrichmentProcess):
@@ -186,7 +209,7 @@ class TrainEnrichmentQCDFractions(TrainEnrichmentProcess):
         outputs["features_schema"] = law.LocalFileTarget(
             WORKFLOW_FEATURE_ROOT
             / self.process_name
-            / ".row_index_schema_v2_qcd_weights_ss"
+            / ".row_index_schema_v3_qcd_weights_ss_no_nan"
         )
         outputs.update({
             f"feature_{grouping}": law.LocalFileTarget(
@@ -197,6 +220,15 @@ class TrainEnrichmentQCDFractions(TrainEnrichmentProcess):
             for grouping in ENRICHMENT_GROUPINGS
         })
         return outputs
+
+    def validate_training_result(self, result):
+        from classes import load_data
+
+        df = load_data(
+            WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            PROJECT_ROOT / 'configs' / 'masks.yaml',
+        )
+        validate_qcd_fraction_weights(qcd_fraction_data_frame(df))
 
 
 class ReducedDataset(law.Task):
@@ -322,6 +354,113 @@ class PlotTrainingResultsQCD2(law.Task):
             ),
             n_bins=self.n_bins,
         )
+
+
+class TrainFractionClassifier(law.Task):
+    """Train the three-class fraction classifier."""
+
+    def requires(self):
+        return TrainEnrichmentQCDFractions()
+
+    def output(self):
+        output_dir = WORKFLOW_ROOT / 'training_fraction'
+        return {
+            'fold_even': law.LocalFileTarget(
+                output_dir / 'fold_even' / 'model_weights.pth'
+            ),
+            'fold_odd': law.LocalFileTarget(
+                output_dir / 'fold_odd' / 'model_weights.pth'
+            ),
+            'combined': law.LocalFileTarget(
+                output_dir / 'model_weights.pth'
+            ),
+        }
+
+    def run(self):
+        output_dir = WORKFLOW_ROOT / 'training_fraction'
+        train_fraction_classifier(
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            training_var_path=PROJECT_ROOT / 'configs' / 'training_variables.yaml',
+            output_dir=output_dir,
+        )
+
+        print("FRACTION CLASSIFIER OUTPUT:", output_dir)
+
+
+class PlotFractions(law.Task):
+    """Evaluate and plot the three-class process-fraction classifier."""
+
+    process_fractions_path = law.Parameter(
+        default=(
+            '/work/mmoser/TauFakeFactors.back/workdir/'
+            'ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz'
+        )
+    )
+    batch_size = luigi.IntParameter(default=100_000)
+
+    def requires(self):
+        return TrainFractionClassifier()
+
+    def _variables_small(self):
+        config_path = PROJECT_ROOT / 'configs' / 'plotting.yaml'
+        with open(config_path, 'r', encoding='utf-8') as stream:
+            config = yaml.safe_load(stream) or {}
+        return tuple(config.get('variables_set_small', ()))
+
+    def output(self):
+        plot_dir = WORKFLOW_ROOT / 'plots' / 'training_fraction'
+        feature_path = (
+            WORKFLOW_FEATURE_ROOT
+            / 'training_fraction'
+            / 'process_fractions.feather'
+        )
+        outputs = {
+            'features': law.LocalFileTarget(feature_path),
+        }
+        outputs.update({
+            f'{variable}_{extension}': law.LocalFileTarget(
+                plot_dir / f'training_fraction_{variable}.{extension}'
+            )
+            for variable in self._variables_small()
+            for extension in ('png', 'pdf')
+        })
+        return outputs
+
+    def run(self):
+        feature_path = calculate_and_store_fraction_nn_outputs(
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            training_var_path=PROJECT_ROOT / 'configs' / 'training_variables.yaml',
+            model_dir=WORKFLOW_ROOT / 'training_fraction',
+            feature_store_path=(
+                WORKFLOW_FEATURE_ROOT
+                / 'training_fraction'
+                / 'process_fractions.feather'
+            ),
+            feature_registry_path=WORKFLOW_FEATURE_ROOT / 'feature_registry.json',
+            batch_size=self.batch_size,
+        )
+
+        from classes import load_data
+
+        df = load_data(
+            WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            PROJECT_ROOT / 'configs' / 'masks.yaml',
+            feature_registry_path=WORKFLOW_FEATURE_ROOT / 'feature_registry.json',
+        )
+        for column in ('fraction_qcd', 'fraction_wjets', 'fraction_ttbar'):
+            df[column]
+        plot_fraction_comparisons(
+            df.data.AR.events,
+            output_dir=WORKFLOW_ROOT / 'plots' / 'training_fraction',
+            process_fractions_path=self.process_fractions_path,
+            plotting_config_path=PROJECT_ROOT / 'configs' / 'plotting.yaml',
+            labels_config_path=PROJECT_ROOT / 'configs' / 'labels.yaml',
+        )
+
+        print("FRACTION FEATURE OUTPUT:", feature_path)
+        print("FRACTION PLOT OUTPUT:", WORKFLOW_ROOT / 'plots' / 'training_fraction')
 
 
 class TrainSqueezedModels(law.Task):
@@ -517,6 +656,343 @@ class TrainUncertaintyModels(law.Task):
             ),
             seed_start=self.seed_start,
             seed_end=self.seed_end,
+        )
+
+
+class SaveUncertaintyCombinedModels(law.Task):
+    """Save likelihood-ratio FF models for the uncertainty ensemble."""
+
+    seed_start = luigi.IntParameter(default=100)
+    seed_end = luigi.IntParameter(default=199)
+
+    def requires(self):
+        return TrainUncertaintyModels(
+            seed_start=self.seed_start,
+            seed_end=self.seed_end,
+        )
+
+    def output(self):
+        output_dir = (
+            WORKFLOW_ROOT
+            / 'CombinedModelsUncertainties'
+            / f'seeds_{self.seed_start}_{self.seed_end}'
+        )
+        outputs = {
+            f"{process}_{seed}_torch": law.LocalFileTarget(
+                output_dir
+                / FF_MODEL_OUTPUT_NAMES[process]
+                / 'njets'
+                / str(seed)
+                / 'torch_model'
+                / 'model_weights.pth'
+            )
+            for process in ('wjets', 'qcd', 'ttbar')
+            for seed in range(self.seed_start, self.seed_end + 1)
+        }
+        outputs['manifest'] = law.LocalFileTarget(
+            output_dir / 'combined_models_manifest.json'
+        )
+        return outputs
+
+    def run(self):
+        output_dir = (
+            WORKFLOW_ROOT
+            / 'CombinedModelsUncertainties'
+            / f'seeds_{self.seed_start}_{self.seed_end}'
+        )
+        save_uncertainty_combined_models(
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            trained_models_dir=Path(self.input().path).parent,
+            reduced_weight_dir=(
+                WORKFLOW_FEATURE_ROOT / 'reduced_dataset'
+            ),
+            output_dir=output_dir,
+            seed_start=self.seed_start,
+            seed_end=self.seed_end,
+        )
+
+
+class CalculateFakeFactorModelUncertaintyProcess(law.Task):
+    """Calculate and store FF uncertainty ensemble features for one process."""
+
+    process = luigi.ChoiceParameter(choices=UNCERTAINTY_PROCESSES)
+    seed_start = luigi.IntParameter(default=100)
+    seed_end = luigi.IntParameter(default=199)
+
+    def requires(self):
+        return SaveUncertaintyCombinedModels(
+            seed_start=self.seed_start,
+            seed_end=self.seed_end,
+        )
+
+    def output(self):
+        output_dir = (
+            WORKFLOW_FEATURE_ROOT
+            / 'fake_factor_model_uncertainty'
+            / self.process
+            / f'seeds_{self.seed_start}_{self.seed_end}'
+        )
+        return {
+            'features': law.LocalFileTarget(
+                output_dir / 'fake_factor_model_uncertainty.feather'
+            ),
+            'schema': law.LocalFileTarget(
+                output_dir / '.schema_v1_njets_100_models'
+            ),
+        }
+
+    def run(self):
+        calculate_and_store_ff_uncertainty_features(
+            process=self.process,
+            feature_store_path=self.output()['features'].path,
+            feature_registry_path=(
+                WORKFLOW_FEATURE_ROOT / 'feature_registry.json'
+            ),
+            seeds=range(self.seed_start, self.seed_end + 1),
+            combined_models_dir=(
+                WORKFLOW_ROOT
+                / 'CombinedModelsUncertainties'
+                / f'seeds_{self.seed_start}_{self.seed_end}'
+            ),
+            overwrite=False,
+        )
+        Path(self.output()['schema'].path).write_text(
+            f"FF_{self.process}_down, FF_{self.process}_nominal, "
+            f"FF_{self.process}_up, and FF_{self.process}_0..99 for njets\n"
+        )
+
+
+class CalculateFakeFactorModelUncertainty(law.Task):
+    """Calculate FF uncertainty ensemble features for all processes."""
+
+    seed_start = luigi.IntParameter(default=100)
+    seed_end = luigi.IntParameter(default=199)
+
+    def requires(self):
+        return {
+            process: CalculateFakeFactorModelUncertaintyProcess(
+                process=process,
+                seed_start=self.seed_start,
+                seed_end=self.seed_end,
+            )
+            for process in UNCERTAINTY_PROCESSES
+        }
+
+    def output(self):
+        output_dir = (
+            WORKFLOW_FEATURE_ROOT
+            / 'fake_factor_model_uncertainty'
+            / f'seeds_{self.seed_start}_{self.seed_end}'
+        )
+        return law.LocalFileTarget(output_dir / 'all_processes_manifest.txt')
+
+    def run(self):
+        output_path = Path(self.output().path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        lines = [
+            f"{process}: {self.input()[process]['features'].path}"
+            for process in UNCERTAINTY_PROCESSES
+        ]
+        output_path.write_text("\n".join(lines) + "\n")
+
+
+class CalculateWjetsFakeFactorModelUncertainty(
+    CalculateFakeFactorModelUncertaintyProcess
+):
+    """Backward-compatible W+jets-only task name."""
+
+    process = 'wjets'
+
+
+class CalculateFakeFactorDropoutMaskVariation(law.Task):
+    """Calculate FF features from 100 fixed dropout masks of seed-100 W+jets."""
+
+    model_seed = luigi.IntParameter(default=100)
+    n_dropout_masks = luigi.IntParameter(default=100)
+    seed_start = luigi.IntParameter(default=100)
+    seed_end = luigi.IntParameter(default=199)
+
+    def requires(self):
+        return SaveUncertaintyCombinedModels(
+            seed_start=self.seed_start,
+            seed_end=self.seed_end,
+        )
+
+    def output(self):
+        output_dir = (
+            WORKFLOW_FEATURE_ROOT
+            / 'fake_factor_dropout_mask_variation'
+            / f'seed_{self.model_seed}'
+            / f'n_masks_{self.n_dropout_masks}'
+        )
+        return {
+            'features': law.LocalFileTarget(
+                output_dir / 'fake_factor_dropout_mask_variation.feather'
+            ),
+            'schema': law.LocalFileTarget(
+                output_dir / '.schema_v1_dmv'
+            ),
+        }
+
+    def run(self):
+        calculate_and_store_ff_dropout_mask_variation_features(
+            process='wjets',
+            feature_store_path=self.output()['features'].path,
+            feature_registry_path=(
+                WORKFLOW_FEATURE_ROOT / 'feature_registry.json'
+            ),
+            model_seed=self.model_seed,
+            n_masks=self.n_dropout_masks,
+            combined_models_dir=(
+                WORKFLOW_ROOT
+                / 'CombinedModelsUncertainties'
+                / f'seeds_{self.seed_start}_{self.seed_end}'
+            ),
+            overwrite=False,
+        )
+        Path(self.output()['schema'].path).write_text(
+            "FF_nominal_dmv, FF_up_dmv, FF_down_dmv, "
+            f"and FF_0_dmv..FF_{self.n_dropout_masks - 1}_dmv "
+            f"from W+jets seed {self.model_seed} dropout masks\n"
+        )
+
+
+class CalculateWjetsGradientCovarianceUncertainty(law.Task):
+    """Propagate W+jets/njets input covariance through the 100 FF models."""
+
+    seed_start = luigi.IntParameter(default=100)
+    seed_end = luigi.IntParameter(default=199)
+    batch_size = luigi.IntParameter(default=2048, significant=False)
+    overwrite = luigi.BoolParameter(default=False, significant=False)
+
+    def requires(self):
+        return SaveUncertaintyCombinedModels(
+            seed_start=self.seed_start,
+            seed_end=self.seed_end,
+        )
+
+    def output(self):
+        output_dir = (
+            WORKFLOW_FEATURE_ROOT
+            / 'fake_factor_gradient_covariance_uncertainty'
+            / 'wjets'
+            / f'seeds_{self.seed_start}_{self.seed_end}'
+        )
+        return {
+            'features': law.LocalFileTarget(
+                output_dir / 'fake_factor_gradient_covariance_uncertainty.feather'
+            ),
+            'covariances': law.LocalDirectoryTarget(
+                output_dir / 'covariances'
+            ),
+            'schema': law.LocalFileTarget(
+                output_dir / '.schema_v1_wjets_njets_100_models'
+            ),
+        }
+
+    def run(self):
+        calculate_and_store_ff_gradient_covariance_features(
+            process='wjets',
+            grouping='njets',
+            feature_store_path=self.output()['features'].path,
+            feature_registry_path=(
+                WORKFLOW_FEATURE_ROOT / 'feature_registry.json'
+            ),
+            seeds=range(self.seed_start, self.seed_end + 1),
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            training_variables_path=(
+                PROJECT_ROOT / 'configs' / 'training_variables.yaml'
+            ),
+            reduced_weight_dir=(
+                WORKFLOW_FEATURE_ROOT / 'reduced_dataset'
+            ),
+            combined_models_dir=(
+                WORKFLOW_ROOT
+                / 'CombinedModelsUncertainties'
+                / f'seeds_{self.seed_start}_{self.seed_end}'
+            ),
+            batch_size=self.batch_size,
+            covariance_output_dir=self.output()['covariances'].path,
+            overwrite=self.overwrite,
+        )
+        Path(self.output()['schema'].path).write_text(
+            "FF_wjets_gradcov_sigma_sum, FF_wjets_gradcov_sigma_mean, "
+            "FF_wjets_gradcov_variance_sum, "
+            "FF_wjets_gradcov_variance_mean for njets\n"
+        )
+
+
+class CalculateWjetsGradientCovarianceDropoutMaskVariation(law.Task):
+    """Propagate W+jets/njets covariance through fixed dropout masks."""
+
+    model_seed = luigi.IntParameter(default=100)
+    n_dropout_masks = luigi.IntParameter(default=100)
+    seed_start = luigi.IntParameter(default=100)
+    seed_end = luigi.IntParameter(default=199)
+    batch_size = luigi.IntParameter(default=2048, significant=False)
+    overwrite = luigi.BoolParameter(default=False, significant=False)
+
+    def requires(self):
+        return SaveUncertaintyCombinedModels(
+            seed_start=self.seed_start,
+            seed_end=self.seed_end,
+        )
+
+    def output(self):
+        output_dir = (
+            WORKFLOW_FEATURE_ROOT
+            / 'fake_factor_gradient_covariance_dropout_mask_variation'
+            / 'wjets'
+            / f'seed_{self.model_seed}'
+            / f'n_masks_{self.n_dropout_masks}'
+        )
+        return {
+            'features': law.LocalFileTarget(
+                output_dir
+                / 'fake_factor_gradient_covariance_dropout_mask_variation.feather'
+            ),
+            'covariances': law.LocalDirectoryTarget(
+                output_dir / 'covariances'
+            ),
+            'schema': law.LocalFileTarget(
+                output_dir / '.schema_v1_wjets_njets_dmv'
+            ),
+        }
+
+    def run(self):
+        calculate_and_store_ff_gradient_covariance_dropout_mask_variation_features(
+            process='wjets',
+            grouping='njets',
+            feature_store_path=self.output()['features'].path,
+            feature_registry_path=(
+                WORKFLOW_FEATURE_ROOT / 'feature_registry.json'
+            ),
+            model_seed=self.model_seed,
+            n_masks=self.n_dropout_masks,
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            training_variables_path=(
+                PROJECT_ROOT / 'configs' / 'training_variables.yaml'
+            ),
+            reduced_weight_dir=(
+                WORKFLOW_FEATURE_ROOT / 'reduced_dataset'
+            ),
+            combined_models_dir=(
+                WORKFLOW_ROOT
+                / 'CombinedModelsUncertainties'
+                / f'seeds_{self.seed_start}_{self.seed_end}'
+            ),
+            batch_size=self.batch_size,
+            covariance_output_dir=self.output()['covariances'].path,
+            overwrite=self.overwrite,
+        )
+        Path(self.output()['schema'].path).write_text(
+            "FF_wjets_gradcov_sigma_sum_dmv, "
+            "FF_wjets_gradcov_sigma_mean_dmv, "
+            "FF_wjets_gradcov_variance_sum_dmv, "
+            "FF_wjets_gradcov_variance_mean_dmv for njets dropout masks\n"
         )
 
 

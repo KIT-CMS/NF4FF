@@ -100,8 +100,11 @@ def _load_column(region, column):
 
 def _qcd_fraction_region(df, process=None):
     manager = df._manager
-    mask = manager.get_mask(df.events, "DR_qcd_fractions")
-    mask &= manager.get_mask(df.events, "preselection")
+    if "DR_qcd_fractions" in manager.regions:
+        mask = manager.get_region_mask(df.events, "DR_qcd_fractions")
+    else:
+        mask = manager.get_mask(df.events, "DR_qcd_fractions")
+        mask &= manager.get_mask(df.events, "preselection")
     if process is not None:
         mask &= manager.get_process_mask(df.events, process)
     return df.events.loc[mask]

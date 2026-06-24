@@ -1137,7 +1137,7 @@ def _run_enrichment_process(
             qcd_weights_val_odd,
             column_name=current_feature_column,
         )
-        
+
         current_feature_prefix = feature_file_prefix or "qcd_weights"
         feature_store_path = (
             FEATURE_STORE_DIR
@@ -1225,7 +1225,6 @@ def train_enrichment_qcd_fractions(
         input_file_path=input_file_path,
         train_fold_model_fn=train_fold_model_qcd,
         region_name="DR_qcd_fractions_no_signs",
-        additional_region_masks=("preselection",),
         output_name="qcd_fraction",
         feature_column_name="weight_qcd_fraction",
         feature_file_prefix="qcd_fraction_weights",

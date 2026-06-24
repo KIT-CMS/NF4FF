@@ -122,6 +122,14 @@ regions:
     - preselection
     - AR_SS
 
+  DR_qcd_fractions:
+    - preselection
+    - DR_qcd_fractions
+
+  DR_qcd_fractions_no_signs:
+    - preselection
+    - DR_qcd_fractions_no_signs
+
   SR_like_wjets:
     - preselection
     - DR_wjets
