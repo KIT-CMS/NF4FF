@@ -1207,6 +1207,84 @@ def create_corrected_fake_factor_closure_plots(
     return outputs
 
 
+def create_mlf_closure_plots(
+    *,
+    data_path: Union[str, Path],
+    masks_path: Union[str, Path],
+    mlf_feature_path: Union[str, Path],
+    classic_feature_path: Union[str, Path],
+    plotting_config_path: Union[str, Path],
+    labels_path: Union[str, Path],
+    output_dir: Union[str, Path],
+    mlf_column: str,
+    manifest_path: Union[str, Path, None] = None,
+    variable_set: str = "variables_set_small",
+    channel: str = "et",
+) -> list[str]:
+    """Create inclusive and njets-split closure plots for an MLF FF column."""
+    plt.switch_backend("Agg")
+    output_dir = Path(output_dir)
+    plotting_config = _read_yaml(plotting_config_path)
+    labels = _read_channel_labels(labels_path, channel)
+    variables = plotting_config.get(variable_set, [])
+    binning = plotting_config.get("bins_by_variable", {})
+    if not variables:
+        raise ValueError(f"No plotting variables configured in {variable_set}.")
+
+    df = load_data(data_path, masks_path)
+    df.load_feature_file(mlf_feature_path)
+    df.load_feature_file(classic_feature_path)
+    if mlf_column not in df.events.columns:
+        raise KeyError(f"MLF fake-factor feature is missing {mlf_column}.")
+
+    df.events["ff_dnn_njets"] = df.events[mlf_column]
+
+    outputs = []
+    closure_subsets = (
+        ("inclusive", "inclusive", None),
+        ("njets_eq_0", r"$N_{\mathrm{jets}} = 0$", ("njets", "eq", 0)),
+        ("njets_eq_1", r"$N_{\mathrm{jets}} = 1$", ("njets", "eq", 1)),
+        ("njets_ge_2", r"$N_{\mathrm{jets}} \geq 2$", ("njets", "ge", 2)),
+    )
+    for subset_name, _, selection in closure_subsets:
+        subset_df = _plot_subset(df, selection)
+        subset_output_dir = output_dir / subset_name
+        logger.info(
+            "Creating MLF closure plots for subset %s with %d events.",
+            subset_name,
+            len(subset_df.events),
+        )
+        for variable in variables:
+            if variable not in binning:
+                raise KeyError(f"No binning configured for {variable}.")
+            fig, _, _ = plot_closure(
+                df=subset_df,
+                var=variable,
+                bins=_plot_bins(binning[variable]),
+                label=labels.get(variable, variable),
+                grouping="njets",
+                plot_classic_ff_comp=True,
+                plot_corr_hline=False,
+            )
+            outputs.extend(_save_figure(
+                fig,
+                subset_output_dir
+                / "closure"
+                / "njets"
+                / f"closure_{variable}",
+            ))
+
+    manifest_path = (
+        Path(manifest_path)
+        if manifest_path is not None
+        else output_dir / "manifest.json"
+    )
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(outputs, indent=2) + "\n")
+    logger.info("Saved %d MLF closure plot files to %s.", len(outputs), output_dir)
+    return outputs
+
+
 def create_high_fake_factor_distribution_plots(
     *,
     data_path: Union[str, Path],

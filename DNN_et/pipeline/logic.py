@@ -33,6 +33,12 @@ from plot_fractions import (
     calculate_and_store_fraction_nn_outputs,
     plot_fraction_comparisons,
 )
+from training_fraction_fake_factors import (
+    calculate_and_store_corrected_training_fraction_fake_factors,
+    calculate_and_store_training_fraction_fake_factors,
+    corrected_training_fraction_fake_factor_name,
+    training_fraction_fake_factor_name,
+)
 from ff_models_to_onnx import ff_models_to_onnx
 from single_dnn_workflow import (
     calculate_single_dnn_fake_factors,
@@ -65,6 +71,7 @@ from plotting import (
     create_fake_factor_plots,
     create_high_ff_closure_plots,
     create_high_fake_factor_distribution_plots,
+    create_mlf_closure_plots,
     create_single_dnn_distribution_plots,
     create_single_dnn_fake_factor_plots,
 )
@@ -417,6 +424,11 @@ class PlotFractions(law.Task):
         )
         outputs = {
             'features': law.LocalFileTarget(feature_path),
+            'schema': law.LocalFileTarget(
+                WORKFLOW_FEATURE_ROOT
+                / 'training_fraction'
+                / '.schema_v2_all_ar'
+            ),
         }
         outputs.update({
             f'{variable}_{extension}': law.LocalFileTarget(
@@ -461,6 +473,9 @@ class PlotFractions(law.Task):
 
         print("FRACTION FEATURE OUTPUT:", feature_path)
         print("FRACTION PLOT OUTPUT:", WORKFLOW_ROOT / 'plots' / 'training_fraction')
+        Path(self.output()['schema'].path).write_text(
+            "fraction_qcd, fraction_wjets, fraction_ttbar calculated for all AR rows\n"
+        )
 
 
 class TrainSqueezedModels(law.Task):
@@ -1727,6 +1742,223 @@ class CalculateFakeFactors(law.Task):
         )
         Path(self.output()['schema'].path).write_text(
             "nine process FF features plus three combined FFs in SR/AR\n"
+        )
+
+
+class CalculateTrainingFractionFakeFactors(law.Task):
+    """Combine process FFs with NN-trained process fractions in data AR."""
+
+    grouping = luigi.ChoiceParameter(
+        default='njets',
+        choices=GROUPING_NAMES,
+    )
+    squeezing = luigi.OptionalFloatParameter(default=0.99)
+    process_fractions_path = law.Parameter(
+        default=(
+            "/work/mmoser/TauFakeFactors.back/workdir/"
+            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
+        )
+    )
+
+    def requires(self):
+        return {
+            'fractions': PlotFractions(
+                process_fractions_path=self.process_fractions_path,
+            ),
+            'fake_factors': CalculateFakeFactors(
+                squeezing=self.squeezing,
+                process_fractions_path=self.process_fractions_path,
+            ),
+        }
+
+    def output(self):
+        feature_name = training_fraction_fake_factor_name(
+            grouping=self.grouping,
+            squeezing=self.squeezing,
+        )
+        output_dir = (
+            WORKFLOW_FEATURE_ROOT
+            / 'training_fraction_fake_factors'
+            / squeezing_label(self.squeezing)
+        )
+        return {
+            'features': law.LocalFileTarget(
+                output_dir / f'{feature_name}.feather'
+            ),
+            'schema': law.LocalFileTarget(
+                output_dir / f'.schema_v2_all_ar_{feature_name}'
+            ),
+        }
+
+    def run(self):
+        feature_path = calculate_and_store_training_fraction_fake_factors(
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            fraction_feature_path=self.input()['fractions']['features'].path,
+            fake_factor_feature_path=(
+                self.input()['fake_factors']['features'].path
+            ),
+            feature_store_path=self.output()['features'].path,
+            feature_registry_path=(
+                WORKFLOW_FEATURE_ROOT / 'feature_registry.json'
+            ),
+            grouping=self.grouping,
+            squeezing=self.squeezing,
+        )
+        Path(self.output()['schema'].path).write_text(
+            "training-fraction combined DNN fake factor in AR, "
+            "keyed by dataframe row index\n"
+        )
+        print("TRAINING FRACTION FAKE FACTOR OUTPUT:", feature_path)
+
+
+class CalculateCorrectedTrainingFractionFakeFactors(law.Task):
+    """Apply non-closure corrections to the MLF-combined fake factor."""
+
+    grouping = luigi.ChoiceParameter(
+        default='njets',
+        choices=GROUPING_NAMES,
+    )
+    squeezing = luigi.OptionalFloatParameter(default=0.99)
+    correction_set_root = law.Parameter(
+        default="/work/mmoser/TauFakeFactors/workdirs"
+    )
+    process_fractions_path = law.Parameter(
+        default=(
+            "/work/mmoser/TauFakeFactors.back/workdir/"
+            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
+        )
+    )
+
+    def requires(self):
+        return {
+            'mlf': CalculateTrainingFractionFakeFactors(
+                grouping=self.grouping,
+                squeezing=self.squeezing,
+                process_fractions_path=self.process_fractions_path,
+            ),
+            'fractions': PlotFractions(
+                process_fractions_path=self.process_fractions_path,
+            ),
+            'fake_factors': CalculateFakeFactors(
+                squeezing=self.squeezing,
+                process_fractions_path=self.process_fractions_path,
+            ),
+        }
+
+    def output(self):
+        feature_name = corrected_training_fraction_fake_factor_name(
+            grouping=self.grouping,
+            squeezing=self.squeezing,
+        )
+        output_dir = (
+            WORKFLOW_FEATURE_ROOT
+            / 'training_fraction_fake_factors_corrected'
+            / squeezing_label(self.squeezing)
+        )
+        return {
+            'features': law.LocalFileTarget(
+                output_dir / f'{feature_name}.feather'
+            ),
+            'schema': law.LocalFileTarget(
+                output_dir / f'.schema_v1_{feature_name}'
+            ),
+        }
+
+    def run(self):
+        feature_path = (
+            calculate_and_store_corrected_training_fraction_fake_factors(
+                data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+                masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+                fraction_feature_path=(
+                    self.input()['fractions']['features'].path
+                ),
+                fake_factor_feature_path=(
+                    self.input()['fake_factors']['features'].path
+                ),
+                correction_set_root=self.correction_set_root,
+                feature_store_path=self.output()['features'].path,
+                feature_registry_path=(
+                    WORKFLOW_FEATURE_ROOT / 'feature_registry.json'
+                ),
+                grouping=self.grouping,
+                squeezing=self.squeezing,
+            )
+        )
+        Path(self.output()['schema'].path).write_text(
+            "non-closure-corrected MLF DNN fake factor in AR, "
+            "keyed by dataframe row index\n"
+        )
+        print("CORRECTED TRAINING FRACTION FAKE FACTOR OUTPUT:", feature_path)
+
+
+class PlotClosure(law.Task):
+    """Plot inclusive and njets-split closures for corrected MLF FFs."""
+
+    grouping = luigi.ChoiceParameter(
+        default='njets',
+        choices=('njets',),
+    )
+    squeezing = luigi.OptionalFloatParameter(default=0.99)
+    variable_set = luigi.Parameter(default='variables_set_small')
+    correction_set_root = law.Parameter(
+        default="/work/mmoser/TauFakeFactors/workdirs"
+    )
+    process_fractions_path = law.Parameter(
+        default=(
+            "/work/mmoser/TauFakeFactors.back/workdir/"
+            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
+        )
+    )
+    classic_corrections_path = law.Parameter(
+        default=(
+            "/work/mmoser/TauFakeFactors.back/workdir/"
+            "ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz"
+        )
+    )
+
+    def requires(self):
+        return {
+            'mlf_corrected': CalculateCorrectedTrainingFractionFakeFactors(
+                grouping=self.grouping,
+                squeezing=self.squeezing,
+                correction_set_root=self.correction_set_root,
+                process_fractions_path=self.process_fractions_path,
+            ),
+            'classic': CalculateClassicFakeFactors(
+                fake_factors_path=self.process_fractions_path,
+                corrections_path=self.classic_corrections_path,
+            ),
+        }
+
+    def output(self):
+        return law.LocalFileTarget(
+            WORKFLOW_ROOT
+            / 'plots'
+            / 'training_fraction_fake_factors'
+            / squeezing_label(self.squeezing)
+            / self.grouping
+            / self.variable_set
+            / 'manifest_closures_v1.json'
+        )
+
+    def run(self):
+        create_mlf_closure_plots(
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            mlf_feature_path=(
+                self.input()['mlf_corrected']['features'].path
+            ),
+            classic_feature_path=self.input()['classic']['features'].path,
+            plotting_config_path=PROJECT_ROOT / 'configs' / 'plotting.yaml',
+            labels_path=PROJECT_ROOT / 'configs' / 'labels.yaml',
+            output_dir=Path(self.output().path).parent,
+            manifest_path=self.output().path,
+            variable_set=self.variable_set,
+            mlf_column=corrected_training_fraction_fake_factor_name(
+                grouping=self.grouping,
+                squeezing=self.squeezing,
+            ),
         )
 
 

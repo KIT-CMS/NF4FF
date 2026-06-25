@@ -201,7 +201,7 @@ def _load_frame_with_fraction_outputs(
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
 
     df = load_data(data_path, masks_path)
-    frame = df.data.AR.events.copy()
+    frame = df.AR.events.copy()
     training_variables = load_variables(training_var_path)
     model = load_model(model_dir, device=str(device)).eval()
 
