@@ -36,7 +36,7 @@ t.set_num_threads(8)
 
 class Args(Tap):
     loc: Literal['present', 'remote'] = 'present'
-    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
+    embedding: Literal["embedding", "no_embedding"] = "embedding"
     bins: Literal['equi_populated' , 'uniform'] ='equi_populated'
     n_bins: int = 20
     data_complete_path: str = 'data/data_complete.feather'

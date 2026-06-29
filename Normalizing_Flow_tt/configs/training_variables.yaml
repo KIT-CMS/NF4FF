@@ -1,11 +1,20 @@
 variables_4: ['pt_1', 'pt_2', 'm_vis', 'pt_vis']
 variables_5: ['pt_1', 'pt_2', 'm_vis', 'deltaR_ditaupair', 'pt_vis']
-variables_51: ['pt_1', 'pt_2', 'm_vis', 'pt_vis', 'met']
 variables_6: ['pt_1', 'pt_2', 'm_vis', 'deltaR_ditaupair', 'pt_vis', 'met']
-variables_61: ['pt_1', 'pt_2', 'm_vis', 'pt_vis', 'met', 'pt_tt']
 variables_7: ['pt_1', 'pt_2', 'm_vis', 'deltaR_ditaupair', 'pt_vis', 'met', 'pt_tt']
-variables_71: ['pt_1', 'pt_2', 'm_vis', 'pt_vis', 'met', 'pt_tt', mt_1]
 variables_10: ['pt_1', 'pt_2', 'm_vis', 'deltaR_ditaupair', 'pt_vis', 'met', 'pt_tt', eta_1, eta_2, mt_1]
-variables_91: ['pt_1', 'pt_2', 'm_vis', 'pt_vis', 'met', 'pt_tt', eta_1, eta_2, mt_1]
 variables_all: ['pt_1', 'pt_2', 'm_vis', 'deltaR_ditaupair', 'pt_vis', 'met', 'pt_tt', deltaEta_2j1, deltaEta_1j2, deltaEta_2j2, deltaEta_12j2, deltaEta_12j1, eta_1, eta_2, mt_1]
+
+# without deltaR
+variables_51: ['pt_1', 'pt_2', 'm_vis', 'pt_vis', 'met']
+variables_61: ['pt_1', 'pt_2', 'm_vis', 'pt_vis', 'met', 'pt_tt']
+variables_71: ['pt_1', 'pt_2', 'm_vis', 'pt_vis', 'met', 'pt_tt', mt_1]
+variables_91: ['pt_1', 'pt_2', 'm_vis', 'pt_vis', 'met', 'pt_tt', eta_1, eta_2, mt_1]
 variables_all1: ['pt_1', 'pt_2', 'm_vis', 'pt_vis', 'met', 'pt_tt', deltaEta_2j1, deltaEta_1j2, deltaEta_2j2, deltaEta_12j2, deltaEta_12j1, eta_1, eta_2, mt_1]
+
+#without pt
+variables_52: ['pt_2', 'm_vis', 'pt_vis', 'met', 'pt_tt']
+
+#without angles
+#called 101 at the moment
+variables_101: ['pt_1', 'pt_2', 'm_vis', 'pt_vis', 'met', 'pt_tt', mt_1, mt_2, mt_tot, metphi] 

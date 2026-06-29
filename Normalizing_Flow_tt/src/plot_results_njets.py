@@ -56,13 +56,13 @@ class Args(Tap):
     model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'conditional_nf'  # Training mode to load: grouped NF split by njets, single inclusive NF, or conditional NF with njets as input.
     classifier_training_tag: str = ''  # Optional classifier training folder suffix after 'training_'. Empty -> pick most recent.
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
-    plot_training_diagnostics: bool = False   # Plot training loss / learning-rate / time-per-epoch curves.
+    plot_training_diagnostics: bool = True   # Plot training loss / learning-rate / time-per-epoch curves.
     plot_nf_sampling: bool = True           # Plot NF-sampled vs data histograms in training variables.
-    plot_ff_results: bool = False             # Plot fake-factor comparison stacks for each njets category.
-    plot_ff_values: bool = False              # Plot FF values in histogram
-    plot_ar_data_with_clipping: bool = False  # Plot AR data with both kept and excluded events (by clipping mask).
-    plot_taylor_coefficients: bool = False   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
-    plot_complete_variables: bool = False
+    plot_ff_results: bool = True             # Plot fake-factor comparison stacks for each njets category.
+    plot_ff_values: bool = True              # Plot FF values in histogram
+    plot_ar_data_with_clipping: bool = True  # Plot AR data with both kept and excluded events (by clipping mask).
+    plot_taylor_coefficients: bool = True   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
+    plot_complete_variables: bool = True
     ratio_ylim_min: float = 0.5  # Lower y-limit for ratio panels.
     ratio_ylim_max: float = 1.5  # Upper y-limit for ratio panels.
 
@@ -149,10 +149,14 @@ def build_training_variables_tag(variables: list[str]) -> str:
     else:
         readable_tail = "none"
     
-    if 'deltaR_ditaupair' in variables:
+    if 'deltaR_ditaupair' in variables and 'pt_1' in variables:
         return f"vars{len(variables)}_{readable_tail}_{variables_hash}"
-    else:
+    elif 'pt_1' not in variables:
+        return f"vars{len(variables)}2_{readable_tail}_{variables_hash}"
+    elif 'deltaR_ditaupair' not in variables and 'pt_1' in variables: 
         return f"vars{len(variables)}1_{readable_tail}_{variables_hash}"
+    else:
+        return f"vars{len(variables)}a_{readable_tail}_{variables_hash}"
 
 
 def _build_training_variables_prefix(variables: list[str]) -> str:
@@ -164,10 +168,14 @@ def _build_training_variables_prefix(variables: list[str]) -> str:
     else:
         readable_tail = "none"
 
-    if 'deltaR_ditaupair' in variables:
+    if 'deltaR_ditaupair' in variables and 'pt_1' in variables:
         return f"vars{len(variables)}_{readable_tail}"
-    else:
+    elif 'pt_1' not in variables:
+        return f"vars{len(variables)}2_{readable_tail}"
+    elif 'deltaR_ditaupair' not in variables and 'pt_1' in variables:
         return f"vars{len(variables)}1_{readable_tail}"
+    else:
+        return f"vars{len(variables)}a_{readable_tail}"
 
 
 def resolve_training_tag(variables: list[str], mode_dir: str, base_dir: str = cfg_path['NF_results']) -> str:
@@ -1059,18 +1067,18 @@ def select_njets_category(df, category_name):
 def _build_main_bins_by_variable() -> dict[str, np.ndarray]:
     return {
     # Existing defaults (kept identical to plot_complete_variables == False setup)
-    'pt_1': np.linspace(0, 150, 31),
-    'pt_2': np.linspace(0, 150, 31),
-    'm_vis': np.linspace(0, 220, 31),
+    'pt_1': np.linspace(30, 150, 31),
+    'pt_2': np.linspace(30, 150, 31),
+    'm_vis': np.linspace(0, 300, 31),
     'deltaR_ditaupair': np.linspace(0, 5, 21),
-    'pt_vis': np.linspace(0, 160, 31),
-    'pt_tt': np.linspace(0, 160, 31),
+    'pt_vis': np.linspace(0, 150, 31),
+    'pt_tt': np.linspace(0, 200, 31),
     'm_fastmtt': np.linspace(0, 220, 31),
-    'eta_1': np.linspace(-3, 3, 31),
-    'eta_2': np.linspace(-3, 3, 31),
-    'met': np.linspace(0, 150, 31),
-    'mt_1': np.linspace(0, 150, 31),
-    'mt_2': np.linspace(0, 150, 31),
+    'eta_1': np.linspace(-2.5, 2.5, 31),
+    'eta_2': np.linspace(-2.5, 2.5, 31),
+    'met': np.linspace(0, 125, 31),
+    'mt_1': np.linspace(0, 200, 31),
+    'mt_2': np.linspace(0, 200, 31),
 
     # Additional variables for plot_complete_variables == True
     'jpt_1': np.linspace(0, 150, 31),
@@ -1104,6 +1112,7 @@ def _build_main_bins_by_variable() -> dict[str, np.ndarray]:
     'tau_decaymode_2': np.linspace(-0.5, 12.5, 14),
     'mass_1': np.linspace(0, 0.10, 31),
     'mass_2': np.linspace(0, 2.0, 31),
+    'metphi': np.linspace(-3.5, 3.5, 31)
     }
 
 
@@ -1257,8 +1266,8 @@ def initialize_runtime_context() -> None:
     # Step 3: load data and plotting labels/binning
     data_complete = pd.read_feather(f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather')
 
-    plot_all_var(data_complete)
-    exit()
+    #plot_all_var(data_complete)
+    #exit()
     
     if args.plot_complete_variables:
         list_variables = cfg_set['variables']

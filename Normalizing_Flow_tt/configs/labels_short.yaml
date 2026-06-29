@@ -27,3 +27,6 @@ tt:
    eta_1: $\mathrm{\eta}_1$
    eta_2: $\mathrm{\eta}_2$
    mt_1: '$m_{T}(\tau_{\mathrm{h},1}, {E}_{T}^{\mathrm{miss}})$'
+   mt_2: '$m_{T}(\tau_{\mathrm{h},2}, {E}_{T}^{\mathrm{miss}})$'
+   mt_tot: '$\mathrm{m}_{T}^{tot}$'
+   metphi: 'metphi'

@@ -65,7 +65,7 @@ class Args(Tap):
     training_model: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = TRAINING_MODEL_CONDITIONAL  # Training mode: grouped split, single inclusive NF, or conditional NF with njets input.
     taus = [1, 2] #[1, 2, 12] # list of tau fakes
     embedding: Literal["embedding", "no_embedding"] = "embedding"
-    var = "variables_71"
+    var = "variables_61"
 
     def configure(self) -> None:
         self.add_argument('--split_njets', action='store_true')
@@ -116,10 +116,14 @@ def build_training_variables_tag(variables: list[str]) -> str:
     else:
         readable_tail = "none"
 
-    if 'deltaR_ditaupair' in variables:
+    if 'deltaR_ditaupair' in variables and 'pt_1' in variables:
         return f"vars{len(variables)}_{readable_tail}_{variables_hash}"
-    else:
+    elif 'pt_1' not in variables:
+        return f"vars{len(variables)}2_{readable_tail}_{variables_hash}"
+    elif 'deltaR_ditaupair' not in variables and 'pt_1' in variables:
         return f"vars{len(variables)}1_{readable_tail}_{variables_hash}"
+    else:
+        return f"vars{len(variables)}a_{readable_tail}_{variables_hash}"
 
 
 # ----- shared helpers -----

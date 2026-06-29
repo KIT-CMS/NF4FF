@@ -53,3 +53,8 @@ variables:
   - deltaEta_12j1
   - event
   - pt_1
+  #added: Best result only used the above
+  - mt_1
+  - mt_2
+  - mt_tot
+  - metphi
