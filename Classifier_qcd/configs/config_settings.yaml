@@ -1,0 +1,3 @@
+directories:
+  data_input_directory: /ceph/tapp/TauFF/smhtt_ul/2018/2026_04_14/preselection/2018/tt/
+  data_output_directory: "/work/mmoser/NF4FF/Classifier_qcd/data/"

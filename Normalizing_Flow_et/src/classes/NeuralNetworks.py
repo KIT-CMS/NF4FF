@@ -4,6 +4,7 @@ import torch as t
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import torch.distributions as D
 import logging
 from CustomLogging import setup_logging
 from typing import Any, Callable, Dict, List, Union, Tuple
@@ -1057,3 +1058,158 @@ class BinaryClassifier(nn.Module):
         x = self.apply_scaler(x)
         return self.net(x)
 
+
+class ConditionalAffine1D(nn.Module):
+    def __init__(self, cond_dim, hidden_dim=64):
+        super().__init__()
+
+        self.net = nn.Sequential(
+            nn.Linear(cond_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 2)  # outputs mu and log_sigma
+        )
+
+    def forward(self, y, cond):
+        """
+        Forward map: y -> z
+        """
+        params = self.net(cond)
+        mu, log_sigma = params[:, 0], params[:, 1]
+        log_sigma = log_sigma.clamp(-5.0, 5.0)
+
+        sigma = t.exp(log_sigma)
+        z = (y - mu) / sigma
+        log_det = -log_sigma
+
+        return z, log_det
+
+    def inverse(self, z, cond):
+        """
+        Inverse map: z -> y
+        """
+        params = self.net(cond)
+        mu, log_sigma = params[:, 0], params[:, 1]
+
+        sigma = t.exp(log_sigma)
+        y = sigma * z + mu
+
+        return y
+    
+class ConditionalFlow1D(nn.Module):
+    def __init__(self, cond_dim, n_layers=4):
+        super().__init__()
+
+        self.layers = nn.ModuleList(
+            [ConditionalAffine1D(cond_dim) for _ in range(n_layers)]
+        )
+        self.base_dist = D.Normal(0.0, 1.0)
+
+        # StandardScaler parameters for the 1D target variable.
+        self.register_buffer("_scaler_shift", t.tensor(0.0, dtype=t.float32))
+        self.register_buffer("_scaler_scale", t.tensor(1.0, dtype=t.float32))
+
+        # StandardScaler parameters for the conditioning variables (no Jacobian needed).
+        self.register_buffer("_cond_scaler_shift", t.zeros(cond_dim, dtype=t.float32))
+        self.register_buffer("_cond_scaler_scale", t.ones(cond_dim, dtype=t.float32))
+
+    @property
+    def _is_initialized(self):
+        initialized = (~t.isnan(self._scaler_shift)) & (~t.isnan(self._scaler_scale))
+        initialized &= (self._scaler_scale != 1) & (self._scaler_shift != 0)
+        return bool(initialized.item())
+
+    def initialize_scaler(
+        self,
+        shift: Union[np.ndarray, t.Tensor, float, int, None] = None,
+        scale: Union[np.ndarray, t.Tensor, float, int, None] = None,
+        safety_epsilon: float = 1e-6,
+    ):
+        if shift is None or scale is None:
+            raise ValueError("shift and scale must both be provided")
+
+        shift = t.from_numpy(shift) if isinstance(shift, np.ndarray) else shift
+        scale = t.from_numpy(scale) if isinstance(scale, np.ndarray) else scale
+        shift = t.as_tensor(shift, dtype=t.float32).reshape(())
+        scale = t.as_tensor(scale, dtype=t.float32).reshape(())
+
+        if safety_epsilon is not None:
+            scale = scale.clamp(min=safety_epsilon)
+        if (scale == 0).item():
+            raise ValueError("Scaler scale contains zero")
+
+        self._scaler_shift.data.copy_(shift)
+        self._scaler_scale.data.copy_(scale)
+
+    def apply_scaler(self, y: t.Tensor) -> t.Tensor:
+        shift = self._scaler_shift.to(y.device, y.dtype)
+        scale = self._scaler_scale.to(y.device, y.dtype)
+        return (y - shift) / scale
+
+    def initialize_cond_scaler(
+        self,
+        shift: Union[np.ndarray, t.Tensor, float, int, None] = None,
+        scale: Union[np.ndarray, t.Tensor, float, int, None] = None,
+        safety_epsilon: float = 1e-6,
+    ):
+        if shift is None or scale is None:
+            raise ValueError("cond shift and scale must both be provided")
+
+        shift = t.from_numpy(shift) if isinstance(shift, np.ndarray) else shift
+        scale = t.from_numpy(scale) if isinstance(scale, np.ndarray) else scale
+        shift = t.as_tensor(shift, dtype=t.float32).reshape(-1)
+        scale = t.as_tensor(scale, dtype=t.float32).reshape(-1)
+
+        if safety_epsilon is not None:
+            scale = scale.clamp(min=safety_epsilon)
+        if (scale == 0).any():
+            raise ValueError("Cond scaler scale contains zero")
+
+        self._cond_scaler_shift.data.copy_(shift)
+        self._cond_scaler_scale.data.copy_(scale)
+
+    def apply_cond_scaler(self, cond: t.Tensor) -> t.Tensor:
+        shift = self._cond_scaler_shift.to(cond.device, cond.dtype)
+        scale = self._cond_scaler_scale.to(cond.device, cond.dtype)
+        return (cond - shift) / scale
+
+    def log_prob(self, y, cond):
+        """
+        Compute log p(y | cond)
+        """
+        y = self.apply_scaler(y)
+        cond = self.apply_cond_scaler(cond)
+        log_det_sum = 0.0
+        z = y
+
+        for layer in self.layers:
+            z, log_det = layer(z, cond)
+            log_det_sum += log_det
+
+        log_pz = self.base_dist.log_prob(z)
+        log_det_scale = -t.log(self._scaler_scale.to(y.device, y.dtype))
+        return log_pz + log_det_sum + log_det_scale
+
+    def sample(self, cond, n_samples=1):
+        """
+        Sample FF_SR given cond
+        """
+        z = self.base_dist.sample((n_samples, cond.shape[0]))
+        z = z.view(-1).to(cond.device)
+
+        cond = self.apply_cond_scaler(cond)
+        cond_rep = cond.repeat(n_samples, 1)
+
+        y = z
+        for layer in reversed(self.layers):
+            y = layer.inverse(y, cond_rep)
+
+        # Inverse of standardization: y = y_scaled * scale + shift
+        y = (
+            y * self._scaler_scale.to(y.device, y.dtype)
+            + self._scaler_shift.to(y.device, y.dtype)
+        )
+
+        return y.view(n_samples, -1)
+    

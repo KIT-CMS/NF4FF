@@ -20,7 +20,10 @@ __pycache__/
 
 # Large datasets
 
+CODE/
 plots/
+plots*/
+data/
 
 Classifier/data/
 Classifier/plots/

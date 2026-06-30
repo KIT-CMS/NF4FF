@@ -449,6 +449,51 @@ def split_even_odd(df: pd.DataFrame, SEED = 42) -> Tuple[pd.DataFrame, pd.DataFr
 
     return train1.reset_index(drop=True), val1.reset_index(drop=True), train2.reset_index(drop=True), val2.reset_index(drop=True)
 
+# ------- mask loading ------------
+
+class MaskManager:
+    def __init__(self, yaml_path):
+        self.yaml_path = Path(yaml_path)
+        self.masks = self.load_masks()
+        
+    def load_masks(self):
+        with open (self.yaml_path, "r") as f:
+            raw = yaml.safe_load(f)
+
+        masks = {}
+        for name, conditions in raw["masks"].items():
+            masks[name] = self._normalize_conditions(conditions)
+        return masks
+    @staticmethod
+    def _normalize_conditions(conditions):
+        fixed = []
+        for c in conditions:
+            c = (
+                c.replace("&gt;", ">")
+                 .replace("&lt;", "<")
+                 .replace("&&", "&")
+            )
+            fixed.append(f"({c})")
+        return " & ".join(fixed)
+
+
+
+    def apply(self, df, *mask_names):
+
+        if not mask_names:
+            raise ValueError("At least one mask must be provided")
+
+        unknown = set(mask_names) - self.masks.keys()
+        if unknown:
+            raise KeyError(f"Unknown masks: {unknown}")
+
+        expr = " & ".join(f"({self.masks[m]})" for m in mask_names)
+        return df.query(expr)
+
+    def get_mask(self, df: pd.DataFrame, mask_name: str) -> pd.Series:
+        return df.eval(self.masks[mask_name])
+
+
 
 # ------- Fake Factor Stuff 
 
@@ -457,10 +502,29 @@ def evaluate_pdf(model: RealNVP, X: torch.Tensor) -> np.ndarray:
     """Returns PDF evaluated at events"""
     # Use model(X) so the model can apply the scaler and add the scaling Jacobian
     log_pdf = model(X)
-    log_pdf = torch.clamp(log_pdf, min=-1e10)
+    # Clamp in log-space for numerical stability before exponentiation.
+    # NOTE: min=1e-10 would force almost all negative log-pdfs to ~0 and
+    # distort PDF ratios. Keep values in a safe log range instead.
+    log_pdf = torch.clamp(log_pdf, min=-700.0, max=700.0)
     pdf = torch.exp(log_pdf).cpu().numpy()
     return pdf
 
+    model = ConditionalRealNVP(
+        dim=dim,
+        cond_dim=cond_dim,
+        n_layers=cfg.n_layers,
+        hidden_dims=(cfg.hidden_dims,),
+        s_scale=cfg.s_scale,
+        use_cut_preprocessing=cfg.use_cut_preprocessing,
+        cut_preprocessing_thresholds=cfg.cut_preprocessing_thresholds,
+        cut_preprocessing_epsilon=cfg.cut_preprocessing_epsilon,
+        use_tail_preprocessing=cfg.use_tail_preprocessing,
+        tail_preprocessing_index=cfg.tail_preprocessing_index,
+        tail_preprocessing_type=cfg.tail_preprocessing_type,
+        tail_preprocessing_center=cfg.tail_preprocessing_center,
+        tail_preprocessing_scale=cfg.tail_preprocessing_scale,
+        tail_preprocessing_epsilon=cfg.tail_preprocessing_epsilon,
+    ).to(device)
 
 @torch.no_grad()
 def evaluate_density_ratio_binary_classifier(
@@ -487,15 +551,9 @@ def compute_eventwise_fake_factors(
     pdf_AR: np.ndarray,
     pdf_SR: np.ndarray,
     global_ff: float,
+    clip_value: float,
 ) -> tuple[np.ndarray, np.ndarray, float, np.ndarray, float]:
 
-    # ---- safe ratio
-    ratio = np.divide(
-        pdf_SR,
-        np.maximum(pdf_AR, 1e-100),
-        out=np.zeros_like(pdf_SR, dtype=float),
-        where=(pdf_AR > 0) & (pdf_SR > 0)
-)
 
     # ---- determine adaptive clip value so the highest tail fraction is clipped,
     # while enforcing a minimum clip value of 1.0
@@ -509,7 +567,6 @@ def compute_eventwise_fake_factors(
         clip_value = max(clip_value, 1.0)
     else:
     '''
-    clip_value = 2.0
 
     # ---- mask for clipping and nonzero PDFs
     clip_mask = (ff_eventwise_nominal <= clip_value) & (pdf_AR > 0) & (pdf_SR > 0)
@@ -560,8 +617,64 @@ def compute_eventwise_fake_factors_binary_classifier(
 
     ff_eventwise_full = global_ff_cor * ratio
     ff_eventwise_full = np.where(valid_ratio_mask, ff_eventwise_full, 0.0)
-    ff_eventwise_full = np.clip(ff_eventwise_full, a_min=0.0, a_max=clip_value)
 
     ff_eventwise_clipped = ff_eventwise_full[clip_mask]
 
     return ff_eventwise_full, ff_eventwise_clipped, global_ff_cor, clip_mask, clip_value
+
+    valid_ff_mask = np.isfinite(ff_eventwise_nominal)
+    '''
+    if np.any(valid_ff_mask):
+        clip_quantile = 1.0 - FF_CLIP_TAIL_FRACTION
+        clip_value = float(np.quantile(ff_eventwise_nominal[valid_ff_mask], clip_quantile))
+        clip_value = max(clip_value, 1.0)
+    else:
+    '''
+    clip_value = 2.0
+
+
+
+def load_masks_config(path: str ) -> dict[str, list[str]]:
+    config_path = Path(path)
+    if not config_path.exists():
+        raise FileNotFoundError(f'Masks config not found: {config_path}')
+
+    with open(config_path, 'r') as handle:
+        raw = yaml.safe_load(handle) or {}
+
+    masks = raw.get('masks', raw)
+    if not isinstance(masks, dict):
+        raise ValueError(f'Invalid masks config format in {config_path}: expected a mapping at root or under "masks"')
+
+    normalized: dict[str, list[str]] = {}
+    for name, expressions in masks.items():
+        if isinstance(expressions, str):
+            normalized[name] = [expressions]
+            continue
+        if isinstance(expressions, list) and all(isinstance(expr, str) for expr in expressions):
+            normalized[name] = expressions
+            continue
+        raise ValueError(f'Invalid expression list for mask "{name}" in {config_path}')
+
+    logger.info('Loaded %d masks from %s', len(normalized), config_path)
+    return normalized
+
+def _build_mask_from_config(
+    df: pd.DataFrame,
+    mask_name: str,
+    masks_config: dict[str, list[str]],
+) -> pd.Series:
+    expressions = masks_config.get(mask_name)
+    if not expressions:
+        raise KeyError(f'Mask "{mask_name}" not found')
+
+    combined_expression = ' & '.join(f'({expr})' for expr in expressions)
+    mask = df.eval(combined_expression, engine='python')
+    return mask.fillna(False).astype(bool)
+
+def _apply_config_mask(
+    df: pd.DataFrame,
+    mask_name: str,
+    masks_config: dict[str, list[str]],
+) -> pd.DataFrame:
+    return df[_build_mask_from_config(df, mask_name, masks_config)].copy()

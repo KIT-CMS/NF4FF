@@ -16,7 +16,7 @@ import matplotlib
 import yaml
 from tap import Tap
 from CustomLogging import setup_logging
-from classes.NeuralNetworks import RealNVP, RealNVP_NN, AffineCoupling, MLP, ConditionalRealNVP, BinaryClassifier
+from classes.NeuralNetworks import RealNVP, RealNVP_NN, AffineCoupling, MLP, ConditionalRealNVP, BinaryClassifier, ConditionalFlow1D
 import correctionlib as cr
 from classes.Dataclasses import ModelConfig
 from classes.Collection import load_model_config, load_flow, load_conditional_flow, evaluate_pdf, compute_eventwise_fake_factors, get_my_data_qcd, get_my_data_wjets
@@ -58,6 +58,7 @@ class Args(Tap):
     plot_complete_variables: bool = False
     ratio_ylim_min: float = 0.75  # Lower y-limit for ratio panels.
     ratio_ylim_max: float = 1.25  # Upper y-limit for ratio panels.
+    apply_dr_sr_correction: bool = False  # Apply the trained DR-SR correction flow (FF_correction_flow.py) to Wjets FFs only. Not applied by default.
 
 
 # Runtime context (initialized in `initialize_runtime_context()` and consumed by plotting functions)
@@ -83,6 +84,9 @@ correction_features_wjets_antidr = None
 correction_prior_ar_over_sr_wjets_dr = None
 correction_prior_ar_over_sr_wjets_antidr = None
 
+dr_sr_flow_model = None
+dr_sr_flow_meta = None
+
 chk_pth_model_AR_like_wjets = ''
 chk_pth_model_SR_like_wjets = ''
 chk_pth_model_AR_like_qcd = ''
@@ -103,9 +107,79 @@ main_plot_bins_by_variable = {}
 sampling_plot_bins_by_variable = {}
 plot_root_dir = Path('plots')
 MASKS_CONFIG_PATH = Path('../configs/masks.yaml')
-MASKS_CONFIG: dict[str, list[str]] = {}
 
 # ------------ functions ----------
+
+
+def _resolve_training_name(variables: list[str]) -> str:
+    """Build a DR_SR_correction-style training tag (no hash) from a variable list."""
+    tail = variables[4:]
+    tag = '_'.join(tail) if tail else 'none'
+    return f'training_vars{len(variables)}_{tag}'
+
+
+def _load_dr_sr_flow_model(
+    checkpoint_dir: Path,
+    device: torch.device,
+) -> tuple['ConditionalFlow1D', dict]:
+    """Load a trained ConditionalFlow1D from a checkpoint directory."""
+    scaler_meta_path = checkpoint_dir.parent / 'scaler_meta.yaml'
+    if not scaler_meta_path.exists():
+        raise FileNotFoundError(f'scaler_meta.yaml not found at {scaler_meta_path}')
+    with open(scaler_meta_path, 'r') as f:
+        meta = yaml.safe_load(f)
+    cond_dim = meta['cond_dim']
+    model = ConditionalFlow1D(cond_dim).to(device)
+    model.initialize_scaler(
+        torch.tensor(meta['shift_training'], dtype=torch.float32),
+        torch.tensor(meta['scale_training'], dtype=torch.float32),
+    )
+    model.initialize_cond_scaler(
+        torch.tensor(meta['shift_cond'], dtype=torch.float32),
+        torch.tensor(meta['scale_cond'], dtype=torch.float32),
+    )
+    checkpoint = torch.load(checkpoint_dir / 'model_checkpoint.pth', map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+    return model, meta
+
+
+@torch.no_grad()
+def _apply_dr_sr_flow(
+    flow_model: 'ConditionalFlow1D',
+    df: pd.DataFrame,
+    ff_dr: np.ndarray,
+    flow_meta: dict,
+    device: torch.device,
+) -> np.ndarray:
+    """Apply the DR-SR correction flow to convert FF_DR values → FF_SR.
+    Events with non-positive or non-finite FF_DR receive NaN.
+    """
+    use_log = flow_meta.get('use_log_transform', False)
+    ff_clip_max = flow_meta.get('ff_clip_max', None)
+    flow_variables = flow_meta['variables']
+
+    valid = np.isfinite(ff_dr) & (ff_dr > 0)
+    result = np.full(len(ff_dr), np.nan, dtype='float32')
+    if not valid.any():
+        return result
+
+    df_valid = df.iloc[np.where(valid)[0]]
+    ff_dr_valid = ff_dr[valid].astype('float32')
+    if ff_clip_max is not None:
+        ff_dr_valid = np.clip(ff_dr_valid, None, ff_clip_max)
+
+    cond_ff_dr = np.log(ff_dr_valid) if use_log else ff_dr_valid
+    cond_np = np.column_stack([
+        cond_ff_dr,
+        df_valid[flow_variables].to_numpy(dtype='float32'),
+    ])
+    cond = torch.tensor(cond_np).to(device)
+    samples = flow_model.sample(cond, n_samples=1).squeeze(0).cpu().numpy()
+    if use_log:
+        samples = np.exp(samples)
+    result[valid] = samples
+    return result
 
 
 def reserve_cms_label_space(ax, factor=5.0):
@@ -169,6 +243,42 @@ def _build_training_variables_prefix(variables: list[str]) -> str:
         readable_tail = "none"
     return f"vars{len(variables)}_{readable_tail}"
 
+
+def resolve_training_tag(variables: list[str], mode_dir: str, base_dir: str = 'Training_results_new') -> str:
+    """
+    Glob for a training folder whose name starts with 'training_<prefix>'
+    (ignoring the trailing hash).  Returns the folder-name suffix that follows
+    'training_', so the caller can use it identically to training_variables_tag.
+
+    If exactly one matching folder is found it is used.  If several match the
+    most-recently-modified one is chosen.  If none match, fall back to the
+    exact computed tag (old behaviour).
+    """
+    exact_tag = build_training_variables_tag(variables)
+    prefix = _build_training_variables_prefix(variables)
+    search_root = Path(base_dir) / mode_dir
+    if not search_root.exists():
+        logger.warning('Training base dir not found: %s — falling back to exact tag', search_root)
+        return exact_tag
+
+    candidates = sorted(search_root.glob(f'training_{prefix}*'), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not candidates:
+        logger.warning(
+            'No training folder matching training_%s* found in %s — falling back to exact tag %s',
+            prefix, search_root, exact_tag,
+        )
+        return exact_tag
+    if len(candidates) > 1:
+        logger.warning(
+            'Multiple training folders match training_%s* in %s: %s — using most recent: %s',
+            prefix, search_root,
+            [c.name for c in candidates],
+            candidates[0].name,
+        )
+    chosen = candidates[0].name  # e.g. 'training_vars5_pt_vis_137f51a0'
+    resolved_tag = chosen.removeprefix('training_')
+    logger.info('Resolved training tag: %s -> %s', exact_tag, resolved_tag)
+    return resolved_tag
 
 def resolve_training_tag(variables: list[str], mode_dir: str, base_dir: str = 'Training_results_new') -> str:
     """
@@ -783,6 +893,64 @@ def plot_ff_clipping_histogram(
     plt.savefig(plot_dir / 'hist_FF.png')
     plt.close(fig)
 
+
+def plot_wjets_dr_sr_correction_comparison(
+    ff_wjets_before: np.ndarray,
+    ff_wjets_after: np.ndarray,
+    plot_dir: str | Path,
+    bins: int = 60,
+    plot_range: tuple[float, float] = (1e-3, 20),
+    ff_clip_max: float | None = None,
+) -> None:
+    """Compare Wjets fake-factor distributions before/after DR-SR correction."""
+    before = np.asarray(ff_wjets_before, dtype=np.float32)
+    after = np.asarray(ff_wjets_after, dtype=np.float32)
+
+    valid_before = np.isfinite(before) & (before > 0)
+    valid_after = np.isfinite(after) & (after > 0)
+    if not valid_before.any() or not valid_after.any():
+        logger.warning(
+            'Skipping Wjets DR-SR comparison plot: no valid FF values (before=%d, after=%d).',
+            int(valid_before.sum()),
+            int(valid_after.sum()),
+        )
+        return
+
+    edges = np.logspace(np.log10(plot_range[0]), np.log10(plot_range[1]), bins + 1)
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.hist(
+        before[valid_before],
+        bins=edges,
+        histtype='step',
+        linewidth=1.8,
+        color='tab:blue',
+        label='Wjets FF before DR-SR correction',
+    )
+    ax.hist(
+        after[valid_after],
+        bins=edges,
+        histtype='step',
+        linewidth=1.8,
+        color='tab:orange',
+        label='Wjets FF after DR-SR correction',
+    )
+    ax.set_xscale('log')
+    if ff_clip_max is not None:
+        ax.set_xlim(right=ff_clip_max)
+    ax.set_xlabel('Wjets fake factor')
+    ax.set_ylabel('Events')
+    ax.set_title('Wjets FF: before vs after DR-SR correction')
+    ax.grid(True, linestyle=':', alpha=0.5)
+    ax.legend(frameon=False)
+
+    plot_dir = Path(plot_dir)
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(plot_dir / 'wjets_ff_dr_sr_comparison.png')
+    fig.savefig(plot_dir / 'wjets_ff_dr_sr_comparison.pdf')
+    plt.close(fig)
+
 def total_ff_corrected(df):
     df = df.copy()
     ff = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors/workdir/ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz')
@@ -1047,6 +1215,27 @@ def normalizing_flow_ff(
     df['ff_nf_wjets'] = ff_full_wjets[combined_mask]
     df['ff_nf_qcd'] = ff_full_qcd[combined_mask]
 
+    # --- optional DR-SR correction flow (Wjets only) ---
+    if args is not None and args.apply_dr_sr_correction and dr_sr_flow_model is not None:
+        ff_wjets_before_correction = df['ff_nf_wjets'].to_numpy(dtype='float32').copy()
+        ff_sr_wjets = _apply_dr_sr_flow(
+            dr_sr_flow_model,
+            df.reset_index(drop=True),
+            df['ff_nf_wjets'].to_numpy(dtype='float32'),
+            dr_sr_flow_meta,
+            device,
+        )
+        df['ff_nf_wjets'] = ff_sr_wjets
+        logger.info('Applied DR-SR correction flow to ff_nf_wjets.')
+
+        if plotting:
+            plot_wjets_dr_sr_correction_comparison(
+                ff_wjets_before=ff_wjets_before_correction,
+                ff_wjets_after=df['ff_nf_wjets'].to_numpy(dtype='float32'),
+                plot_dir=plot_dir,
+                ff_clip_max=dr_sr_flow_meta.get('ff_clip_max', None),
+            )
+
     # --- plotting ---
     if plotting:
         plot_ff_clipping_histogram(
@@ -1163,14 +1352,12 @@ def load_masks_config(path: str | Path = MASKS_CONFIG_PATH) -> dict[str, list[st
     logger.info('Loaded %d masks from %s', len(normalized), config_path)
     return normalized
 
-
-def _build_mask_from_config(df: pd.DataFrame, mask_name: str) -> pd.Series:
-    global MASKS_CONFIG
-
-    if not MASKS_CONFIG:
-        MASKS_CONFIG = load_masks_config()
-
-    expressions = MASKS_CONFIG.get(mask_name)
+def _build_mask_from_config(
+    df: pd.DataFrame,
+    mask_name: str,
+    masks_config: dict[str, list[str]],
+) -> pd.Series:
+    expressions = masks_config.get(mask_name)
     if not expressions:
         raise KeyError(f'Mask "{mask_name}" not found in {MASKS_CONFIG_PATH}')
 
@@ -1178,50 +1365,53 @@ def _build_mask_from_config(df: pd.DataFrame, mask_name: str) -> pd.Series:
     mask = df.eval(combined_expression, engine='python')
     return mask.fillna(False).astype(bool)
 
+def _apply_config_mask(
+    df: pd.DataFrame,
+    mask_name: str,
+    masks_config: dict[str, list[str]],
+) -> pd.DataFrame:
+    return df[_build_mask_from_config(df, mask_name, masks_config)].copy()
 
-def _apply_config_mask(df: pd.DataFrame, mask_name: str) -> pd.DataFrame:
-    return df[_build_mask_from_config(df, mask_name)].copy()
-
-def mask_DR_wjets(df):                  # without SS/OS conditions !!!!!!!!!!!!11
-    return _apply_config_mask(df, 'mask_DR_wjets')
-
-
-def mask_antiDR_wjets(df):              # without SS/OS conditions !!!!!!!!!!!!11
-    return _apply_config_mask(df, 'mask_antiDR_wjets')
-
-def mask_DR_qcd(df):
-    return _apply_config_mask(df, 'mask_DR_qcd')
-
-def AR_like_qcd(df):
-    return _apply_config_mask(df, 'AR_like_qcd')
-
-def SR_like_qcd(df):
-    return _apply_config_mask(df, 'SR_like_qcd')
-
-def mask_preselection_tight(df):
-    return _apply_config_mask(df, 'mask_preselection_tight')
+def mask_DR_wjets(df, masks_config):                  # without SS/OS conditions !!!!!!!!!!!!11
+    return _apply_config_mask(df, 'mask_DR_wjets', masks_config)
 
 
-def mask_preselection_tight_binary_classifier(df):
-    return _apply_config_mask(df, 'mask_preselection_tight_binary_classifier')
+def mask_antiDR_wjets(df, masks_config):              # without SS/OS conditions !!!!!!!!!!!!11
+    return _apply_config_mask(df, 'mask_antiDR_wjets', masks_config)
+
+def mask_DR_qcd(df, masks_config):
+    return _apply_config_mask(df, 'mask_DR_qcd', masks_config)
+
+def AR_like_qcd(df, masks_config):
+    return _apply_config_mask(df, 'AR_like_qcd', masks_config)
+
+def SR_like_qcd(df, masks_config):
+    return _apply_config_mask(df, 'SR_like_qcd', masks_config)
+
+def mask_preselection_tight(df, masks_config):
+    return _apply_config_mask(df, 'mask_preselection_tight', masks_config)
 
 
-def mask_preselection_for_estimator(df):
+def mask_preselection_tight_binary_classifier(df, masks_config):
+    return _apply_config_mask(df, 'mask_preselection_tight_binary_classifier', masks_config)
+
+
+def mask_preselection_for_estimator(df, masks_config):
     if args.ff_estimator == 'binary_classifier':
-        return mask_preselection_tight_binary_classifier(df)
-    return mask_preselection_tight(df)
+        return mask_preselection_tight_binary_classifier(df, masks_config)
+    return mask_preselection_tight(df, masks_config)
 
-def SR(df):                 # without SS/OS conditions !!!!!!!!!!!!11
-    return _apply_config_mask(df, 'SR')
+def SR(df, masks_config):                 # without SS/OS conditions !!!!!!!!!!!!11
+    return _apply_config_mask(df, 'SR', masks_config)
 
-def AR(df):                 # without SS/OS conditions !!!!!!!!!!!!11
-    return _apply_config_mask(df, 'AR')
+def AR(df, masks_config):                 # without SS/OS conditions !!!!!!!!!!!!11
+    return _apply_config_mask(df, 'AR', masks_config)
 
-def SR_like_wjets(df):
-    return _apply_config_mask(df, 'SR_like_wjets')
+def SR_like_wjets(df, masks_config):
+    return _apply_config_mask(df, 'SR_like_wjets', masks_config)
 
-def AR_like_wjets(df):
-    return _apply_config_mask(df, 'AR_like_wjets')
+def AR_like_wjets(df, masks_config):
+    return _apply_config_mask(df, 'AR_like_wjets', masks_config)
 
 # ----------- other utils -----------
 
@@ -1318,12 +1508,12 @@ def initialize_runtime_context() -> None:
     """Load args, models, data and plotting metadata into module-level runtime context."""
     global args, variables, dim, training_variables_tag, variables_with_njets, device
     global mode_dir, include_njets_feature, resolved_tag
-    global MASKS_CONFIG
     global classifier_features_wjets, classifier_features_qcd
     global prior_ar_over_sr_wjets, prior_ar_over_sr_qcd
     global correction_model_wjets_dr, correction_model_wjets_antidr
     global correction_features_wjets_dr, correction_features_wjets_antidr
     global correction_prior_ar_over_sr_wjets_dr, correction_prior_ar_over_sr_wjets_antidr
+    global dr_sr_flow_model, dr_sr_flow_meta
     global chk_pth_model_AR_like_wjets, chk_pth_model_SR_like_wjets
     global chk_pth_model_AR_like_qcd, chk_pth_model_SR_like_qcd
     global model_AR_like_wjets, model_SR_like_wjets, model_AR_like_qcd, model_SR_like_qcd
@@ -1332,14 +1522,15 @@ def initialize_runtime_context() -> None:
 
     # Step 1: parse runtime arguments and core variable list
     with open('../configs/training_variables.yaml', 'r') as f:
-        variables = yaml.safe_load(f)['variables']
+        _tv_cfg = yaml.safe_load(f)
+        variables = _tv_cfg['variables']
+        _variables_correction = _tv_cfg.get('variables_correction', [])
 
     args = Args(explicit_bool=True).parse_args()
     dim = len(variables)
     training_variables_tag = build_training_variables_tag(variables)
     variables_with_njets = ['njets'] + variables
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
-    MASKS_CONFIG = load_masks_config(MASKS_CONFIG_PATH)
 
     # Step 2: resolve model mode and load model checkpoints
     _MODE_DIR = {
@@ -1458,6 +1649,24 @@ def initialize_runtime_context() -> None:
             model_AR_like_qcd = load_flow(dim=dim, cfg=config_AR_like_qcd, checkpoint_path=f'{chk_pth_model_AR_like_qcd}/model_checkpoint.pth', device=device)
             model_SR_like_qcd = load_flow(dim=dim, cfg=config_SR_like_qcd, checkpoint_path=f'{chk_pth_model_SR_like_qcd}/model_checkpoint.pth', device=device)
 
+    # Step 2b: optionally load the DR-SR correction flow
+    dr_sr_flow_model = None
+    dr_sr_flow_meta = None
+    if args.apply_dr_sr_correction:
+        _flow_resolved_tag = _resolve_training_name(variables)
+        _correction_tag = _resolve_training_name(_variables_correction)
+        _flow_checkpoint_dir = (
+            Path('DR_SR_correction')
+            / 'FF_flow_results'
+            / _flow_resolved_tag
+            / _correction_tag
+            / 'FF_SR'
+            / 'latest'
+        )
+        logger.info('Loading DR-SR correction flow from %s', _flow_checkpoint_dir)
+        dr_sr_flow_model, dr_sr_flow_meta = _load_dr_sr_flow_model(_flow_checkpoint_dir, device)
+        logger.info('DR-SR correction flow loaded. flow_variables=%s', dr_sr_flow_meta.get('variables'))
+
     # Step 3: load data and plotting labels/binning
     data_complete = pd.read_feather('../../data/data_complete.feather')
 
@@ -1552,18 +1761,23 @@ def _sample_nf_features_for_region(model, n_samples: int, reference_df: pd.DataF
     return sampled.detach().cpu().numpy().astype(np.float32)
 
 
-def plot_nf_sampling_training_variables(category_name: str, njets_title: str, data_preselected: pd.DataFrame) -> None:
+def plot_nf_sampling_training_variables(
+    category_name: str,
+    njets_title: str,
+    data_preselected: pd.DataFrame,
+    masks_config: dict[str, list[str]],
+) -> None:
     sampling_plot_dir = plot_root_dir / 'nf_sampling_validation' / category_name
     sampling_plot_dir.mkdir(parents=True, exist_ok=True)
 
-    wjets_ar_data = AR_like_wjets(data_preselected)
+    wjets_ar_data = AR_like_wjets(data_preselected, masks_config)
     wjets_ar_data = wjets_ar_data[(wjets_ar_data.process == 0) & (wjets_ar_data.OS == True)].copy()
-    wjets_sr_data = SR_like_wjets(data_preselected)
+    wjets_sr_data = SR_like_wjets(data_preselected, masks_config)
     wjets_sr_data = wjets_sr_data[(wjets_sr_data.process == 0) & (wjets_sr_data.OS == True)].copy()
 
-    qcd_ar_data = AR_like_qcd(data_preselected)
+    qcd_ar_data = AR_like_qcd(data_preselected, masks_config)
     qcd_ar_data = qcd_ar_data[(qcd_ar_data.process == 0) & (qcd_ar_data.SS == True)].copy()
-    qcd_sr_data = SR_like_qcd(data_preselected)
+    qcd_sr_data = SR_like_qcd(data_preselected, masks_config)
     qcd_sr_data = qcd_sr_data[(qcd_sr_data.process == 0) & (qcd_sr_data.SS == True)].copy()
 
     panel_specs = [
@@ -1938,21 +2152,21 @@ def _add_cms_privatework_lumi_row(axis, y: float = 1.005, fontsize: int = 9) -> 
     )
 
 
-def plot_nf_taylor_analysis(output_dir: Path) -> None:
+def plot_nf_taylor_analysis(output_dir: Path, masks_config: dict[str, list[str]]) -> None:
     """
     Compute and plot first-order Taylor coefficients for all four NF models.
     Produces a 2x2 figure with horizontal bar charts sorted by |TC| magnitude.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    data_pre = mask_preselection_for_estimator(data_complete)
-    wjets_ar = AR_like_wjets(data_pre)
+    data_pre = mask_preselection_for_estimator(data_complete, masks_config)
+    wjets_ar = AR_like_wjets(data_pre, masks_config)
     wjets_ar = wjets_ar[(wjets_ar.process == 0) & (wjets_ar.OS == True)].copy()
-    wjets_sr = SR_like_wjets(data_pre)
+    wjets_sr = SR_like_wjets(data_pre, masks_config)
     wjets_sr = wjets_sr[(wjets_sr.process == 0) & (wjets_sr.OS == True)].copy()
-    qcd_ar = AR_like_qcd(data_pre)
+    qcd_ar = AR_like_qcd(data_pre, masks_config)
     qcd_ar = qcd_ar[(qcd_ar.process == 0) & (qcd_ar.SS == True)].copy()
-    qcd_sr = SR_like_qcd(data_pre)
+    qcd_sr = SR_like_qcd(data_pre, masks_config)
     qcd_sr = qcd_sr[(qcd_sr.process == 0) & (qcd_sr.SS == True)].copy()
 
     panel_specs = [
@@ -2065,7 +2279,7 @@ def plot_nf_taylor_analysis(output_dir: Path) -> None:
     logger.info('Saved first-order Taylor coefficient plots (combined + individual) to %s', output_dir)
 
 
-def plot_nf_taylor_analysis_output(output_dir: Path) -> None:
+def plot_nf_taylor_analysis_output(output_dir: Path, masks_config: dict[str, list[str]]) -> None:
     """
     Compute and plot first-order *output-side* Taylor coefficients for all four NF models.
     Produces a 2x2 figure with horizontal bar charts sorted by |TC| magnitude.
@@ -2075,14 +2289,14 @@ def plot_nf_taylor_analysis_output(output_dir: Path) -> None:
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    data_pre = mask_preselection_for_estimator(data_complete)
-    wjets_ar = AR_like_wjets(data_pre)
+    data_pre = mask_preselection_for_estimator(data_complete, masks_config)
+    wjets_ar = AR_like_wjets(data_pre, masks_config)
     wjets_ar = wjets_ar[(wjets_ar.process == 0) & (wjets_ar.OS == True)].copy()
-    wjets_sr = SR_like_wjets(data_pre)
+    wjets_sr = SR_like_wjets(data_pre, masks_config)
     wjets_sr = wjets_sr[(wjets_sr.process == 0) & (wjets_sr.OS == True)].copy()
-    qcd_ar = AR_like_qcd(data_pre)
+    qcd_ar = AR_like_qcd(data_pre, masks_config)
     qcd_ar = qcd_ar[(qcd_ar.process == 0) & (qcd_ar.SS == True)].copy()
-    qcd_sr = SR_like_qcd(data_pre)
+    qcd_sr = SR_like_qcd(data_pre, masks_config)
     qcd_sr = qcd_sr[(qcd_sr.process == 0) & (qcd_sr.SS == True)].copy()
 
     panel_specs = [
@@ -2196,21 +2410,21 @@ def plot_nf_taylor_analysis_output(output_dir: Path) -> None:
 
 
 
-def plot_nf_second_order_covariance(output_dir: Path) -> None:
+def plot_nf_second_order_covariance(output_dir: Path, masks_config: dict[str, list[str]]) -> None:
     """
     Compute and plot second-order Taylor coefficient matrices for all four NF models.
     Each model produces a heatmap of mean |d² log p / dx_i dx_j|.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    data_pre = mask_preselection_for_estimator(data_complete)
-    wjets_ar = AR_like_wjets(data_pre)
+    data_pre = mask_preselection_for_estimator(data_complete, masks_config)
+    wjets_ar = AR_like_wjets(data_pre, masks_config)
     wjets_ar = wjets_ar[(wjets_ar.process == 0) & (wjets_ar.OS == True)].copy()
-    wjets_sr = SR_like_wjets(data_pre)
+    wjets_sr = SR_like_wjets(data_pre, masks_config)
     wjets_sr = wjets_sr[(wjets_sr.process == 0) & (wjets_sr.OS == True)].copy()
-    qcd_ar = AR_like_qcd(data_pre)
+    qcd_ar = AR_like_qcd(data_pre, masks_config)
     qcd_ar = qcd_ar[(qcd_ar.process == 0) & (qcd_ar.SS == True)].copy()
-    qcd_sr = SR_like_qcd(data_pre)
+    qcd_sr = SR_like_qcd(data_pre, masks_config)
     qcd_sr = qcd_sr[(qcd_sr.process == 0) & (qcd_sr.SS == True)].copy()
 
     panel_specs = [
@@ -2431,15 +2645,15 @@ def plot_ar_data_with_clipping_info(
     plt.close(fig)
 
 
-def run_plots_for_njets_category(category_name, njets_title):
+def run_plots_for_njets_category(category_name, njets_title, masks_config: dict[str, list[str]]):
     category_plot_dir = plot_root_dir / category_name
     category_plot_dir.mkdir(parents=True, exist_ok=True)
 
     data_complete_njets = select_njets_category(data_complete, category_name)
-    data_preselected = mask_preselection_for_estimator(data_complete_njets)
+    data_preselected = mask_preselection_for_estimator(data_complete_njets, masks_config)
 
     if args.plot_nf_sampling and args.ff_estimator == 'nf':
-        plot_nf_sampling_training_variables(category_name, njets_title, data_preselected)
+        plot_nf_sampling_training_variables(category_name, njets_title, data_preselected, masks_config)
     if not args.plot_ff_results:
         return
 
@@ -2450,15 +2664,15 @@ def run_plots_for_njets_category(category_name, njets_title):
         len(data_preselected),
     )
 
-    data_AR = AR(data_preselected)
+    data_AR = AR(data_preselected, masks_config)
     data_AR = data_AR[data_AR.OS == True]
-    data_SR = SR(data_preselected)
+    data_SR = SR(data_preselected, masks_config)
 
     data_AR_OS = data_AR[(data_AR.process == 0)].copy()
-    data_AR_like_wjets = AR_like_wjets(data_preselected)
-    data_SR_like_wjets = SR_like_wjets(data_preselected)
-    data_AR_like_qcd = AR_like_qcd(data_preselected)
-    data_SR_like_qcd = SR_like_qcd(data_preselected)
+    data_AR_like_wjets = AR_like_wjets(data_preselected, masks_config)
+    data_SR_like_wjets = SR_like_wjets(data_preselected, masks_config)
+    data_AR_like_qcd = AR_like_qcd(data_preselected, masks_config)
+    data_SR_like_qcd = SR_like_qcd(data_preselected, masks_config)
 
     data_AR_like_OS_wjets = data_AR_like_wjets[(data_AR_like_wjets.process == 0) & (data_AR_like_wjets.OS == True)]
     data_SR_like_OS_wjets = data_SR_like_wjets[(data_SR_like_wjets.process == 0) & (data_SR_like_wjets.OS == True)]
@@ -2485,7 +2699,7 @@ def run_plots_for_njets_category(category_name, njets_title):
     global_ff_wjets_dr_correction = global_ff_wjets
     global_ff_wjets_antidr_correction = None
     if args.ff_estimator == 'binary_classifier' and args.apply_wjets_binary_correction and correction_model_wjets_dr is not None and correction_model_wjets_antidr is not None:
-        data_antidr_wjets = mask_antiDR_wjets(data_preselected)
+        data_antidr_wjets = mask_antiDR_wjets(data_preselected, masks_config)
         data_AR_like_OS_wjets_antidr = data_antidr_wjets[
             (data_antidr_wjets.id_tau_vsJet_VLoose_2 > 0.5)
             & (data_antidr_wjets.id_tau_vsJet_Tight_2 < 0.5)
@@ -2754,7 +2968,7 @@ def run_plots_for_njets_category(category_name, njets_title):
     logger.info("Finished %s: saved plots to %s", category_name, category_plot_dir)
 
 
-def run_taylor_plots_if_requested() -> None:
+def run_taylor_plots_if_requested(masks_config: dict[str, list[str]]) -> None:
     if not args.plot_taylor_coefficients:
         return
 
@@ -2762,12 +2976,12 @@ def run_taylor_plots_if_requested() -> None:
         logger.warning('Skipping Taylor plots: only supported for NF models.')
         return
 
-    plot_nf_taylor_analysis(plot_root_dir / 'taylor_analysis')
-    plot_nf_taylor_analysis_output(plot_root_dir / 'taylor_analysis')
-    plot_nf_second_order_covariance(plot_root_dir / 'taylor_analysis')
+    plot_nf_taylor_analysis(plot_root_dir / 'taylor_analysis', masks_config)
+    plot_nf_taylor_analysis_output(plot_root_dir / 'taylor_analysis', masks_config)
+    plot_nf_second_order_covariance(plot_root_dir / 'taylor_analysis', masks_config)
 
 
-def run_all_njets_categories() -> None:
+def run_all_njets_categories(masks_config: dict[str, list[str]]) -> None:
     njets_categories = [
         ('njets_0', r'$N_{jets} = 0$'),
         ('njets_1', r'$N_{jets} = 1$'),
@@ -2778,21 +2992,22 @@ def run_all_njets_categories() -> None:
     for category_name, njets_title in njets_categories:
         logger.info("Queueing plot production for %s", category_name)
         if args.plot_ff_results or (args.plot_nf_sampling and args.ff_estimator == 'nf'):
-            run_plots_for_njets_category(category_name, njets_title)
+            run_plots_for_njets_category(category_name, njets_title, masks_config)
 
 
 def main() -> None:
     # Step 1: initialize runtime context (args, models, data, labels, bins, output dirs)
     logger.info('Step 1/4: Initializing runtime context')
     initialize_runtime_context()
+    masks_config = load_masks_config(MASKS_CONFIG_PATH)
 
     # Step 2: optional model interpretability diagnostics (Taylor analysis)
     logger.info('Step 2/4: Running optional Taylor diagnostics')
-    run_taylor_plots_if_requested()
+    run_taylor_plots_if_requested(masks_config)
 
     # Step 3: produce category-wise plots (0, 1, >=2, inclusive)
     logger.info('Step 3/4: Producing njets-category plots')
-    run_all_njets_categories()
+    run_all_njets_categories(masks_config)
 
     # Step 4: finalize
     logger.info('Step 4/4: Completed all njets plot categories')
