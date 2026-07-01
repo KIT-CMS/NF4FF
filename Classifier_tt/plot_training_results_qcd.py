@@ -1156,8 +1156,8 @@ def main() -> None:
         ax[1].errorbar(bin_centers, counts_data_reduced/QCD_counts, yerr = y_error/data_counts, xerr = x_error, label = 'ratio', color = 'black', fmt = 'o')
         ax[1].fill_between(
         bin_centers,
-        1 - y_error_stat / (Wjets_counts + 1e-10),
-        1 + y_error_stat / (Wjets_counts + 1e-10),
+        1 - y_error_stat / (QCD_counts + 1e-10),
+        1 + y_error_stat / (QCD_counts + 1e-10),
         color="gray",
         alpha=0.3,
         step='mid',
