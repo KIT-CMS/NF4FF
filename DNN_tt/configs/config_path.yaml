@@ -1,0 +1,5 @@
+datasets: /work/tapp/TauFF/NF4FF/Data/datasets
+masks: /work/tapp/TauFF/NF4FF/DNN_tt/configs/masks.yaml
+train_var: /work/tapp/TauFF/NF4FF/DNN_tt/configs/training_variables.yaml
+DNN: /work/tapp/TauFF/NF4FF/DNN_tt/configs/DNN.yaml
+traininfg_results: /work/tapp/TauFF/NF4FF/DNN_tt/Training_results

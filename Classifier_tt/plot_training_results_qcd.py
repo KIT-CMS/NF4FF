@@ -1112,6 +1112,8 @@ def main() -> None:
 
         hist_nFF, _ = np.histogram(probs_nFF,weights=weights_nFF, bins= bins)
 
+        print("QCD_counts:", QCD_counts)
+        print("sim_counts:", sim_counts)
 
         QCD_counts_norm = np.divide(QCD_counts, sim_counts)
         diboson_counts_norm = np.divide(diboson_counts, sim_counts)

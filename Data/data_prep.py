@@ -15,7 +15,7 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 class Args(Tap):
     loc: Literal["remote", "present"] = "present"
-    embedding: Literal["embedding", "no_embedding"] = "embedding"
+    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
 
 
 # ----- functions to load files -----
@@ -130,7 +130,7 @@ def main():
 
     # set class weights for process
     combined_data['class_weights'] = get_class_weights(weights = combined_data.weight, Y = combined_data.Label, classes = (0, 1), class_weighted=True)
-
+    print(combined_data['class_weights'].value_counts())
     combined_data.to_feather(cfg['output_dir'][args.loc] + args.embedding + "/combined_data.feather")
 
 if __name__ == "__main__":

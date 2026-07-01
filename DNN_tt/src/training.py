@@ -3,15 +3,17 @@ import numpy as np
 import random
 import logging
 import yaml
+from tap import Tap
+from typing import List, Optional, Union, Tuple, Dict, Any, Literal
+
+from pathlib import Path
+
 from classes import load_variables, load_data, create_training_dataset
 from classes import DNN, GroupedDNN, FoldCombinedDNN
 from classes import train_dnn, save_model
+from classes.Loading import load_config, load_variables
 from dataclasses import dataclass
-from typing import List, Optional, Union, Tuple, Dict, Any
-import yaml
-from dataclasses import is_dataclass, fields
-from classes.CustomLogging import Logging
-from pathlib import Path
+
 
 SEED = 42
 logger = logging.getLogger(__name__)
@@ -22,55 +24,20 @@ np.random.seed(SEED)
 random.seed(SEED)
 t.set_num_threads(8)
 
-DATA_PATH = '../data/data_complete.feather'
-MASKS_PATH = 'configs/masks.yaml'
-TRAINING_VAR_PATH = 'configs/training_variables.yaml'
-NN_CONFIG_PATH = 'configs/DNN.yaml'
-CHECKPOINT_DIR = 'Training_results'
+class Args(Tap):
+    taus = [1, 2] #[1, 2, 12] # list of tau fakes
+    embedding: Literal["embedding", "no_embedding"] = "embedding"
+    var = "variables_61"
 
+args = Args().parse_args()
 
+cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
 
-def load_variables(yaml_path):
-    with open(yaml_path, "r") as f:
-        config = yaml.safe_load(f)
-    yaml_vars = config.get("variables", [])
-    return yaml_vars
-
-def load_config(path: str, cls):
-    with open(path, "r") as f:
-        data = yaml.safe_load(f)
-
-    return _from_dict(data, cls)
-
-def _from_dict(data: dict, cls):
-    """
-    Minimal recursive dict → dataclass converter
-    """
-
-    if not is_dataclass(cls):
-        return data
-
-    kwargs = {}
-
-    for field in fields(cls):
-        value = data.get(field.name)
-
-        if value is None:
-            kwargs[field.name] = None
-            continue
-
-        # tuple conversion (important for hidden_nodes)
-        if field.type == tuple or field.type == Tuple[int, ...]:
-            kwargs[field.name] = tuple(value)
-
-        # nested dataclass
-        elif is_dataclass(field.type):
-            kwargs[field.name] = _from_dict(value, field.type)
-
-        else:
-            kwargs[field.name] = value
-
-    return cls(**kwargs)
+DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'
+MASKS_PATH = cfg_path["masks"]
+TRAINING_VAR_PATH = cfg_path["train_var"]
+NN_CONFIG_PATH = cfg_path["DNN"]
+CHECKPOINT_DIR = cfg_path["traininfg_results"]
 
 @dataclass
 class ModelConfig:

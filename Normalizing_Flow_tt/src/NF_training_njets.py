@@ -64,7 +64,7 @@ class Args(Tap):
 
     training_model: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = TRAINING_MODEL_CONDITIONAL  # Training mode: grouped split, single inclusive NF, or conditional NF with njets input.
     taus = [1, 2] #[1, 2, 12] # list of tau fakes
-    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
+    embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables_61"
 
     def configure(self) -> None:
@@ -617,7 +617,8 @@ def main():
     # ----- load data -----
     data_complete = pd.read_feather(cfg_path['datasets'] + args.embedding + '/combined_data_updated.feather')
     logger.info("Loaded %d total events", len(data_complete))
-
+    print(cfg_path['datasets'] + args.embedding + '/combined_data_updated.feather')
+    exit()
     #data_DR = mask_DR(data_complete)
     #plt.hist(data_DR["deltaR_ditaupair"])
     #plt.savefig('test.png')
