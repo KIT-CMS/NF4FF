@@ -2,6 +2,7 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+from groupings import grouping_bounds, grouping_source, grouping_suffix
 
 def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
     ax[0].set_title(
@@ -843,7 +844,6 @@ def plot_fake_factors_in_DR(
 	ax[1].legend()
 	return fig, ax
 
-
 def FF_closure(
     data,
     data_weights,
@@ -1058,18 +1058,16 @@ def FF_closure_in_DR_wjets(
 	label,
 	grouping = 'tau_decaymode',
 ):
-    if grouping == 'tau_decaymode':
-        ff_dnn_wjets = 'ff_dnn_wjets'
-    elif grouping == 'njets':
-        ff_dnn_wjets = 'ff_dnn_wjets_njets'
+    ff_dnn_wjets = f"ff_dnn_wjets{grouping_suffix(grouping)}"
+    weight_wjets = f"reduced_weight_wjets_{grouping}_nominal"
 
-    counts_SR_like, bin_edges = np.histogram(df.data.SR_like_wjets[var], weights = df.data.SR_like_wjets.weight_wjets, bins = bins)
-    counts_FF_AR_like, _ = np.histogram(df.data.AR_like_wjets[var], weights = df.data.AR_like_wjets.weight_wjets * df.data.AR_like_wjets[ff_dnn_wjets], bins = bins)
+    counts_SR_like, bin_edges = np.histogram(df.data.SR_like_wjets[var], weights = df.data.SR_like_wjets[weight_wjets], bins = bins)
+    counts_FF_AR_like, _ = np.histogram(df.data.AR_like_wjets[var], weights = df.data.AR_like_wjets[weight_wjets] * df.data.AR_like_wjets[ff_dnn_wjets], bins = bins)
 
-    variance_SR_like, _ = np.histogram(df.data.SR_like_wjets[var], weights = df.data.SR_like_wjets.weight_wjets**2, bins = bins)
+    variance_SR_like, _ = np.histogram(df.data.SR_like_wjets[var], weights = df.data.SR_like_wjets[weight_wjets]**2, bins = bins)
     variance_FF_AR_like, _ = np.histogram(
         df.data.AR_like_wjets[var], 
-        weights = (df.data.AR_like_wjets.weight_wjets * df.data.AR_like_wjets[ff_dnn_wjets])**2,
+        weights = (df.data.AR_like_wjets[weight_wjets] * df.data.AR_like_wjets[ff_dnn_wjets])**2,
         bins = bins)
 
     err_SR_like = np.sqrt(variance_SR_like)
@@ -1324,18 +1322,16 @@ def FF_closure_in_DR_qcd(
 	label,
 	grouping = 'tau_decaymode',
 ):
-    if grouping == 'tau_decaymode':
-        ff_dnn_qcd = 'ff_dnn_qcd'
-    elif grouping == 'njets':
-        ff_dnn_qcd = 'ff_dnn_qcd_njets'
+    ff_dnn_qcd = f"ff_dnn_qcd{grouping_suffix(grouping)}"
+    weight_qcd = f"reduced_weight_qcd_{grouping}_nominal"
 
-    counts_SR_like, bin_edges = np.histogram(df.data.SR_like_qcd[var], weights = df.data.SR_like_qcd.weight_qcd, bins = bins)
-    counts_FF_AR_like, _ = np.histogram(df.data.AR_like_qcd[var], weights = df.data.AR_like_qcd.weight_qcd * df.data.AR_like_qcd[ff_dnn_qcd], bins = bins)
+    counts_SR_like, bin_edges = np.histogram(df.data.SR_like_qcd[var], weights = df.data.SR_like_qcd[weight_qcd], bins = bins)
+    counts_FF_AR_like, _ = np.histogram(df.data.AR_like_qcd[var], weights = df.data.AR_like_qcd[weight_qcd] * df.data.AR_like_qcd[ff_dnn_qcd], bins = bins)
 
-    variance_SR_like, _ = np.histogram(df.data.SR_like_qcd[var], weights = df.data.SR_like_qcd.weight_qcd**2, bins = bins)
+    variance_SR_like, _ = np.histogram(df.data.SR_like_qcd[var], weights = df.data.SR_like_qcd[weight_qcd]**2, bins = bins)
     variance_FF_AR_like, _ = np.histogram(
         df.data.AR_like_qcd[var], 
-        weights = (df.data.AR_like_qcd.weight_qcd * df.data.AR_like_qcd[ff_dnn_qcd])**2,
+        weights = (df.data.AR_like_qcd[weight_qcd] * df.data.AR_like_qcd[ff_dnn_qcd])**2,
         bins = bins)
 
     err_SR_like = np.sqrt(variance_SR_like)
@@ -1410,10 +1406,7 @@ def FF_closure_in_DR_ttbar(
 	label,
 	grouping = 'tau_decaymode',
 ):
-    if grouping == 'tau_decaymode':
-        ff_dnn_ttbar = 'ff_dnn_ttbar'
-    elif grouping == 'njets':
-        ff_dnn_ttbar = 'ff_dnn_ttbar_njets'
+    ff_dnn_ttbar = f"ff_dnn_ttbar{grouping_suffix(grouping)}"
 
 
     counts_SR_like, bin_edges = np.histogram(df.data.SR_like_ttbar[var], weights = df.data.SR_like_ttbar.weight, bins = bins)
@@ -2053,21 +2046,181 @@ def FF_closure_in_DR_wjets_with_stat_unc_ensemble(
     return fig, ax
 
 
-def _grouping_masks(frame, grouping):
-	if grouping == 'tau_decaymode':
-		return [
-			(frame.tau_decaymode_2 == 0, r't_dm $=$ 0'),
-			(frame.tau_decaymode_2 == 1, r't_dm $=$ 1'),
-			(frame.tau_decaymode_2 == 10, r't_dm $=$ 10'),
-			(frame.tau_decaymode_2 == 11, r't_dm $=$ 11'),
-		]
-	if grouping == 'njets':
-		return [
-			(frame.njets == 0, r'njets $=$ 0'),
-			(frame.njets == 1, r'njets $=$ 1'),
-			(frame.njets >= 2, r'njets $\geq$ 2'),
-		]
-	raise ValueError(f'Unsupported grouping: {grouping}')
+def _grouping_masks(frame, grouping, process=None):
+    source = grouping_source(grouping)
+    values = frame[source]
+    masks = []
+    for bounds in grouping_bounds(grouping, process):
+        if len(bounds) == 1:
+            mask = values == bounds[0]
+            label = f"{source} = {bounds[0]}"
+        else:
+            mask = (values >= bounds[0]) & (values <= bounds[1])
+            if bounds[1] >= 1000:
+                label = f"{source} >= {bounds[0]}"
+            else:
+                label = f"{bounds[0]} <= {source} <= {bounds[1]}"
+        if grouping == "tau_decaymode_2_alt":
+            label = {
+                (0, 2): "t_dm: 0, 1",
+                (10, 12): "t_dm: 10, 11",
+            }[bounds]
+        elif grouping == "njets" and process == "ttbar":
+            label = {
+                (0, 1): "njets = 0, 1",
+                (2, 1000): "njets >= 2",
+            }[bounds]
+        masks.append((mask, label))
+    return masks
+
+
+def _decorate_grouped_fake_factor_axes(fig, ax, grouping):
+    process_titles = (r'W+jets', 'QCD', r'$t\bar{t}$')
+    for axis, process_title in zip(ax, process_titles):
+        axis.text(
+            0.98,
+            0.88,
+            process_title,
+            horizontalalignment='right',
+            verticalalignment='top',
+            transform=axis.transAxes,
+            fontsize=15,
+        )
+
+    handles, labels = ax[0].get_legend_handles_labels()
+    n_columns = len(labels)
+    fig.legend(
+        handles,
+        labels,
+        loc='upper center',
+        bbox_to_anchor=(0.5, 0.995),
+        ncol=n_columns,
+        frameon=False,
+        prop={'size': 9},
+    )
+    if grouping == "njets":
+        ax[2].legend(
+            loc='upper center',
+            ncol=2,
+            frameon=False,
+            prop={'size': 9},
+        )
+    fig.subplots_adjust(top=0.84)
+
+
+def _plot_fake_factors_grouped_range(
+    frames,
+    category_title,
+    grouping,
+    *,
+    split_grouping=None,
+    value_min,
+    value_max,
+    n_bins,
+):
+    split_grouping = grouping if split_grouping is None else split_grouping
+    suffix = grouping_suffix(grouping)
+    ff_columns = tuple(
+        f"ff_dnn_{process}{suffix}"
+        for process in ("wjets", "qcd", "ttbar")
+    )
+
+    if value_min <= 0 or value_max <= 0:
+        raise ValueError("Log-scale fake-factor plots require positive bounds.")
+
+    bins = np.logspace(np.log10(value_min), np.log10(value_max), n_bins + 1)
+    fig, ax = plt.subplots(
+        3,
+        1,
+        figsize=(10 / 3, 7),
+        sharex=True,
+    )
+
+    for axis_index, (axis, frame, ff_column) in enumerate(
+        zip(ax, frames, ff_columns)
+    ):
+        axis.hist(
+            frame[ff_column],
+            bins=bins,
+            histtype='step',
+            linewidth=2,
+            label='inclusive' if axis_index == 0 else None,
+        )
+
+        process = ("wjets", "qcd", "ttbar")[axis_index]
+        for mask, mask_label in _grouping_masks(
+            frame,
+            split_grouping,
+            process=process,
+        ):
+            axis.hist(
+                frame[ff_column][mask],
+                bins=bins,
+                histtype='step',
+                ls='--',
+                label=(
+                    mask_label
+                    if axis_index == 0
+                    or (axis_index == 2 and split_grouping == "njets")
+                    else None
+                ),
+            )
+
+        axis.set_ylabel('Events')
+        axis.set_xscale('log')
+        axis.set_yscale('log')
+        axis.tick_params(labelbottom=axis_index == len(ax) - 1)
+
+    ax[-1].set_xlabel(r'$F_{\mathrm{F}}$ value')
+    ax[-1].set_xlim(value_min, value_max)
+
+    _decorate_grouped_fake_factor_axes(fig, ax, split_grouping)
+    return fig, ax
+
+
+def plot_fake_factors_grouped_range(
+    df,
+    category_title,
+    grouping='tau_decaymode',
+    split_grouping=None,
+    value_min=1.0,
+    value_max=100.0,
+    n_bins=90,
+):
+    frame = df.data.AR
+    return _plot_fake_factors_grouped_range(
+        (frame, frame, frame),
+        category_title,
+        grouping,
+        split_grouping=split_grouping,
+        value_min=value_min,
+        value_max=value_max,
+        n_bins=n_bins,
+    )
+
+
+def plot_fake_factors_in_dr_grouped_range(
+    df,
+    category_title,
+    grouping='tau_decaymode',
+    split_grouping=None,
+    value_min=1.0,
+    value_max=100.0,
+    n_bins=90,
+):
+    return _plot_fake_factors_grouped_range(
+        (
+            df.data.AR_like_wjets,
+            df.data.AR_like_qcd,
+            df.data.AR_like_ttbar,
+        ),
+        category_title,
+        grouping,
+        split_grouping=split_grouping,
+        value_min=value_min,
+        value_max=value_max,
+        n_bins=n_bins,
+    )
 
 
 
@@ -2083,17 +2236,15 @@ def plot_fake_factors_grouped_c(df, category_title, grouping='tau_decaymode', sq
     else:
         raise ValueError(f'Unsupported grouping: {grouping}')
 
-    bins_wjets = np.linspace(0, 1, 50)
-    bins_qcd = np.linspace(0, 0.5, 50)
-    bins_ttbar = np.linspace(0, 1, 50)
+    bins = np.linspace(0, 1, 50)
 
     frame = df.data.AR
 
-    fig, ax = plt.subplots(3, 1, figsize=(10, 7))
+    fig, ax = plt.subplots(3, 1, figsize=(10, 7), sharex=True)
 
-    ax[0].hist(frame[ff_wjets], bins=bins_wjets, histtype='step', linewidth=2, label='Wjets: incl')
+    ax[0].hist(frame[ff_wjets], bins=bins, histtype='step', linewidth=2, label='Wjets: incl')
     for mask, mask_label in _grouping_masks(frame, grouping):
-        ax[0].hist(frame[ff_wjets][mask], bins=bins_wjets, histtype='step', ls='--', label=f'{mask_label}')
+        ax[0].hist(frame[ff_wjets][mask], bins=bins, histtype='step', ls='--', label=f'{mask_label}')
     ax[0].set_ylabel('Events')
     ax[0].legend(prop={'size': 9}, loc = 'upper right')
 
@@ -2104,15 +2255,15 @@ def plot_fake_factors_grouped_c(df, category_title, grouping='tau_decaymode', sq
     CMS_CATEGORY_TITLE([ax[0]], title=category_title)
 
     ax[1].set_ylabel('Events')
-    ax[1].hist(frame[ff_qcd], bins=bins_qcd, histtype='step', linewidth=2, label='QCD: incl')
+    ax[1].hist(frame[ff_qcd], bins=bins, histtype='step', linewidth=2, label='QCD: incl')
     for mask, mask_label in _grouping_masks(frame, grouping):
-        ax[1].hist(frame[ff_qcd][mask], bins=bins_qcd, histtype='step', ls='--', label=f'{mask_label}')
+        ax[1].hist(frame[ff_qcd][mask], bins=bins, histtype='step', ls='--', label=f'{mask_label}')
     ax[1].legend(prop={'size': 9})
 
     ax[2].set_ylabel('Events')
-    ax[2].hist(frame[ff_ttbar], bins=bins_ttbar, histtype='step', linewidth=2, label='ttbar: incl')
+    ax[2].hist(frame[ff_ttbar], bins=bins, histtype='step', linewidth=2, label='ttbar: incl')
     for mask, mask_label in _grouping_masks(frame, grouping):
-        ax[2].hist(frame[ff_ttbar][mask], bins=bins_ttbar, histtype='step', ls='--', label=f'{mask_label}')
+        ax[2].hist(frame[ff_ttbar][mask], bins=bins, histtype='step', ls='--', label=f'{mask_label}')
     ax[2].set_xlabel(r'$F_{\mathrm{F}}$ value')
     ax[2].legend(prop={'size': 9})
 
@@ -2121,31 +2272,45 @@ def plot_fake_factors_grouped_c(df, category_title, grouping='tau_decaymode', sq
     return fig, ax
 
 
-def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode'):
-    if grouping == 'tau_decaymode':
-        ff_wjets = 'ff_dnn_wjets'
-        ff_qcd = 'ff_dnn_qcd'
-        ff_ttbar = 'ff_dnn_ttbar'
-    elif grouping == 'njets':
-        ff_wjets = 'ff_dnn_wjets_njets'
-        ff_qcd = 'ff_dnn_qcd_njets'
-        ff_ttbar = 'ff_dnn_ttbar_njets'
-    else:
-        raise ValueError(f'Unsupported grouping: {grouping}')
+def plot_fake_factors_grouped(
+    df,
+    category_title,
+    grouping='tau_decaymode',
+    split_grouping=None,
+):
+    split_grouping = grouping if split_grouping is None else split_grouping
+    suffix = grouping_suffix(grouping)
+    ff_wjets = f'ff_dnn_wjets{suffix}'
+    ff_qcd = f'ff_dnn_qcd{suffix}'
+    ff_ttbar = f'ff_dnn_ttbar{suffix}'
 
-    bins_wjets = np.linspace(0, 1, 50)
-    bins_qcd = np.linspace(0, 0.5, 50)
-    bins_ttbar = np.linspace(0, 1, 50)
+    bins = np.linspace(0, 1, 100)
 
     frame = df.data.AR
 
-    fig, ax = plt.subplots(3, 1, figsize=(10, 7))
+    fig, ax = plt.subplots(3, 1, figsize=(10, 7), sharex=True)
 
-    ax[0].hist(frame[ff_wjets], bins=bins_wjets, histtype='step', linewidth=2, label='Wjets: incl')
-    for mask, mask_label in _grouping_masks(frame, grouping):
-        ax[0].hist(frame[ff_wjets][mask], bins=bins_wjets, histtype='step', ls='--', label=f'{mask_label}')
+    first_ax_counts = []
+    counts, _, _ = ax[0].hist(
+        frame[ff_wjets],
+        bins=bins,
+        histtype='step',
+        linewidth=2,
+        label='inclusive',
+    )
+    first_ax_counts.append(counts)
+    for mask, mask_label in _grouping_masks(frame, split_grouping, process="wjets"):
+        counts, _, _ = ax[0].hist(
+            frame[ff_wjets][mask],
+            bins=bins,
+            histtype='step',
+            ls='--',
+            label=f'{mask_label}',
+        )
+        first_ax_counts.append(counts)
     ax[0].set_ylabel('Events')
-    ax[0].legend(prop={'size': 9}, loc = 'upper right')
+    first_ax_maximum = max(np.max(counts) for counts in first_ax_counts)
+    ax[0].set_ylim(0, 1.2 * first_ax_maximum if first_ax_maximum > 0 else 1)
 
 
     CMS_CHANNEL_TITLE([ax[0]])
@@ -2154,18 +2319,23 @@ def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode'):
     CMS_CATEGORY_TITLE([ax[0]], title=category_title)
 
     ax[1].set_ylabel('Events')
-    ax[1].hist(frame[ff_qcd], bins=bins_qcd, histtype='step', linewidth=2, label='QCD: incl')
-    for mask, mask_label in _grouping_masks(frame, grouping):
-        ax[1].hist(frame[ff_qcd][mask], bins=bins_qcd, histtype='step', ls='--', label=f'{mask_label}')
-    ax[1].legend(prop={'size': 9})
+    ax[1].hist(frame[ff_qcd], bins=bins, histtype='step', linewidth=2)
+    for mask, mask_label in _grouping_masks(frame, split_grouping, process="qcd"):
+        ax[1].hist(frame[ff_qcd][mask], bins=bins, histtype='step', ls='--')
 
     ax[2].set_ylabel('Events')
-    ax[2].hist(frame[ff_ttbar], bins=bins_ttbar, histtype='step', linewidth=2, label='ttbar: incl')
-    for mask, mask_label in _grouping_masks(frame, grouping):
-        ax[2].hist(frame[ff_ttbar][mask], bins=bins_ttbar, histtype='step', ls='--', label=f'{mask_label}')
+    ax[2].hist(frame[ff_ttbar], bins=bins, histtype='step', linewidth=2)
+    for mask, mask_label in _grouping_masks(frame, split_grouping, process="ttbar"):
+        ax[2].hist(
+            frame[ff_ttbar][mask],
+            bins=bins,
+            histtype='step',
+            ls='--',
+            label=mask_label if split_grouping == "njets" else None,
+        )
     ax[2].set_xlabel(r'$F_{\mathrm{F}}$ value')
-    ax[2].legend(prop={'size': 9})
 
+    _decorate_grouped_fake_factor_axes(fig, ax, split_grouping)
 
 
     return fig, ax
@@ -2180,18 +2350,16 @@ def plot_fake_factors_in_dr_grouped_c(df, category_title, squeeze_upper_bound, g
     else:
         raise ValueError(f'Unsupported grouping: {grouping}')
 
-    bins_wjets = np.linspace(0, 1, 50)
-    bins_qcd = np.linspace(0, 1, 50)
-    bins_ttbar = np.linspace(0, 1, 50)
+    bins = np.linspace(0, 1, 100)
 
     frame_wjets = df.data.AR_like_wjets
     frame_qcd = df.data.AR_like_qcd
     frame_ttbar = df.data.AR_like_ttbar
 
-    fig, ax = plt.subplots(3, 1, figsize=(10, 12))
-    ax[0].hist(frame_wjets[ff_wjets], bins=bins_wjets, histtype='step', linewidth=2, label='Wjets: incl')
+    fig, ax = plt.subplots(3, 1, figsize=(10, 12), sharex=True)
+    ax[0].hist(frame_wjets[ff_wjets], bins=bins, histtype='step', linewidth=2, label='Wjets: incl')
     for mask, mask_label in _grouping_masks(frame_wjets, grouping):
-        ax[0].hist(frame_wjets[ff_wjets][mask], bins=bins_wjets, histtype='step', ls='--', label=f'{mask_label}')
+        ax[0].hist(frame_wjets[ff_wjets][mask], bins=bins, histtype='step', ls='--', label=f'{mask_label}')
     ax[0].set_ylabel('Events')
     ax[0].legend(prop={'size': 9}, loc = 'upper right')
 
@@ -2201,15 +2369,15 @@ def plot_fake_factors_in_dr_grouped_c(df, category_title, squeeze_upper_bound, g
     CMS_CATEGORY_TITLE([ax[0]], title=category_title)
 
     ax[1].set_ylabel('Events')
-    ax[1].hist(frame_qcd[ff_qcd], bins=bins_qcd, histtype='step', linewidth=2, label='QCD: incl')
+    ax[1].hist(frame_qcd[ff_qcd], bins=bins, histtype='step', linewidth=2, label='QCD: incl')
     for mask, mask_label in _grouping_masks(frame_qcd, grouping):
-        ax[1].hist(frame_qcd[ff_qcd][mask], bins=bins_qcd, histtype='step', ls='--', label=f'{mask_label}')
+        ax[1].hist(frame_qcd[ff_qcd][mask], bins=bins, histtype='step', ls='--', label=f'{mask_label}')
     ax[1].legend(prop={'size': 9})
 
     ax[2].set_ylabel('Events')
-    ax[2].hist(frame_ttbar[ff_ttbar], bins=bins_ttbar, histtype='step', linewidth=2, label='ttbar: incl')
+    ax[2].hist(frame_ttbar[ff_ttbar], bins=bins, histtype='step', linewidth=2, label='ttbar: incl')
     for mask, mask_label in _grouping_masks(frame_ttbar, grouping):
-        ax[2].hist(frame_ttbar[ff_ttbar][mask], bins=bins_ttbar, histtype='step', ls='--', label=f'{mask_label}')
+        ax[2].hist(frame_ttbar[ff_ttbar][mask], bins=bins, histtype='step', ls='--', label=f'{mask_label}')
     ax[2].set_xlabel(r'$F_{\mathrm{F}}$ value')
     ax[2].legend(prop={'size': 9})
 
@@ -2217,33 +2385,50 @@ def plot_fake_factors_in_dr_grouped_c(df, category_title, squeeze_upper_bound, g
 
 
 
-def plot_fake_factors_in_dr_grouped(df, category_title, grouping='tau_decaymode'):
-    if grouping == 'tau_decaymode':
-        ff_wjets = 'ff_dnn_wjets'
-        ff_qcd = 'ff_dnn_qcd'
-        ff_ttbar = 'ff_dnn_ttbar'
-    elif grouping == 'njets':
-        ff_wjets = 'ff_dnn_wjets_njets'
-        ff_qcd = 'ff_dnn_qcd_njets'
-        ff_ttbar = 'ff_dnn_ttbar_njets'
-    else:
-        raise ValueError(f'Unsupported grouping: {grouping}')
+def plot_fake_factors_in_dr_grouped(
+    df,
+    category_title,
+    grouping='tau_decaymode',
+    split_grouping=None,
+):
+    split_grouping = grouping if split_grouping is None else split_grouping
+    suffix = grouping_suffix(grouping)
+    ff_wjets = f'ff_dnn_wjets{suffix}'
+    ff_qcd = f'ff_dnn_qcd{suffix}'
+    ff_ttbar = f'ff_dnn_ttbar{suffix}'
 
-    bins_wjets = np.linspace(0, 1, 50)
-    bins_qcd = np.linspace(0, 0.5, 50)
-    bins_ttbar = np.linspace(0, 1, 50)
+    bins = np.linspace(0, 1, 100)
 
     frame_wjets = df.data.AR_like_wjets
     frame_qcd = df.data.AR_like_qcd
     frame_ttbar = df.data.AR_like_ttbar
 
-    fig, ax = plt.subplots(3, 1, figsize=(10, 7))
-    ax[0].hist(frame_wjets[ff_wjets], bins=bins_wjets, histtype='step', linewidth=2, label='Wjets: incl')
-    for mask, mask_label in _grouping_masks(frame_wjets, grouping):
-        ax[0].hist(frame_wjets[ff_wjets][mask], bins=bins_wjets, histtype='step', ls='--', label=f'{mask_label}')
+    fig, ax = plt.subplots(3, 1, figsize=(10, 7), sharex=True)
+    first_ax_counts = []
+    counts, _, _ = ax[0].hist(
+        frame_wjets[ff_wjets],
+        bins=bins,
+        histtype='step',
+        linewidth=2,
+        label='inclusive',
+    )
+    first_ax_counts.append(counts)
+    for mask, mask_label in _grouping_masks(
+        frame_wjets,
+        split_grouping,
+        process="wjets",
+    ):
+        counts, _, _ = ax[0].hist(
+            frame_wjets[ff_wjets][mask],
+            bins=bins,
+            histtype='step',
+            ls='--',
+            label=f'{mask_label}',
+        )
+        first_ax_counts.append(counts)
     ax[0].set_ylabel('Events')
-    ax[0].legend(prop={'size': 9}, loc = 'upper right')
-    ax[0].set_ylim(0, 20000)
+    first_ax_maximum = max(np.max(counts) for counts in first_ax_counts)
+    ax[0].set_ylim(0, 1.2 * first_ax_maximum if first_ax_maximum > 0 else 1)
 
     CMS_CHANNEL_TITLE([ax[0]])
     CMS_LUMI_TITLE([ax[0]])
@@ -2251,17 +2436,31 @@ def plot_fake_factors_in_dr_grouped(df, category_title, grouping='tau_decaymode'
     CMS_CATEGORY_TITLE([ax[0]], title=category_title)
 
     ax[1].set_ylabel('Events')
-    ax[1].hist(frame_qcd[ff_qcd], bins=bins_qcd, histtype='step', linewidth=2, label='QCD: incl')
-    for mask, mask_label in _grouping_masks(frame_qcd, grouping):
-        ax[1].hist(frame_qcd[ff_qcd][mask], bins=bins_qcd, histtype='step', ls='--', label=f'{mask_label}')
-    ax[1].legend(prop={'size': 9})
+    ax[1].hist(frame_qcd[ff_qcd], bins=bins, histtype='step', linewidth=2)
+    for mask, mask_label in _grouping_masks(
+        frame_qcd,
+        split_grouping,
+        process="qcd",
+    ):
+        ax[1].hist(frame_qcd[ff_qcd][mask], bins=bins, histtype='step', ls='--')
 
     ax[2].set_ylabel('Events')
-    ax[2].hist(frame_ttbar[ff_ttbar], bins=bins_ttbar, histtype='step', linewidth=2, label='ttbar: incl')
-    for mask, mask_label in _grouping_masks(frame_ttbar, grouping):
-        ax[2].hist(frame_ttbar[ff_ttbar][mask], bins=bins_ttbar, histtype='step', ls='--', label=f'{mask_label}')
+    ax[2].hist(frame_ttbar[ff_ttbar], bins=bins, histtype='step', linewidth=2)
+    for mask, mask_label in _grouping_masks(
+        frame_ttbar,
+        split_grouping,
+        process="ttbar",
+    ):
+        ax[2].hist(
+            frame_ttbar[ff_ttbar][mask],
+            bins=bins,
+            histtype='step',
+            ls='--',
+            label=mask_label if split_grouping == "njets" else None,
+        )
     ax[2].set_xlabel(r'$F_{\mathrm{F}}$ value')
-    ax[2].legend(prop={'size': 9})
+
+    _decorate_grouped_fake_factor_axes(fig, ax, split_grouping)
 
     return fig, ax
 
@@ -2295,4 +2494,3 @@ def plot_NN_output_FF(
     ax[1].hist(FF, bins=bins, histtype='step', linewidth=2)
     ax[1].set_xlabel('fake factors')
     return fig, ax
-

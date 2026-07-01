@@ -53,11 +53,10 @@ variables_set_small:
     - pt_vis
     - pt_tt
     - m_fastmtt
-    - eta_1
-    - eta_2
     - met
-    - mt_1
-    - mt_2
+    - mass_2
+    - njets
+    - tau_decaymode_2
 
 variables_set_large:
     - pt_1

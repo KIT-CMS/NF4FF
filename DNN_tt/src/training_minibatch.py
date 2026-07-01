@@ -10,7 +10,7 @@ from dataclasses import dataclass, MISSING
 from typing import List, Optional, Union, Tuple, Dict, Any
 import yaml
 from dataclasses import is_dataclass, fields
-from classes.Logging import Logging
+from classes.CustomLogging import Logging
 from pathlib import Path
 from torch.utils.data import DataLoader, TensorDataset
 import copy

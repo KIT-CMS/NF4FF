@@ -7,6 +7,8 @@ from .DataHandling import (
     append_features,
     update_features,
     get_class_weights,
+    FeatureStore,
+    FeatureRegistry,
     )
 from .DataHandling import create_training_dataset
 from .NeuralNetworks import (
@@ -19,7 +21,6 @@ from .NeuralNetworks import (
     convert_models_to_onnx,
     LikelihoodRatioCalculation,
     EnsembleStatUncWrapper,
-    temporary_extract_scaler_callable,
 )
 from .Training import train_dnn, train_dnn_new, train_dnn_squeezed_loss
 
@@ -65,8 +66,12 @@ from .Plotting import (
     plot_fake_factors_in_DR,
     plot_fake_factors_grouped,
     plot_fake_factors_in_dr_grouped,
+    plot_fake_factors_grouped_range,
+    plot_fake_factors_in_dr_grouped_range,
     plot_fake_factors_in_dr_grouped_c,
     plot_closure_c,
     plot_fake_factors_grouped_c,
 )
 from .NeuralNetworks import temporary_extract_scaler_callable
+
+from .config_loader import load_config

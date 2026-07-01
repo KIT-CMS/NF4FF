@@ -13,8 +13,8 @@ import numpy as np
 import onnx
 import torch as t
 
-import CODE.LOGGING as log
-import CODE.HELPER as helper
+from .CODE import LOGGING as log
+from .CODE import HELPER as helper
 
 logger = log.setup_logging(logger=logging.getLogger(__name__))
 

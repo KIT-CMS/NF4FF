@@ -1343,6 +1343,7 @@ class _component_collection(metaclass=CollectionMeta):
     process: Union[t.Tensor, pd.DataFrame, np.ndarray, None] = None
     qcd_weights_os: Union[t.Tensor, None] = None
     SR_like: Union[t.Tensor, pd.DataFrame, np.ndarray, int, None] = None
+    event_id: Union[t.Tensor, np.ndarray, None] = None  # original event number for write-back
 
 def get_my_data(df, training_var):
     _df = df  # fold/fold_train/fold_val to load, should contain SS/OS columns
@@ -1357,7 +1358,8 @@ def get_my_data(df, training_var):
             # instead of _same_sign_opposite_sign_split.apply(lambda x: x["Label"].to_numpy()).to_collection(ss_os_split)
             weights=ss_os_split.apply_func(lambda __df: __df["weight"].to_numpy(dtype = np.float32)),
             class_weights=ss_os_split.apply_func(lambda x: x["class_weights"].to_numpy()),
-            process=ss_os_split.apply_func(lambda x: x['process'].to_numpy(dtype = np.float32))
+            process=ss_os_split.apply_func(lambda x: x['process'].to_numpy(dtype = np.float32)),
+            event_id=ss_os_split.apply_func(lambda x: x["event"].to_numpy(dtype = np.int64)),
         )
 
 def get_plotting_data(df, training_var):

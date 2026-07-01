@@ -213,18 +213,20 @@ class GroupedLayerABC(t.nn.Module, ABC):
             current_mask = t.ones(batch_size, dtype=t.bool, device=X.device)
             for column_idx, bounds in conditions:
                 vals = X[:, column_idx]
-
+                # print(vals.unique())
+                shift, scale = 0., 1.
                 if self._tca_mode:
                     shift = self._fallback_payload._scaler_shift_copy[column_idx].to(vals.device)
                     scale = self._fallback_payload._scaler_scale_copy[column_idx].to(vals.device)
-                    vals = vals * scale + shift
-    
                 if len(bounds) == 1:  # checks at trace time, not ONNX run time
-                    current_mask = current_mask & (t.abs(vals - bounds[0]) < 1e-4)
+                    bounds = (bounds[0] - shift) / scale
+                    current_mask = current_mask & (t.abs(vals - bounds) < 1e-4)
                 elif len(bounds) == 2:
                     lower, upper = bounds
+                    lower = (lower - shift) / scale
                     current_mask = current_mask & (vals >= lower - 1e-4)
                     if upper != float("inf"):
+                        upper = (upper - shift) / scale
                         current_mask = current_mask & (vals <= upper + 1e-4)
                 else:
                     raise ValueError(f"Invalid bound: {bounds}")
@@ -590,11 +592,10 @@ def load_model(
 def load_fold_combined_model(
     even_model_path: Path,  # usually fold0
     odd_model_path: Path,   # usually fold1
-    force_recreate: bool = False,
 ) -> FoldCombinedDNN:
     return FoldCombinedDNN(
-        even_model=load_model(even_model_path, force_recreate=force_recreate).eval(),
-        odd_model=load_model(odd_model_path, force_recreate=force_recreate).eval(),
+        even_model=load_model(even_model_path).eval(),
+        odd_model=load_model(odd_model_path).eval(),
     )
 
 
@@ -695,7 +696,7 @@ def temporary_extract_scaler_callable(
     manual_scaler, originals = build_manual_scaler(model), {}
 
     for item in model.modules():
-        if hasattr(item, "_tca_mode"):
+        if isinstance(item, GroupedLayerABC):
             item._tca_mode = True
     try:
         for name, buffer in model.named_buffers():
@@ -710,8 +711,8 @@ def temporary_extract_scaler_callable(
 
     finally:
         for item in model.modules():
-            if hasattr(item, "_tca_mode"):
-                item._tca_mode = False
+            if isinstance(item, GroupedLayerABC):
+                item._tca_mode = True
         for name, buffer in model.named_buffers():
             if name in originals:
                 buffer.copy_(originals[name])
@@ -907,6 +908,7 @@ class FixedMaskDropout(t.nn.Module):
     def __init__(self, ensemble_size: int, feature_dim: int, p: float):
         super().__init__()
         self.ensemble_size = ensemble_size
+        self.active_mask = None
         total_slots = ensemble_size + 1  # 0 always 1.0, 1 to N are random
 
         masks = t.ones(total_slots, feature_dim)
@@ -916,6 +918,9 @@ class FixedMaskDropout(t.nn.Module):
         self.register_buffer("masks", masks)
 
     def forward(self, x: t.Tensor) -> t.Tensor:
+        if self.active_mask is not None:
+            return x * self.masks[self.active_mask]
+
         total_rows = x.shape[0]
         batch_size = total_rows // (self.ensemble_size + 1)
         feature_dim = x.shape[1]
