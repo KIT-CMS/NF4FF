@@ -1,7 +1,9 @@
 from .DataHandling import (
     load_variables, 
     load_data, 
+    load_data_no_embedding,
     training_data, 
+    multiclass_training_data,
     test_data,
     write_features,
     append_features,
@@ -11,6 +13,7 @@ from .DataHandling import (
     FeatureRegistry,
     )
 from .DataHandling import create_training_dataset
+from .DataHandling import create_multiclass_training_dataset
 from .NeuralNetworks import (
     DNN,
     GroupedDNN,
@@ -20,9 +23,10 @@ from .NeuralNetworks import (
     load_fold_combined_model,
     convert_models_to_onnx,
     LikelihoodRatioCalculation,
+    DRSRCorrectedFakeFactorModel,
     EnsembleStatUncWrapper,
 )
-from .Training import train_dnn, train_dnn_new, train_dnn_squeezed_loss
+from .Training import train_dnn, train_dnn_new, train_dnn_squeezed_loss, train_dnn_multiclass
 
 from .FF_calculation import (
     calculate_fake_factors,

@@ -52,6 +52,23 @@ def corrected_training_fraction_fake_factor_name(
     )
 
 
+def extrapolation_corrected_training_fraction_fake_factor_name(
+    grouping: str = "njets",
+    squeezing: Optional[float] = 0.99,
+) -> str:
+    return (
+        "ff_dnn_mlf_extrapolation_corrected"
+        f"{training_fraction_feature_suffix(grouping, squeezing)}"
+    )
+
+
+def extrapolation_correction_directory_label(
+    squeezing_loss_limit: float,
+) -> str:
+    value = str(float(squeezing_loss_limit)).replace(".", "p").replace("-", "m")
+    return f"loss_squeeze_pm{value}"
+
+
 def process_fake_factor_columns(
     grouping: str = "njets",
     squeezing: Optional[float] = 0.99,
@@ -141,11 +158,17 @@ def calculate_corrected_training_fraction_fake_factor(
     *,
     grouping: str = "njets",
     squeezing: Optional[float] = 0.99,
+    output_name: Optional[str] = None,
+    correction_dir: Optional[Union[str, Path]] = None,
 ) -> str:
     """Apply process non-closure corrections and combine with MLF fractions."""
-    output_name = corrected_training_fraction_fake_factor_name(
-        grouping=grouping,
-        squeezing=squeezing,
+    output_name = (
+        corrected_training_fraction_fake_factor_name(
+            grouping=grouping,
+            squeezing=squeezing,
+        )
+        if output_name is None
+        else output_name
     )
     process_columns = process_fake_factor_columns(
         grouping=grouping,
@@ -163,9 +186,13 @@ def calculate_corrected_training_fraction_fake_factor(
         )
 
     correction_dir = (
-        Path(correction_set_root)
-        / _squeezing_directory_label(squeezing)
-        / grouping
+        Path(correction_dir)
+        if correction_dir is not None
+        else (
+            Path(correction_set_root)
+            / _squeezing_directory_label(squeezing)
+            / grouping
+        )
     )
     _, corrections = _load_correction_sets(correction_dir)
 
@@ -197,6 +224,35 @@ def calculate_corrected_training_fraction_fake_factor(
     )
     frame[output_name] = output
     return output_name
+
+
+def calculate_extrapolation_corrected_training_fraction_fake_factor(
+    frame: pd.DataFrame,
+    correction_set_root: Union[str, Path],
+    *,
+    grouping: str = "njets",
+    squeezing: Optional[float] = 0.99,
+    squeezing_loss_limit: float = 0.1,
+) -> str:
+    """Apply extrapolation-workdir non-closure corrections to DRSR FFs."""
+    return calculate_corrected_training_fraction_fake_factor(
+        frame,
+        correction_set_root,
+        grouping=grouping,
+        squeezing=squeezing,
+        output_name=extrapolation_corrected_training_fraction_fake_factor_name(
+            grouping=grouping,
+            squeezing=squeezing,
+        ),
+        correction_dir=(
+            Path(correction_set_root)
+            / _squeezing_directory_label(squeezing)
+            / extrapolation_correction_directory_label(
+                squeezing_loss_limit,
+            )
+            / grouping
+        ),
+    )
 
 
 def calculate_and_store_training_fraction_fake_factors(
@@ -299,6 +355,77 @@ def calculate_and_store_corrected_training_fraction_fake_factors(
         correction_set_root,
         grouping=grouping,
         squeezing=squeezing,
+    )
+    output_values = calculation_frame[output_name].to_numpy(dtype=np.float64)
+    if not np.isfinite(output_values).all():
+        invalid_count = int((~np.isfinite(output_values)).sum())
+        raise ValueError(
+            f"{output_name} calculation produced {invalid_count} "
+            "non-finite values in AR."
+        )
+
+    feature_df = pd.DataFrame({
+        "row_index": calculation_frame.index.to_numpy(dtype=np.int64),
+        "event": calculation_frame["event"].to_numpy(),
+        output_name: output_values.astype(np.float32),
+    })
+    registry = FeatureRegistry(feature_registry_path)
+    store = FeatureStore(feature_store_path, registry)
+    store.write(feature_df)
+    store.save()
+    registry.save()
+    return feature_store_path
+
+
+def calculate_and_store_extrapolation_corrected_training_fraction_fake_factors(
+    *,
+    data_path: Union[str, Path],
+    masks_path: Union[str, Path],
+    fraction_feature_path: Union[str, Path],
+    fake_factor_feature_path: Union[str, Path],
+    correction_set_root: Union[str, Path],
+    feature_store_path: Union[str, Path],
+    feature_registry_path: Union[str, Path],
+    grouping: str = "njets",
+    squeezing: Optional[float] = 0.99,
+    squeezing_loss_limit: float = 0.1,
+) -> Path:
+    """
+    Calculate DRSR/extrapolation-model MLF fake factors with non-closure
+    corrections from the extrapolation-correction TauFakeFactors workdir.
+    """
+    fraction_feature_path = Path(fraction_feature_path)
+    fake_factor_feature_path = Path(fake_factor_feature_path)
+    feature_store_path = Path(feature_store_path)
+    feature_registry_path = Path(feature_registry_path)
+
+    for path, description in (
+        (fraction_feature_path, "training-fraction feature file"),
+        (
+            fake_factor_feature_path,
+            "DRSR/extrapolation-corrected process fake-factor feature file",
+        ),
+    ):
+        if not path.is_file():
+            raise FileNotFoundError(f"Missing {description}: {path}")
+
+    df = load_data(data_path, masks_path)
+    df.load_feature_file(fraction_feature_path)
+    df.load_feature_file(fake_factor_feature_path)
+
+    calculation_frame = df.AR.events.copy()
+    if calculation_frame.empty:
+        raise ValueError(
+            "No events selected in AR for extrapolation-corrected MLF fake "
+            "factors."
+        )
+
+    output_name = calculate_extrapolation_corrected_training_fraction_fake_factor(
+        calculation_frame,
+        correction_set_root,
+        grouping=grouping,
+        squeezing=squeezing,
+        squeezing_loss_limit=squeezing_loss_limit,
     )
     output_values = calculation_frame[output_name].to_numpy(dtype=np.float64)
     if not np.isfinite(output_values).all():

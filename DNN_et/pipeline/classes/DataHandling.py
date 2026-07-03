@@ -9,7 +9,7 @@ from classes.helper import _component_collection, _same_sign_opposite_sign_split
 import numpy as np
 import torch as t
 from sklearn.model_selection import train_test_split
-from typing import Union
+from typing import Optional, Sequence, Union
 
 class SelectionManager:
 
@@ -368,6 +368,14 @@ def load_data(feather_file, config_file, feature_registry_path=None):
     resolver = FeatureResolver(registry)
 
     return AnalysisDataFrame(df, manager, resolver)
+
+
+def load_data_no_embedding(feather_file, config_file, feature_registry_path=None):
+    return load_data(
+        feather_file=feather_file,
+        config_file=config_file,
+        feature_registry_path=feature_registry_path,
+    )
 
 
 import json
@@ -790,6 +798,120 @@ def training_data(
     )
 
 
+def multiclass_training_data(
+    df,
+    training_var,
+    label_column="Label",
+    weight_column="weight",
+    classes: Optional[Sequence[Union[int, str]]] = None,
+    balance=True,
+    balance_with_absolute_yields=False,
+):
+    """Build shuffled arrays for multiclass classification.
+
+    Labels are returned as one-hot encoded float32 arrays because the
+    multiclass trainer uses probability-like targets with the custom CE loss.
+    """
+
+    required_columns = [*training_var, label_column, weight_column]
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        raise KeyError(
+            "Missing columns for multiclass training data: "
+            f"{missing_columns}"
+        )
+
+    if classes is None:
+        classes = tuple(sorted(pd.unique(df[label_column])))
+    else:
+        classes = tuple(classes)
+
+    if len(classes) < 2:
+        raise ValueError("Multiclass training requires at least two classes.")
+
+    class_to_index = {label: index for index, label in enumerate(classes)}
+    unknown_labels = set(pd.unique(df[label_column])) - set(class_to_index)
+    if unknown_labels:
+        raise ValueError(
+            "Found labels that are not present in classes: "
+            f"{sorted(unknown_labels)}"
+        )
+
+    X = df[training_var].to_numpy(dtype=np.float32)
+    weights = df[weight_column].to_numpy(dtype=np.float64)
+    labels = df[label_column].map(class_to_index).to_numpy(dtype=np.int64)
+
+    if not np.isfinite(X).all():
+        raise ValueError("Training features contain non-finite values.")
+    if not np.isfinite(weights).all():
+        raise ValueError(
+            f"Training weight column '{weight_column}' contains "
+            "non-finite values."
+        )
+
+    Y = np.zeros((len(df), len(classes)), dtype=np.float32)
+    Y[np.arange(len(df)), labels] = 1.0
+
+    if balance:
+        if balance_with_absolute_yields:
+            class_yields = np.array(
+                [
+                    np.abs(weights[labels == class_index]).sum(
+                        dtype=np.float64
+                    )
+                    for class_index in range(len(classes))
+                ],
+                dtype=np.float64,
+            )
+        else:
+            class_yields = np.array(
+                [
+                    weights[labels == class_index].sum(dtype=np.float64)
+                    for class_index in range(len(classes))
+                ],
+                dtype=np.float64,
+            )
+
+        if np.any(class_yields == 0):
+            empty_classes = [
+                classes[index]
+                for index, class_yield in enumerate(class_yields)
+                if class_yield == 0
+            ]
+            raise ValueError(
+                "Cannot balance classes with zero yield: "
+                f"{empty_classes}"
+            )
+
+        target_yield = class_yields.mean(dtype=np.float64)
+        balanced_weights = weights.copy()
+        for class_index, class_yield in enumerate(class_yields):
+            class_mask = labels == class_index
+            balanced_weights[class_mask] = (
+                weights[class_mask] * target_yield / class_yield
+            )
+        weights = balanced_weights
+
+    if not np.isfinite(weights).all():
+        raise ValueError(
+            f"Balancing produced non-finite values in '{weight_column}'."
+        )
+    float32_max = np.finfo(np.float32).max
+    max_absolute_weight = np.abs(weights).max(initial=0.0)
+    if max_absolute_weight > float32_max:
+        raise ValueError(
+            f"Balancing '{weight_column}' exceeded the float32 range."
+        )
+
+    idx = np.random.permutation(len(X))
+
+    return _component_collection(
+        X=X[idx],
+        Y=Y[idx],
+        weights=weights[idx].astype(np.float32),
+    )
+
+
 def test_data(
     df_test,
     training_var,
@@ -864,6 +986,67 @@ def create_training_dataset(
         X=X_val,
         Y=y_val,
         weights=w_val,
+    ).to_torch(device=None)
+
+    return train, val
+
+
+def create_multiclass_training_dataset(
+    df,
+    training_var,
+    label_column="Label",
+    weight_column="weight",
+    classes: Optional[Sequence[Union[int, str]]] = None,
+    balance=True,
+    balance_with_absolute_yields=False,
+    test_size=0.25,
+    random_state=42,
+    stratify=True,
+):
+    if classes is None:
+        classes = tuple(sorted(pd.unique(df[label_column])))
+    else:
+        classes = tuple(classes)
+
+    stratify_labels = df[label_column] if stratify else None
+
+    df_train, df_val = train_test_split(
+        df,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=stratify_labels,
+    )
+
+    train_dataset = multiclass_training_data(
+        df=df_train,
+        training_var=training_var,
+        label_column=label_column,
+        weight_column=weight_column,
+        classes=classes,
+        balance=balance,
+        balance_with_absolute_yields=balance_with_absolute_yields,
+    )
+
+    val_dataset = multiclass_training_data(
+        df=df_val,
+        training_var=training_var,
+        label_column=label_column,
+        weight_column=weight_column,
+        classes=classes,
+        balance=False,
+        balance_with_absolute_yields=balance_with_absolute_yields,
+    )
+
+    train = _component_collection(
+        X=train_dataset.X,
+        Y=train_dataset.Y,
+        weights=train_dataset.weights,
+    ).to_torch(device=None)
+
+    val = _component_collection(
+        X=val_dataset.X,
+        Y=val_dataset.Y,
+        weights=val_dataset.weights,
     ).to_torch(device=None)
 
     return train, val

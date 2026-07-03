@@ -3,7 +3,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Iterable, Union
-
+import mplhep as hep
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -19,8 +19,10 @@ from classes import (
     plot_fake_factors_in_dr_grouped,
     plot_fake_factors_in_dr_grouped_range,
 )
-from groupings import GROUPING_NAMES, grouping_suffix
+from groupings import GROUPING_NAMES, grouping_suffix, squeezing_feature_suffix
+from drsr_corrections import drsr_correction_name
 
+hep.style.use("CMS")
 
 logger = logging.getLogger(__name__)
 
@@ -180,11 +182,32 @@ def _plot_subset(df, selection):
     return df.subset(mask)
 
 
+def _load_feature_file_by_event(df, path: Union[str, Path]) -> None:
+    feature_frame = pd.read_feather(path)
+    if "event" not in feature_frame.columns:
+        raise KeyError(f"Feature file {path} does not contain an 'event' column.")
+    feature_columns = [
+        column for column in feature_frame.columns
+        if column not in ("event", "row_index")
+    ]
+    if not feature_columns:
+        return
+    compact = (
+        feature_frame[["event", *feature_columns]]
+        .groupby("event", as_index=False, sort=False)
+        .last()
+        .set_index("event")
+    )
+    for column in feature_columns:
+        df.events[column] = df.events["event"].map(compact[column])
+
+
 def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
     ax[0].set_title(
         r"$e\tau_h$",
-        fontsize=20,
+        fontsize=18,
         loc="left",
+        pad=12,
         fontproperties="Tex Gyre Heros"
     )
 
@@ -199,16 +222,17 @@ def CMS_CATEGORY_TITLE(ax, title="tau_DM: inclusive", *args, **kwargs):
 def CMS_LUMI_TITLE(ax, *args, **kwargs):
     ax[0].set_title(
         "59.8 $fb^{-1}$ (2018, 13 TeV)",
-        fontsize=20,
+        fontsize=18,
         loc="right",
+        pad=12,
         fontproperties="Tex Gyre Heros"
     )
 
 def CMS_LABEL(ax, *args, **kwargs):
     ax[0].text(
-        0.025, 0.95,
+        0.025, 0.94,
         "Private work (CMS data/simulation)",
-        fontsize=15,
+        fontsize=20,
         verticalalignment='top',
         fontproperties="Tex Gyre Heros:italic",
         bbox=dict(facecolor="white", alpha=0, edgecolor="white", boxstyle="round,pad=0.5"),
@@ -462,26 +486,36 @@ def plot_closure(
         fig, ax = plt.subplots(
             4,
             1,
-            figsize=(9, 9),
+            figsize=(12, 12),
             sharex=True,
             gridspec_kw={
-                'height_ratios': [4, 1, 0.2, 1],
-                'hspace': 0.05,
+                'height_ratios': [4, 1, 0.05, 1],
+                'hspace': 0.08,
             },
-            constrained_layout=True,
+        )
+        fig.subplots_adjust(
+            left=0.12,
+            right=0.96,
+            top=0.90,
+            bottom=0.12,
         )
     else:
         fig, ax = plt.subplots(
             2,
             1,
-            figsize=(9, 7),
+            figsize=(12, 9),
             sharex=True,
             gridspec_kw={
                 'height_ratios': [3, 1],
-                'hspace': 0.05,
+                'hspace': 0.08,
             },
-            constrained_layout=True,
-        )    
+        )
+        fig.subplots_adjust(
+            left=0.12,
+            right=0.96,
+            top=0.90,
+            bottom=0.14,
+        )
 
     stack_components = [
         (histograms['diboson']['counts'], "#94a4a2", 'Diboson'),
@@ -496,7 +530,18 @@ def plot_closure(
         ax[0],
         bin_edges,
         stack_components,
-    )
+        )
+    
+    import matplotlib.ticker as mticker
+
+    formatter = mticker.ScalarFormatter(useMathText=True)
+    formatter.set_scientific(True)
+    formatter.set_powerlimits((0, 0))  # always use scientific notation
+    offset = ax[0].yaxis.get_offset_text()
+    offset.set_x(-0.08)   # more negative = further left
+
+    offset.set_y(1.00)    # vertical position
+    ax[0].yaxis.set_major_formatter(formatter)
 
 
     ax[0].stairs(
@@ -514,22 +559,33 @@ def plot_closure(
         fmt='o',
         color='black',
         label='Data',
-        markersize=6,
+        markersize=10,
         elinewidth=1.2,
         capsize=0,
     )
 
-    ax[0].set_ylabel("Events")
+    ax[0].set_ylabel("Events", fontsize=24, labelpad=10)
     handles, labels = ax[0].get_legend_handles_labels()
     handles = handles[::-1]
     labels = labels[::-1]
     handles, labels = reorder_for_rowwise_legend(handles, labels, ncol=4)
-    ax[0].legend(handles, labels, title=' ', title_fontsize=20, loc='upper left', ncol=4, frameon=False)
-    adjust_ylim_for_legend(ax[0])
+    ax[0].legend(
+        handles,
+        labels,
+        loc='upper center',
+        ncol=4,
+        frameon=False,
+        bbox_to_anchor=(0.5, 0.90),
+        fontsize=20,
+        handlelength=1.8,
+        columnspacing=1.1,
+        labelspacing=0.6,
+    )
+    ax[0].set_ylim(0, max(histograms['data']['counts']) * 1.6)
     ax[0].tick_params(direction='in', top=True, right=True)
 
     CMS_LABEL(ax)
-    #CMS_CATEGORY_TITLE(ax)
+    # CMS_CATEGORY_TITLE(ax)
     CMS_LUMI_TITLE(ax)
     CMS_CHANNEL_TITLE(ax)
 
@@ -554,7 +610,7 @@ def plot_closure(
         yerr=ratio_err_dnn,
         fmt='o',
         color='black',
-        markersize=6,
+        markersize=10,
         label=r'DNN $F_\mathrm{F}$',
     )
 
@@ -565,17 +621,25 @@ def plot_closure(
         color='gray',
         alpha=0.3,
         step='mid',
-        label='Stat. Unc.',
+        label='Sys. Unc.',
     )
     if plot_corr_hline == True:
         ax[1].axhline(1/corr_emb_ff, color='blue', linestyle='--', linewidth=1.5)
     ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
     
-    ax[1].set_ylabel("Data / Model")
-    ax[1].set_ylim([0.75, 1.25])
+    ax[1].set_ylabel("Data / Model", fontsize=20, labelpad=10)
+    ax[1].set_ylim([0.75, 1.5])
+    ax[1].set_yticks([0.8, 1.0, 1.2, 1.4])
     ax[1].grid(True, linestyle=':', alpha=0.7)
     ax[1].tick_params(direction='in', top=True, right=True)
-    ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
+    ax[1].legend(
+        loc='upper right',
+        ncol=2,
+        frameon=False,
+        handlelength=1.8,
+        columnspacing=1.2,
+        labelspacing=0.5,
+    )
 
     ratio_classic = np.divide(
         histograms['data']['counts'],
@@ -602,7 +666,7 @@ def plot_closure(
             yerr=ratio_err_classic,
             fmt='o',
             color='black',
-            markersize=6,
+            markersize=10,
             label=r'Classic $F_\mathrm{F}$',
         )
 
@@ -613,18 +677,25 @@ def plot_closure(
             color='gray',
             alpha=0.3,
             step='mid',
-            label='Stat. Unc.',
+            label='Sys. Unc.',
         )
         ax[3].axhline(1/corr_emb_ff, color='blue', linestyle='--', linewidth=1.5)
         ax[3].axhline(1, color='red', linestyle='--', linewidth=1.5)
-        ax[3].set_ylabel("Data / Model")
-        ax[3].set_ylim([0.75, 1.25])
+        ax[3].set_ylabel("Data / Model", fontsize=20, labelpad=10)
+        ax[3].set_ylim([0.8, 1.4])
         ax[3].grid(True, linestyle=':', alpha=0.7)
         ax[3].tick_params(direction='in', top=True, right=True)
-        ax[3].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
-        ax[3].set_xlabel(label)
+        ax[3].legend(
+            loc='upper right',
+            ncol=2,
+            frameon=False,
+            handlelength=1.8,
+            columnspacing=1.2,
+            labelspacing=0.5,
+        )
+        ax[3].set_xlabel(label, fontsize=24, labelpad=10)
     else:
-        ax[1].set_xlabel(label)
+        ax[1].set_xlabel(label, fontsize=24, labelpad=10)
 
     return fig, ax, histograms
 
@@ -1238,6 +1309,37 @@ def create_mlf_closure_plots(
         raise KeyError(f"MLF fake-factor feature is missing {mlf_column}.")
 
     df.events["ff_dnn_njets"] = df.events[mlf_column]
+    finite_check_columns = (mlf_column, "ff_dnn_njets", "ff_classic")
+    closure_processes = ("data", "diboson", "DYjets", "ST", "embedding", "ttbar_L")
+    missing_columns = []
+    for column in finite_check_columns:
+        if column not in df.events.columns:
+            missing_columns.append(column)
+    if missing_columns:
+        raise KeyError(
+            "Closure input is missing required fake-factor columns: "
+            f"{missing_columns}"
+        )
+    invalid_counts = []
+    for process in closure_processes:
+        frame = df[process].AR.events
+        for column in finite_check_columns:
+            values = frame[column].to_numpy(dtype=np.float64)
+            invalid = int((~np.isfinite(values)).sum())
+            if invalid:
+                invalid_counts.append((process, column, invalid, len(frame)))
+    if invalid_counts:
+        details = ", ".join(
+            f"{process}.{column}: {invalid}/{total}"
+            for process, column, invalid, total in invalid_counts
+        )
+        raise ValueError(
+            "Closure fake-factor inputs contain non-finite values in the "
+            "AR rows used by the closure after loading features "
+            f"({details}). This usually means a stale or row-index-mismatched "
+            f"feature file is being loaded; MLF feature file: "
+            f"{mlf_feature_path}, classic feature file: {classic_feature_path}."
+        )
 
     outputs = []
     closure_subsets = (
@@ -1285,6 +1387,36 @@ def create_mlf_closure_plots(
     return outputs
 
 
+def create_extrapolation_corrected_mlf_closure_plots(
+    *,
+    data_path: Union[str, Path],
+    masks_path: Union[str, Path],
+    mlf_feature_path: Union[str, Path],
+    classic_feature_path: Union[str, Path],
+    plotting_config_path: Union[str, Path],
+    labels_path: Union[str, Path],
+    output_dir: Union[str, Path],
+    mlf_column: str,
+    manifest_path: Union[str, Path, None] = None,
+    variable_set: str = "variables_set_small",
+    channel: str = "et",
+) -> list[str]:
+    """Create closure plots for extrapolation-corrected MLF fake factors."""
+    return create_mlf_closure_plots(
+        data_path=data_path,
+        masks_path=masks_path,
+        mlf_feature_path=mlf_feature_path,
+        classic_feature_path=classic_feature_path,
+        plotting_config_path=plotting_config_path,
+        labels_path=labels_path,
+        output_dir=output_dir,
+        mlf_column=mlf_column,
+        manifest_path=manifest_path,
+        variable_set=variable_set,
+        channel=channel,
+    )
+
+
 def create_high_fake_factor_distribution_plots(
     *,
     data_path: Union[str, Path],
@@ -1300,6 +1432,8 @@ def create_high_fake_factor_distribution_plots(
     """Plot grouped AR and AR-like FF distributions in a selected range."""
     if value_max <= value_min:
         raise ValueError("value_max must be greater than value_min.")
+    if value_max <= 1.0:
+        raise ValueError("value_max must be greater than 1 for split-axis plots.")
     if n_bins <= 0:
         raise ValueError("n_bins must be positive.")
 
@@ -1364,6 +1498,384 @@ def create_high_fake_factor_distribution_plots(
     manifest_path.write_text(json.dumps(outputs, indent=2) + "\n")
     logger.info(
         "Saved %d high-range fake-factor plot files to %s.",
+        len(outputs),
+        output_dir,
+    )
+    return outputs
+
+
+DRSR_PROCESS_LABELS = {
+    "wjets": "W+jets",
+    "qcd": "QCD",
+    "ttbar": r"$t\bar{t}$",
+}
+
+NJETS_DISTRIBUTION_SUBSETS = (
+    ("inclusive", "inclusive", None),
+    ("njets_eq_0", r"$N_{\mathrm{jets}} = 0$", ("njets", "eq", 0)),
+    ("njets_eq_1", r"$N_{\mathrm{jets}} = 1$", ("njets", "eq", 1)),
+    ("njets_ge_2", r"$N_{\mathrm{jets}} \geq 2$", ("njets", "ge", 2)),
+)
+
+
+def _plot_drsr_process_fake_factor_distribution(
+    frame: pd.DataFrame,
+    *,
+    process: str,
+    uncorrected_column: str,
+    corrected_column: str,
+    category_title: str,
+    left_bins: np.ndarray,
+    right_bins: np.ndarray,
+):
+    values = frame[[uncorrected_column, corrected_column]].to_numpy(
+        dtype=np.float64
+    )
+    finite = np.isfinite(values).all(axis=1)
+    plot_frame = frame.loc[finite]
+    if plot_frame.empty:
+        raise ValueError(
+            f"No finite fake-factor values available for {process} in "
+            f"{category_title}."
+        )
+
+    columns = (
+        (uncorrected_column, "uncorrected", "tab:blue"),
+        (corrected_column, "DRSR corrected", "tab:red"),
+    )
+
+    def histogram_max(axis_bins):
+        maxima = []
+        for column, _, _ in columns:
+            counts, _ = np.histogram(plot_frame[column], bins=axis_bins)
+            maxima.append(counts.max(initial=0))
+        return max(maxima, default=0)
+
+    left_max = histogram_max(left_bins)
+    right_max = histogram_max(right_bins)
+
+    fig, axes = plt.subplots(
+        1,
+        2,
+        figsize=(9, 4),
+        gridspec_kw={"width_ratios": [2, 1], "wspace": 0.06},
+    )
+    left_axis, right_axis = axes
+    for column, label, color in columns:
+        left_axis.hist(
+            plot_frame[column],
+            bins=left_bins,
+            histtype="step",
+            linewidth=2,
+            label=label,
+            color=color,
+        )
+        right_axis.hist(
+            plot_frame[column],
+            bins=right_bins,
+            histtype="step",
+            linewidth=2,
+            label=label,
+            color=color,
+        )
+
+    left_axis.set_xlim(left_bins[0], left_bins[-1])
+    right_axis.set_xlim(right_bins[0], right_bins[-1])
+    left_axis.set_ylim(0.0, max(1.0, 1.2 * float(left_max)))
+    right_axis.set_yscale("log")
+    right_axis.set_ylim(0.8, max(1.2, 1.2 * float(right_max)))
+    right_axis.yaxis.tick_right()
+    right_axis.yaxis.set_label_position("right")
+
+    left_axis.set_ylabel("Events")
+    right_axis.set_ylabel("Events")
+    fig.supxlabel(r"$F_{\mathrm{F}}$ value")
+    for axis in axes:
+        axis.grid(True, linestyle=":", alpha=0.5)
+        axis.tick_params(direction="in", top=True)
+    left_axis.tick_params(right=False)
+    right_axis.tick_params(left=False, right=True)
+    left_axis.spines["right"].set_visible(False)
+    right_axis.spines["left"].set_visible(False)
+
+    break_size = 0.018
+    kwargs = dict(
+        transform=left_axis.transAxes,
+        color="black",
+        clip_on=False,
+        linewidth=1,
+    )
+    left_axis.plot(
+        (1 - break_size, 1 + break_size),
+        (-break_size, +break_size),
+        **kwargs,
+    )
+    left_axis.plot(
+        (1 - break_size, 1 + break_size),
+        (1 - break_size, 1 + break_size),
+        **kwargs,
+    )
+    kwargs["transform"] = right_axis.transAxes
+    right_axis.plot(
+        (-break_size, +break_size),
+        (-break_size, +break_size),
+        **kwargs,
+    )
+    right_axis.plot(
+        (-break_size, +break_size),
+        (1 - break_size, 1 + break_size),
+        **kwargs,
+    )
+
+    CMS_CHANNEL_TITLE([left_axis])
+    CMS_LUMI_TITLE([right_axis])
+    CMS_LABEL([left_axis])
+    # CMS_CATEGORY_TITLE(
+    #     [left_axis],
+    #     title=f"{DRSR_PROCESS_LABELS[process]}, data AR, {category_title}",
+    # )
+    handles, labels = left_axis.get_legend_handles_labels()
+    handles, labels = reorder_for_rowwise_legend(handles, labels, ncol=1)
+    left_axis.legend(
+        handles,
+        labels,
+        prop={"size": 11},
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.85),
+        ncol=1,
+        frameon=False,
+        borderaxespad=0.0,
+    )
+    adjust_ylim_for_legend(left_axis)
+    return fig
+
+
+def create_drsr_process_fake_factor_distribution_plots(
+    *,
+    data_path: Union[str, Path],
+    masks_path: Union[str, Path],
+    fake_factor_feature_path: Union[str, Path],
+    drsr_correction_feature_path: Union[str, Path],
+    output_dir: Union[str, Path],
+    manifest_path: Union[str, Path, None] = None,
+    process: str = "wjets",
+    squeezing: Union[float, None] = 0.99,
+    value_min: float = 0.0,
+    value_max: float = 10.0,
+    n_bins: int = 80,
+) -> list[str]:
+    """Plot uncorrected and DRSR-corrected process FF distributions in data AR."""
+    if process not in DRSR_PROCESS_LABELS:
+        raise ValueError(f"Unsupported process: {process}")
+    if value_max <= value_min:
+        raise ValueError("value_max must be greater than value_min.")
+    if n_bins <= 0:
+        raise ValueError("n_bins must be positive.")
+
+    plt.switch_backend("Agg")
+    output_dir = Path(output_dir)
+    df = load_data(data_path, masks_path)
+    _load_feature_file_by_event(df, fake_factor_feature_path)
+    _load_feature_file_by_event(df, drsr_correction_feature_path)
+
+    suffix = squeezing_feature_suffix(squeezing)
+    uncorrected_column = f"ff_dnn_{process}_njets{suffix}"
+    correction_column = drsr_correction_name(process, squeezing=squeezing)
+    corrected_column = f"{uncorrected_column}_drsr_corrected"
+    required = (uncorrected_column, correction_column, "njets")
+    missing = [column for column in required if column not in df.events.columns]
+    if missing:
+        raise KeyError(f"Missing DRSR FF distribution columns: {missing}")
+
+    df.events[corrected_column] = (
+        df.events[uncorrected_column].to_numpy(dtype=np.float64)
+        * df.events[correction_column].to_numpy(dtype=np.float64)
+    )
+
+    if value_min != 0.0:
+        logger.warning(
+            "DRSR split-axis FF distributions use a fixed lower bound of 0; "
+            "ignoring value_min=%s.",
+            value_min,
+        )
+    if n_bins != 80:
+        logger.warning(
+            "DRSR split-axis FF distributions use fixed bin counts "
+            "(200 bins from 0 to 1, 100 bins from 1 to value_max); "
+            "ignoring n_bins=%s.",
+            n_bins,
+        )
+    left_bins = np.linspace(0.0, 1.0, 201)
+    right_bins = np.linspace(1.0, value_max, 101)
+    outputs = []
+    data_ar = df.data.AR.events.copy()
+    for subset_name, category_title, selection in NJETS_DISTRIBUTION_SUBSETS:
+        if selection is None:
+            subset_frame = data_ar
+        else:
+            column, operation, value = selection
+            if operation == "eq":
+                subset_frame = data_ar.loc[data_ar[column] == value]
+            elif operation == "ge":
+                subset_frame = data_ar.loc[data_ar[column] >= value]
+            else:
+                raise ValueError(
+                    f"Unsupported njets distribution operation: {operation}"
+                )
+        fig = _plot_drsr_process_fake_factor_distribution(
+            subset_frame,
+            process=process,
+            uncorrected_column=uncorrected_column,
+            corrected_column=corrected_column,
+            category_title=category_title,
+            left_bins=left_bins,
+            right_bins=right_bins,
+        )
+        outputs.extend(_save_figure(
+            fig,
+            output_dir
+            / subset_name
+            / f"fake_factor_distribution_{process}_njets_drsr",
+        ))
+
+    manifest_path = (
+        Path(manifest_path)
+        if manifest_path is not None
+        else output_dir / "manifest.json"
+    )
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(outputs, indent=2) + "\n")
+    logger.info(
+        "Saved %d DRSR process FF distribution plot files to %s.",
+        len(outputs),
+        output_dir,
+    )
+    return outputs
+
+
+def _plot_drsr_correction_distribution(
+    frame: pd.DataFrame,
+    *,
+    column: str,
+    label: str,
+    color: str,
+    category_title: str,
+    bins: np.ndarray,
+):
+    values = frame[column].to_numpy(dtype=np.float64)
+    finite = np.isfinite(values)
+    plot_frame = frame.loc[finite]
+    if plot_frame.empty:
+        raise ValueError(
+            f"No finite DRSR correction values available for {label} in "
+            f"{category_title}."
+        )
+
+    counts, _ = np.histogram(plot_frame[column], bins=bins)
+    fig, axis = plt.subplots(figsize=(8, 6))
+    axis.hist(
+        plot_frame[column],
+        bins=bins,
+        histtype="step",
+        linewidth=2,
+        label=label,
+        color=color,
+    )
+    axis.set_xlim(bins[0], bins[-1])
+    axis.set_ylim(0.0, max(1.0, 1.4 * float(counts.max(initial=0))))
+    axis.set_xlabel(r"$C_{\mathrm{DRSR}}$ value")
+    axis.set_ylabel("Events")
+    axis.grid(True, linestyle=":", alpha=0.5)
+    axis.tick_params(direction="in", top=True, right=True)
+
+    CMS_CHANNEL_TITLE([axis])
+    CMS_LUMI_TITLE([axis])
+    CMS_LABEL([axis])
+    # CMS_CATEGORY_TITLE([axis], title=f"DRSR corrections, all AR, {category_title}")
+    handles, labels = axis.get_legend_handles_labels()
+    handles, labels = reorder_for_rowwise_legend(handles, labels, ncol=1)
+    axis.legend(
+        handles,
+        labels,
+        prop={"size": 11},
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.85),
+        ncol=1,
+        frameon=False,
+        borderaxespad=0.0,
+    )
+    return fig
+
+
+def create_drsr_correction_distribution_plots(
+    *,
+    data_path: Union[str, Path],
+    masks_path: Union[str, Path],
+    drsr_correction_feature_path: Union[str, Path],
+    output_dir: Union[str, Path],
+    manifest_path: Union[str, Path, None] = None,
+    process: str = "all",
+    squeezing: Union[float, None] = 0.99,
+    value_min: float = 0.0,
+    value_max: float = 2.0,
+    n_bins: int = 100,
+) -> list[str]:
+    """Plot DRSR correction-factor distributions in all AR rows."""
+    process_colors = {
+        "wjets": "tab:blue",
+        "qcd": "tab:red",
+        "ttbar": "tab:green",
+    }
+    if process not in ("all", *DRSR_PROCESS_LABELS):
+        raise ValueError(f"Unsupported process: {process}")
+    if value_max <= value_min:
+        raise ValueError("value_max must be greater than value_min.")
+    if n_bins <= 0:
+        raise ValueError("n_bins must be positive.")
+
+    plt.switch_backend("Agg")
+    output_dir = Path(output_dir)
+    df = load_data(data_path, masks_path)
+    _load_feature_file_by_event(df, drsr_correction_feature_path)
+
+    processes = tuple(DRSR_PROCESS_LABELS) if process == "all" else (process,)
+    columns = {
+        process_name: drsr_correction_name(process_name, squeezing=squeezing)
+        for process_name in processes
+    }
+    required = list(columns.values())
+    missing = [column for column in required if column not in df.events.columns]
+    if missing:
+        raise KeyError(f"Missing DRSR correction distribution columns: {missing}")
+
+    bins = np.linspace(value_min, value_max, n_bins + 1)
+    outputs = []
+    ar_frame = df.AR.events.copy()
+    for process_name in processes:
+        fig = _plot_drsr_correction_distribution(
+            ar_frame,
+            column=columns[process_name],
+            label=DRSR_PROCESS_LABELS[process_name],
+            color=process_colors[process_name],
+            category_title="inclusive",
+            bins=bins,
+        )
+        outputs.extend(_save_figure(
+            fig,
+            output_dir
+            / process_name
+            / f"drsr_correction_distribution_{process_name}",
+        ))
+
+    manifest_path = (
+        Path(manifest_path)
+        if manifest_path is not None
+        else output_dir / process / "manifest.json"
+    )
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(outputs, indent=2) + "\n")
+    logger.info(
+        "Saved %d DRSR correction distribution plot files to %s.",
         len(outputs),
         output_dir,
     )

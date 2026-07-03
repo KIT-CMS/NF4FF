@@ -7,7 +7,7 @@ import torch as t
 import torch.nn as nn
 import pandas as pd
 from typing import Union, Any, Dict, Tuple, Literal
-from classes import load_data, load_variables, load_config, FeatureStore, FeatureRegistry, save_model
+from classes import load_data, load_data_no_embedding, load_variables, load_config, FeatureStore, FeatureRegistry, save_model
 from classes.helper import get_class_weights, _same_sign_opposite_sign_split, _collection, _component_collection
 from sklearn.model_selection import train_test_split
 from dataclasses import dataclass, fields
@@ -15,7 +15,20 @@ from classes.CustomLogging import setup_logging
 from classes import DNN, FoldCombinedDNN
 from copy import deepcopy
 from torch.utils.data import TensorDataset, DataLoader
-from classes.enrichment_classifier import get_my_data, should_refresh_qcd_weights, refresh_qcd_weights, evaluate_binary_classifier
+from classes.enrichment_classifier import (
+    QCD_SS_WEIGHT_DYNAMIC_DELTA,
+    QCD_SS_WEIGHT_DYNAMIC_DELTA_LAST,
+    QCD_SS_WEIGHT_DYNAMIC_MIN_QCD_YIELD,
+    QCD_WEIGHT_BINNING,
+    QCD_WEIGHT_N_BINS,
+    _calculate_scaled_event_weights_generalized,
+    build_qcd_weight_bins,
+    evaluate_binary_classifier,
+    get_my_data,
+    predict_probabilities,
+    refresh_qcd_weights,
+    should_refresh_qcd_weights,
+)
 from rich.console import Console
 from rich.table import Table
 from rich.rule import Rule
@@ -576,6 +589,88 @@ def _train_fold_model(
 
 
 
+def _predict_ss_weights_for_target_process(
+    dataset,
+    model,
+    *,
+    target_process: int,
+    device,
+    group_idx,
+    grouping,
+    use_grouping,
+):
+    output_weights = t.full_like(dataset.weights.ss, fill_value=t.nan)
+
+    model.eval()
+    with t.no_grad():
+        prediction_ss = predict_probabilities(model, dataset.X.ss, device)
+
+    qcd_mask_ss = dataset.Y.ss == 2
+    non_qcd_mask_ss = ~qcd_mask_ss
+    target_mask_ss = dataset.process.ss == float(target_process)
+
+    for njets_group in (grouping if use_grouping else ((0, 1000),)):
+        if len(njets_group) == 1:
+            njets_mask_ss = dataset.X.ss[:, group_idx] == njets_group[0]
+        else:
+            njets_mask_ss = (
+                (dataset.X.ss[:, group_idx] >= njets_group[0])
+                & (dataset.X.ss[:, group_idx] <= njets_group[1])
+            )
+
+        for sr_value in (True, False):
+            sr_mask = dataset.SR_like.ss == sr_value
+            qcd_mask = qcd_mask_ss & njets_mask_ss & sr_mask
+            non_qcd_mask = non_qcd_mask_ss & njets_mask_ss & sr_mask
+            target_mask = target_mask_ss & njets_mask_ss & sr_mask
+
+            if (
+                qcd_mask.sum() == 0
+                or non_qcd_mask.sum() == 0
+                or target_mask.sum() == 0
+            ):
+                continue
+
+            bins = build_qcd_weight_bins(
+                qcd_values=prediction_ss[qcd_mask].squeeze(),
+                qcd_weights=dataset.weights.ss[qcd_mask].squeeze(),
+                non_qcd_values=prediction_ss[non_qcd_mask].squeeze(),
+                non_qcd_weights=dataset.weights.ss[non_qcd_mask].squeeze(),
+                binning=QCD_WEIGHT_BINNING,
+                n_bins=QCD_WEIGHT_N_BINS,
+                dynamic_delta=QCD_SS_WEIGHT_DYNAMIC_DELTA,
+                dynamic_delta_last=QCD_SS_WEIGHT_DYNAMIC_DELTA_LAST,
+                dynamic_min_qcd_yield=QCD_SS_WEIGHT_DYNAMIC_MIN_QCD_YIELD,
+            )
+            non_qcd_hist, bins = t.histogram(
+                input=prediction_ss[non_qcd_mask],
+                bins=bins,
+                weight=dataset.weights.ss[non_qcd_mask],
+            )
+            target_weights = _calculate_scaled_event_weights_generalized(
+                prediction_ss[target_mask].squeeze(),
+                t.ones_like(prediction_ss[target_mask].squeeze()),
+                bins,
+                non_qcd_hist,
+            )
+            output_weights[target_mask] = t.where(
+                target_weights < 0,
+                t.zeros_like(target_weights),
+                target_weights,
+            )
+
+    target_unfilled = target_mask_ss & ~t.isfinite(output_weights)
+    if target_unfilled.any():
+        logger.warning(
+            "Setting %d target-process SS QCD extrapolation weights to 0 "
+            "because no valid reference bin was available.",
+            int(target_unfilled.sum().item()),
+        )
+        output_weights[target_unfilled] = 0.0
+
+    return output_weights
+
+
 def train_fold_model_qcd(
         cfg,
         df,
@@ -587,6 +682,7 @@ def train_fold_model_qcd(
         checkpoint_dir,
         fold_label,
         seed: int = TRAINING_SEED,
+        qcd_weight_target_process: Union[int, None] = None,
 ):
 
     def _split_collection(dataset, ss_idx, os_idx):
@@ -888,8 +984,30 @@ def train_fold_model_qcd(
 
     train_row_index_ss = train_pt.row_index.ss if hasattr(train_pt, 'row_index') and train_pt.row_index is not None else None
     val_row_index_ss   = val_pt.row_index.ss   if hasattr(val_pt,   'row_index') and val_pt.row_index   is not None else None
+    train_qcd_weights_ss = train_pt.qcd_weights_ss
+    val_qcd_weights_ss = val_pt.qcd_weights_ss
 
-    return model, train_pt.qcd_weights_ss, val_pt.qcd_weights_ss, train_row_index_ss, val_row_index_ss
+    if qcd_weight_target_process is not None:
+        train_qcd_weights_ss = _predict_ss_weights_for_target_process(
+            train_pt,
+            model,
+            target_process=qcd_weight_target_process,
+            device=device,
+            group_idx=group_idx,
+            grouping=grouping,
+            use_grouping=use_grouping,
+        )
+        val_qcd_weights_ss = _predict_ss_weights_for_target_process(
+            val_pt,
+            model,
+            target_process=qcd_weight_target_process,
+            device=device,
+            group_idx=group_idx,
+            grouping=grouping,
+            use_grouping=use_grouping,
+        )
+
+    return model, train_qcd_weights_ss, val_qcd_weights_ss, train_row_index_ss, val_row_index_ss
 
 
 _train_fold_model_qcd = train_fold_model_qcd
@@ -963,6 +1081,43 @@ def _select_enrichment_region(df, region_name, additional_masks=()):
     return df.full.events.loc[region_mask]
 
 
+def _select_enrichment_regions(df, region_names, additional_masks=()):
+    """Return a union of configured all-process regions."""
+    frames = [
+        _select_enrichment_region(
+            df,
+            region_name,
+            additional_masks=additional_masks,
+        )
+        for region_name in region_names
+    ]
+    if len(frames) == 1:
+        return frames[0]
+    return pd.concat(frames, axis=0).loc[
+        lambda frame: ~frame.index.duplicated(keep="first")
+    ].copy()
+
+
+def _drop_processes_from_region(region_df, df, excluded_processes=()):
+    """Drop configured processes from an already selected region dataframe."""
+    excluded_processes = tuple(excluded_processes)
+    if not excluded_processes:
+        return region_df
+
+    drop_mask = pd.Series(False, index=region_df.index)
+    for process_name in excluded_processes:
+        if process_name not in df._manager.processes:
+            raise ValueError(f"Unknown process to exclude: {process_name}")
+        drop_mask |= df._manager.get_process_mask(region_df, process_name)
+
+    logger.info(
+        "Excluding %d rows from processes %s in enrichment region.",
+        int(drop_mask.sum()),
+        ", ".join(excluded_processes),
+    )
+    return region_df.loc[~drop_mask].copy()
+
+
 def _validate_qcd_fraction_sign_regions(df, region_df):
     """Ensure the fractions training region differs from AR only by charge sign."""
     selected_ss = region_df.index[region_df["SS"]]
@@ -1005,7 +1160,11 @@ def _run_enrichment_process(
     feature_column_name: str = None,
     feature_file_prefix: str = None,
     additional_region_masks: Tuple[str, ...] = (),
+    extra_region_names: Tuple[str, ...] = (),
     validate_qcd_fraction_sign_regions: bool = False,
+    excluded_processes: Tuple[str, ...] = (),
+    data_loader=load_data,
+    qcd_weight_target_process: Union[int, None] = None,
 ):
     _set_training_seed(TRAINING_SEED)
 
@@ -1025,7 +1184,7 @@ def _run_enrichment_process(
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
 
 
-    df = load_data(DATA_PATH, MASKS_PATH)
+    df = data_loader(DATA_PATH, MASKS_PATH)
     training_variables = load_variables(TRAINING_VARIABLES_ENRICHMENT)
 
     raw = load_config(CONFIG_MODEL_PATH)
@@ -1043,10 +1202,16 @@ def _run_enrichment_process(
 
 
 
-    region_df = _select_enrichment_region(
+    region_names = (region_name, *tuple(extra_region_names))
+    region_df = _select_enrichment_regions(
         df,
-        region_name,
+        region_names,
         additional_masks=additional_region_masks,
+    )
+    region_df = _drop_processes_from_region(
+        region_df,
+        df,
+        excluded_processes=excluded_processes,
     )
     if validate_qcd_fraction_sign_regions:
         _validate_qcd_fraction_sign_regions(df, region_df)
@@ -1075,6 +1240,11 @@ def _run_enrichment_process(
             group_idx,
             grouping,
         )
+        target_weight_kwargs = {}
+        if qcd_weight_target_process is not None:
+            target_weight_kwargs["qcd_weight_target_process"] = (
+                qcd_weight_target_process
+            )
 
         even_model, qcd_weights_train_even, qcd_weights_val_even, train_rows_even, val_rows_even = train_fold_model_fn(
             cfg=config,
@@ -1087,6 +1257,7 @@ def _run_enrichment_process(
             checkpoint_dir=CHECKPOINT_DIR,
             fold_label=f'fold_even_{grouping_name}',
             seed=TRAINING_SEED,
+            **target_weight_kwargs,
         )
 
         odd_model, qcd_weights_train_odd, qcd_weights_val_odd, train_rows_odd, val_rows_odd = train_fold_model_fn(
@@ -1100,6 +1271,7 @@ def _run_enrichment_process(
             checkpoint_dir=CHECKPOINT_DIR,
             fold_label=f'fold_odd_{grouping_name}',
             seed=TRAINING_SEED,
+            **target_weight_kwargs,
         )
 
         model = FoldCombinedDNN(
@@ -1181,6 +1353,7 @@ def _run_enrichment_process(
                 "model_config_file": str(CONFIG_MODEL_PATH),
                 "region_name": region_name,
                 "additional_region_masks": list(additional_region_masks),
+                "excluded_processes": list(excluded_processes),
                 "feature_column": current_feature_column,
                 "feature_file": str(feature_store_path),
             },
@@ -1229,6 +1402,27 @@ def train_enrichment_qcd_fractions(
         feature_column_name="weight_qcd_fraction",
         feature_file_prefix="qcd_fraction_weights",
         validate_qcd_fraction_sign_regions=True,
+        output_root=output_root,
+    )
+
+
+def train_enrichment_qcd_extrapolation(
+    input_file_path: Path,
+    output_root: Path = None,
+):
+    """Train QCD extrapolation weights for same-sign AR and SR regions."""
+    return _run_enrichment_process(
+        process_name="qcd",
+        input_file_path=input_file_path,
+        train_fold_model_fn=train_fold_model_qcd,
+        region_name="AR_SS",
+        extra_region_names=("SR_SS",),
+        output_name="qcd_extrapolation",
+        feature_column_name="weight_qcd_extrapolation",
+        feature_file_prefix="qcd_extrapolation_weights",
+        excluded_processes=("embedding",),
+        data_loader=load_data_no_embedding,
+        qcd_weight_target_process=0,
         output_root=output_root,
     )
 

@@ -219,6 +219,7 @@ def calculate_and_store_fake_factors(
     regions: Iterable[str] = EVALUATION_REGIONS,
     batch_size: int = 65536,
     feature_suffix: str = "",
+    groupings: Iterable[str] = GROUPINGS,
 ) -> Path:
     """Evaluate Law-produced FF models and persist row-index keyed features."""
     combined_models_dir = Path(combined_models_dir)
@@ -226,8 +227,12 @@ def calculate_and_store_fake_factors(
     feature_registry_path = Path(feature_registry_path)
     process_fractions_path = Path(process_fractions_path)
     regions = tuple(regions)
+    groupings = tuple(groupings)
     if batch_size <= 0:
         raise ValueError(f"batch_size must be positive, got {batch_size}")
+    unsupported_groupings = sorted(set(groupings).difference(GROUPINGS))
+    if unsupported_groupings:
+        raise ValueError(f"Unsupported FF groupings: {unsupported_groupings}")
 
     df = load_data(data_path, masks_path)
     training_variables = tuple(load_variables(training_variables_path))
@@ -249,7 +254,7 @@ def calculate_and_store_fake_factors(
     })
 
     for process in PROCESSES:
-        for grouping in GROUPINGS:
+        for grouping in groupings:
             model_path = (
                 combined_models_dir
                 / PROCESS_MODEL_DIRS[process]
@@ -307,7 +312,7 @@ def calculate_and_store_fake_factors(
     if sr_ar_frame.empty:
         raise ValueError("No events selected in the SR or AR regions.")
 
-    for grouping in GROUPINGS:
+    for grouping in groupings:
         output_name = calculate_fake_factor_dnn(
             sr_ar_frame,
             grouping,
@@ -402,7 +407,6 @@ def calculate_and_store_classic_fake_factors(
     })
     registry = FeatureRegistry(feature_registry_path)
     store = FeatureStore(feature_store_path, registry)
-    store.write(feature_df)
     store.save()
     registry.save()
     logger.info(
@@ -414,4 +418,3 @@ def calculate_and_store_classic_fake_factors(
         classic_values.max(),
     )
     return feature_store_path
-

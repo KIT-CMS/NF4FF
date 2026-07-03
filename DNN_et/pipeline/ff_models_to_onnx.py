@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple, Union
 import numpy as np
 
 from classes import (
+    DRSRCorrectedFakeFactorModel,
     FoldCombinedDNN,
     LikelihoodRatioCalculation,
     convert_models_to_onnx,
@@ -427,5 +428,87 @@ def ff_models_to_onnx(
     logger.info(
         "Exported %d combined FF models and fold normalization constants.",
         len(outputs) - 1,
+    )
+    return outputs
+
+
+def corrected_ff_models_to_onnx(
+    *,
+    combined_model_dir: Union[str, Path],
+    drsr_model_dir: Union[str, Path],
+    output_dir: Union[str, Path],
+    grouping: str = "njets",
+) -> List[Path]:
+    """Build DRSR-corrected FF models and export Torch and ONNX versions."""
+    combined_model_dir = Path(combined_model_dir)
+    drsr_model_dir = Path(drsr_model_dir)
+    output_dir = Path(output_dir)
+
+    if grouping != "njets":
+        raise ValueError(
+            "DRSR-corrected combined models are only defined for the "
+            f"njets grouping, got {grouping!r}."
+        )
+
+    outputs = []
+    for process in PROCESSES:
+        process_name = PROCESS_OUTPUT_NAMES[process]
+        fake_factor_model_dir = (
+            combined_model_dir
+            / process_name
+            / grouping
+            / "torch_model"
+        )
+        correction_model_dir = drsr_model_dir / process
+        for path, description in (
+            (fake_factor_model_dir, "base combined FF model"),
+            (correction_model_dir, "DRSR correction model"),
+        ):
+            if not (path / "model_weights.pth").is_file():
+                raise FileNotFoundError(f"Missing {description}: {path}")
+
+        fake_factor_model = load_model(fake_factor_model_dir).eval()
+        correction_model = LikelihoodRatioCalculation(
+            load_model(correction_model_dir).eval(),
+            normalization_constants=1.0,
+            clip=(1.0e-8, 1.0e30),
+        )
+        corrected_model = DRSRCorrectedFakeFactorModel(
+            fake_factor_model=fake_factor_model,
+            correction_model=correction_model,
+        ).eval()
+
+        model_output_dir = output_dir / process_name / grouping
+        save_model(corrected_model, model_output_dir / "torch_model")
+        torch_path = model_output_dir / "torch_model" / "model_weights.pth"
+        outputs.append(torch_path)
+
+        onnx_path = model_output_dir / "onnx_model" / "model.onnx"
+        onnx_path.parent.mkdir(parents=True, exist_ok=True)
+        convert_models_to_onnx(
+            torch_model=corrected_model,
+            onnx_model_path=onnx_path,
+        )
+        outputs.append(onnx_path)
+
+    metadata = {
+        "combined_model_dir": str(combined_model_dir),
+        "drsr_model_dir": str(drsr_model_dir),
+        "grouping": grouping,
+        "processes": list(PROCESSES),
+        "correction": (
+            "corrected_model(x) = combined_fake_factor_model(x) * "
+            "DRSR_model(x)/(1 - DRSR_model(x))"
+        ),
+    }
+    metadata_path = output_dir / "metadata.json"
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")
+    outputs.append(metadata_path)
+
+    logger.info(
+        "Exported %d DRSR-corrected combined FF models to %s.",
+        len(PROCESSES),
+        output_dir,
     )
     return outputs

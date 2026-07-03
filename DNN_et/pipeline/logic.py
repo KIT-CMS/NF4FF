@@ -5,14 +5,20 @@ import yaml
 from pathlib import Path
 
 from BuildDataset import build_dataset
+from BuildDataset_no_embedding import (
+    REQUIRED_TRUE_TAU_PROCESSES,
+    build_dataset as build_dataset_no_embedding,
+)
 from NF_training_njets import train_conditional_flows
 from enrichment import (
     train_enrichment_qcd,
+    train_enrichment_qcd_extrapolation,
     train_enrichment_qcd_fractions,
     train_enrichment_wjets,
 )
 from ReducedDataset import reduced_data_wjets, reduced_data_qcd
 from plot_reduced_training_qcd import (
+    create_qcd_extrapolation_training_plots,
     create_qcd_fraction_training_plots,
     create_qcd_training_plots,
 )
@@ -24,6 +30,16 @@ from training_squeezed_loss import (
 from training_squeezed_loss_single_dnn import (
     train_squeezed_single_dnn_models,
 )
+from training_DRSR_squeezed_loss import (
+    drsr_loss_limit_label,
+    train_drsr_squeezed_models,
+)
+from drsr_corrections import (
+    calculate_and_store_drsr_corrected_training_fraction_fake_factors,
+    calculate_and_store_drsr_correction_factors,
+    drsr_corrected_training_fraction_fake_factor_name,
+    drsr_correction_name,
+)
 from multiclass_classification import (
     qcd_fraction_data_frame,
     train_fraction_classifier,
@@ -34,12 +50,14 @@ from plot_fractions import (
     plot_fraction_comparisons,
 )
 from training_fraction_fake_factors import (
+    calculate_and_store_extrapolation_corrected_training_fraction_fake_factors,
     calculate_and_store_corrected_training_fraction_fake_factors,
     calculate_and_store_training_fraction_fake_factors,
     corrected_training_fraction_fake_factor_name,
+    extrapolation_corrected_training_fraction_fake_factor_name,
     training_fraction_fake_factor_name,
 )
-from ff_models_to_onnx import ff_models_to_onnx
+from ff_models_to_onnx import corrected_ff_models_to_onnx, ff_models_to_onnx
 from single_dnn_workflow import (
     calculate_single_dnn_fake_factors,
     convert_single_dnn_models,
@@ -67,7 +85,10 @@ from calculate_ff_corrected import (
 )
 from plotting import (
     create_corrected_fake_factor_closure_plots,
+    create_drsr_correction_distribution_plots,
+    create_extrapolation_corrected_mlf_closure_plots,
     create_fake_factor_opposite_grouping_distribution_plots,
+    create_drsr_process_fake_factor_distribution_plots,
     create_fake_factor_plots,
     create_high_ff_closure_plots,
     create_high_fake_factor_distribution_plots,
@@ -125,6 +146,37 @@ def taylor_category_scope(category):
     return 'full_dataset' if category == 'inclusive' else category
 
 
+def ar_feature_file_is_complete(feature_path, column):
+    """Check that a row-index keyed feature file covers all current AR rows."""
+    import numpy as np
+    import pandas as pd
+    from classes import load_data
+
+    feature_path = Path(feature_path)
+    data_path = WORKFLOW_DATA_ROOT / 'dataframe_complete.feather'
+    masks_path = PROJECT_ROOT / 'configs' / 'masks.yaml'
+    if not feature_path.is_file() or not data_path.is_file():
+        return False
+
+    try:
+        feature_frame = pd.read_feather(feature_path)
+        if 'row_index' not in feature_frame.columns or column not in feature_frame.columns:
+            return False
+
+        df = load_data(data_path, masks_path)
+        required_indices = df.events.index[df.mask('AR')]
+        compact = (
+            feature_frame[['row_index', column]]
+            .drop_duplicates('row_index', keep='last')
+            .set_index('row_index')
+        )
+        aligned = compact.reindex(required_indices)
+        values = aligned[column].to_numpy(dtype=np.float64)
+        return np.isfinite(values).all()
+    except Exception:
+        return False
+
+
 class BuildDataset(law.Task):
 
     config_path = law.Parameter(default="../configs/root_data_path.yaml")
@@ -142,6 +194,69 @@ class BuildDataset(law.Task):
         df.to_feather(self.output().path)
 
         print("BUILD OUTPUT:", self.output().path)
+
+
+class BuildDatasetNoEmbedding(law.Task):
+    """Build the no-embedding dataframe used by QCD extrapolation tasks."""
+
+    config_path = law.Parameter(default="../configs/root_data_path.yaml")
+    required_process_ids = frozenset(REQUIRED_TRUE_TAU_PROCESSES.values())
+    schema_marker_name = ".schema_v1_no_embedding_true_tau_processes"
+
+    def output(self):
+        out_dir = WORKFLOW_DATA_ROOT
+        return law.LocalFileTarget(
+            out_dir / "dataframe_complete_no_embedding.feather"
+        )
+
+    def _schema_marker_path(self):
+        return Path(self.output().path).parent / self.schema_marker_name
+
+    def _missing_required_process_ids(self):
+        import pandas as pd
+
+        processes = set(
+            pd.read_feather(
+                self.output().path,
+                columns=["process"],
+            )["process"].unique()
+        )
+        return sorted(self.required_process_ids.difference(processes))
+
+    def complete(self):
+        if not super().complete():
+            return False
+
+        try:
+            missing = self._missing_required_process_ids()
+        except Exception:
+            return False
+
+        return not missing and self._schema_marker_path().is_file()
+
+    def run(self):
+
+        df = build_dataset_no_embedding(self.config_path)
+
+        missing = sorted(
+            self.required_process_ids.difference(set(df["process"].unique()))
+        )
+        if missing:
+            raise RuntimeError(
+                "BuildDatasetNoEmbedding did not produce the required true-tau "
+                f"process ids {missing}. Check that diboson_T.root, "
+                "DYjets_T.root, ST_T.root, and ttbar_T.root are present in "
+                "the configured no-embedding data input directory."
+            )
+
+        Path(self.output().path).parent.mkdir(parents=True, exist_ok=True)
+
+        df.to_feather(self.output().path)
+        self._schema_marker_path().write_text(
+            "dataframe_complete_no_embedding.feather contains process ids 11, 12, 13, 14\n"
+        )
+
+        print("BUILD NO-EMBEDDING OUTPUT:", self.output().path)
 
 
 
@@ -236,6 +351,58 @@ class TrainEnrichmentQCDFractions(TrainEnrichmentProcess):
             PROJECT_ROOT / 'configs' / 'masks.yaml',
         )
         validate_qcd_fraction_weights(qcd_fraction_data_frame(df))
+
+
+class TrainEnrichmentQCDExtrapolation(TrainEnrichmentProcess):
+    """Train QCD extrapolation weights for same-sign AR and SR regions."""
+
+    process_name = "qcd_extrapolation"
+    trainer = staticmethod(train_enrichment_qcd_extrapolation)
+
+    def requires(self):
+        return BuildDatasetNoEmbedding()
+
+    def output(self):
+        outputs = super().output()
+        outputs["features_schema"] = law.LocalFileTarget(
+            WORKFLOW_FEATURE_ROOT
+            / self.process_name
+            / ".row_index_schema_v1_no_embedding"
+        )
+        outputs.update({
+            f"feature_{grouping}": law.LocalFileTarget(
+                WORKFLOW_FEATURE_ROOT
+                / self.process_name
+                / f"qcd_extrapolation_weights_{grouping}.feather"
+            )
+            for grouping in ENRICHMENT_GROUPINGS
+        })
+        return outputs
+
+    def validate_training_result(self, result):
+        from classes import load_data_no_embedding
+        import numpy as np
+
+        weight_column = "weight_qcd_extrapolation_njets"
+        df = load_data_no_embedding(
+            WORKFLOW_DATA_ROOT / 'dataframe_complete_no_embedding.feather',
+            PROJECT_ROOT / 'configs' / 'masks.yaml',
+            feature_registry_path=(
+                WORKFLOW_FEATURE_ROOT / 'feature_registry.json'
+            ),
+        )
+        df[weight_column]
+        for region_name in ("AR_SS", "SR_SS"):
+            frame = getattr(df.data, region_name).events
+            finite = np.isfinite(
+                frame[weight_column].to_numpy(dtype=np.float64)
+            )
+            if not finite.all():
+                raise ValueError(
+                    f"{weight_column} contains non-finite weights for "
+                    f"{int((~finite).sum())}/{len(frame)} "
+                    f"data {region_name} events."
+                )
 
 
 class ReducedDataset(law.Task):
@@ -354,6 +521,46 @@ class PlotTrainingResultsQCD2(law.Task):
             output_dir=WORKFLOW_ROOT / 'plots' / 'enrichment_qcd2',
             model_dir=WORKFLOW_ROOT / 'Enrichment_models' / 'qcd_fraction',
             qcd_weight_store_dir=WORKFLOW_FEATURE_ROOT / 'qcd_fraction',
+            training_variables_path=(
+                PROJECT_ROOT
+                / 'configs'
+                / 'training_variables_enrichment.yaml'
+            ),
+            n_bins=self.n_bins,
+        )
+
+
+class PlotTrainingResultsQCDExtrapolation(law.Task):
+    """Plot QCD enrichment diagnostics in DR_qcd_extrapolation."""
+
+    n_bins = luigi.IntParameter(default=20)
+
+    def requires(self):
+        return TrainEnrichmentQCDExtrapolation()
+
+    def output(self):
+        output_dir = WORKFLOW_ROOT / 'plots' / 'enrichment_qcd_extrapolation'
+        return {
+            f"{plot_name}_{grouping}_{extension}": law.LocalFileTarget(
+                output_dir
+                / f"{plot_name}_qcd_extrapolation_{grouping}.{extension}"
+            )
+            for grouping in ENRICHMENT_GROUPINGS
+            for plot_name in ('training_composition', 'reduced_closure')
+            for extension in ('png', 'pdf')
+        }
+
+    def run(self):
+        create_qcd_extrapolation_training_plots(
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete_no_embedding.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            output_dir=WORKFLOW_ROOT / 'plots' / 'enrichment_qcd_extrapolation',
+            model_dir=(
+                WORKFLOW_ROOT / 'Enrichment_models' / 'qcd_extrapolation'
+            ),
+            qcd_weight_store_dir=(
+                WORKFLOW_FEATURE_ROOT / 'qcd_extrapolation'
+            ),
             training_variables_path=(
                 PROJECT_ROOT
                 / 'configs'
@@ -1691,6 +1898,73 @@ class ConvertFFModelsToONNX(law.Task):
         )
 
 
+class ConvertCorrectedFFModelsToONNX(law.Task):
+    """Build and export DRSR-corrected combined FF models."""
+
+    squeezing = luigi.FloatParameter(default=0.99)
+    squeezing_loss_limit = luigi.FloatParameter(default=0.1)
+    grouping = luigi.ChoiceParameter(default='njets', choices=('njets',))
+
+    def requires(self):
+        return {
+            'combined_models': ConvertFFModelsToONNX(
+                squeezing=self.squeezing,
+            ),
+            'drsr_models': TrainDRSRSqueezedModels(
+                squeezing=self.squeezing,
+                squeezing_loss_limit=self.squeezing_loss_limit,
+            ),
+        }
+
+    def output(self):
+        output_dir = (
+            WORKFLOW_ROOT
+            / 'CombinedModelsCorrected'
+            / squeezing_label(self.squeezing)
+        )
+        output_dir = drsr_limit_subdir(output_dir, self.squeezing_loss_limit)
+        outputs = {
+            f"{process}_{self.grouping}_onnx": law.LocalFileTarget(
+                output_dir
+                / FF_MODEL_OUTPUT_NAMES[process]
+                / self.grouping
+                / 'onnx_model'
+                / 'model.onnx'
+            )
+            for process in ('wjets', 'qcd', 'ttbar')
+        }
+        outputs.update({
+            f"{process}_{self.grouping}_torch": law.LocalFileTarget(
+                output_dir
+                / FF_MODEL_OUTPUT_NAMES[process]
+                / self.grouping
+                / 'torch_model'
+                / 'model_weights.pth'
+            )
+            for process in ('wjets', 'qcd', 'ttbar')
+        })
+        outputs['metadata'] = law.LocalFileTarget(
+            output_dir / 'metadata.json'
+        )
+        return outputs
+
+    def run(self):
+        combined_model_dir = Path(
+            self.input()['combined_models']['normalization_constants'].path
+        ).parent
+        drsr_model_dir = drsr_squeezed_model_dir(
+            self.squeezing,
+            self.squeezing_loss_limit,
+        )
+        output_dir = Path(self.output()['metadata'].path).parent
+        corrected_ff_models_to_onnx(
+            combined_model_dir=combined_model_dir,
+            drsr_model_dir=drsr_model_dir,
+            output_dir=output_dir,
+            grouping=self.grouping,
+        )
+
+
 class CalculateFakeFactors(law.Task):
     """Evaluate combined FF models and add their outputs as lazy features."""
 
@@ -1745,8 +2019,202 @@ class CalculateFakeFactors(law.Task):
         )
 
 
+class CalculateExtrapolationCorrectedFakeFactors(law.Task):
+    """Evaluate DRSR/extrapolation-corrected FF models for njets only."""
+
+    squeezing = luigi.FloatParameter(default=0.99)
+    squeezing_loss_limit = luigi.FloatParameter(default=0.1)
+    batch_size = luigi.IntParameter(default=65536, significant=False)
+    process_fractions_path = law.Parameter(
+        default=(
+            "/work/mmoser/TauFakeFactors.back/workdir/"
+            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
+        )
+    )
+
+    def requires(self):
+        return ConvertCorrectedFFModelsToONNX(
+            squeezing=self.squeezing,
+            squeezing_loss_limit=self.squeezing_loss_limit,
+            grouping='njets',
+        )
+
+    def output(self):
+        output_dir = (
+            WORKFLOW_FEATURE_ROOT
+            / 'fake_factors_extrapolation_corrected'
+            / squeezing_label(self.squeezing)
+        )
+        output_dir = drsr_limit_subdir(output_dir, self.squeezing_loss_limit)
+        return {
+            'features': law.LocalFileTarget(
+                output_dir / 'fake_factors_extrapolation_corrected.feather'
+            ),
+            'schema': law.LocalFileTarget(
+                output_dir / '.schema_v1_njets_squeezing_feature_names'
+            ),
+        }
+
+    def run(self):
+        combined_models_dir = Path(
+            self.input()['metadata'].path
+        ).parent
+        calculate_and_store_fake_factors(
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            training_variables_path=(
+                PROJECT_ROOT / 'configs' / 'training_variables.yaml'
+            ),
+            combined_models_dir=combined_models_dir,
+            feature_store_path=self.output()['features'].path,
+            feature_registry_path=(
+                WORKFLOW_FEATURE_ROOT / 'feature_registry.json'
+            ),
+            process_fractions_path=self.process_fractions_path,
+            batch_size=self.batch_size,
+            feature_suffix=squeezing_feature_suffix(self.squeezing),
+            groupings=('njets',),
+        )
+        Path(self.output()['schema'].path).write_text(
+            "DRSR/extrapolation-corrected njets process FF features plus "
+            "combined ff_dnn_njets in SR/AR\n"
+        )
+
+
+def drsr_squeezed_model_dir(
+    squeezing,
+    squeezing_loss_limit=0.1,
+):
+    return (
+        WORKFLOW_ROOT
+        / 'DRSR_models_squeezed'
+        / squeezing_label(squeezing)
+        / drsr_loss_limit_label(squeezing_loss_limit)
+    )
+
+
+def drsr_limit_subdir(base_dir, squeezing_loss_limit):
+    return Path(base_dir) / drsr_loss_limit_label(squeezing_loss_limit)
+
+
+class TrainDRSRSqueezedModels(law.Task):
+    """Train DR-vs-SR models using grouped-DNN FF-weighted backgrounds."""
+
+    squeezing = luigi.FloatParameter(default=0.99)
+    squeezing_loss_limit = luigi.FloatParameter(default=0.1)
+
+    def requires(self):
+        return {
+            'combined_models': ConvertFFModelsToONNX(
+                squeezing=self.squeezing,
+            ),
+            'qcd_extrapolation': TrainEnrichmentQCDExtrapolation(),
+        }
+
+    def output(self):
+        output_dir = drsr_squeezed_model_dir(
+            self.squeezing,
+            self.squeezing_loss_limit,
+        )
+        outputs = {
+            f'{process}_torch': law.LocalFileTarget(
+                output_dir / process / 'model_weights.pth'
+            )
+            for process in ('wjets', 'qcd', 'ttbar')
+        }
+        outputs['metadata'] = law.LocalFileTarget(
+            output_dir / 'metadata.json'
+        )
+        return outputs
+
+    def run(self):
+        combined_model_dir = Path(
+            self.input()['combined_models']['normalization_constants'].path
+        ).parent
+        qcd_extrapolation_feature_path = (
+            WORKFLOW_FEATURE_ROOT
+            / 'qcd_extrapolation'
+            / 'qcd_extrapolation_weights_njets.feather'
+        )
+        output_dir = drsr_squeezed_model_dir(
+            self.squeezing,
+            self.squeezing_loss_limit,
+        )
+        train_drsr_squeezed_models(
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            training_var_path=(
+                PROJECT_ROOT / 'configs' / 'training_variables.yaml'
+            ),
+            nn_config_path=PROJECT_ROOT / 'configs' / 'DNN.yaml',
+            combined_model_dir=combined_model_dir,
+            qcd_extrapolation_feature_path=qcd_extrapolation_feature_path,
+            output_dir=output_dir.parent,
+            squeezing_loss_limit=self.squeezing_loss_limit,
+        )
+
+
+class CalculateDRSRCorrectionFactors(law.Task):
+    """Evaluate DRSR correction factors C=NN/(1-NN) on all AR rows."""
+
+    squeezing = luigi.FloatParameter(default=0.99)
+    squeezing_loss_limit = luigi.FloatParameter(default=0.1)
+    batch_size = luigi.IntParameter(default=65536, significant=False)
+
+    def requires(self):
+        return TrainDRSRSqueezedModels(
+            squeezing=self.squeezing,
+            squeezing_loss_limit=self.squeezing_loss_limit,
+        )
+
+    def output(self):
+        output_dir = (
+            WORKFLOW_FEATURE_ROOT
+            / 'drsr_corrections'
+            / squeezing_label(self.squeezing)
+        )
+        output_dir = drsr_limit_subdir(output_dir, self.squeezing_loss_limit)
+        return {
+            'features': law.LocalFileTarget(
+                output_dir / 'drsr_corrections.feather'
+            ),
+            'schema': law.LocalFileTarget(
+                output_dir / '.schema_v2_all_ar'
+            ),
+        }
+
+    def run(self):
+        drsr_model_dir = drsr_squeezed_model_dir(
+            self.squeezing,
+            self.squeezing_loss_limit,
+        )
+        feature_path = calculate_and_store_drsr_correction_factors(
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            training_variables_path=(
+                PROJECT_ROOT / 'configs' / 'training_variables.yaml'
+            ),
+            drsr_model_dir=drsr_model_dir,
+            feature_store_path=self.output()['features'].path,
+            feature_registry_path=(
+                WORKFLOW_FEATURE_ROOT / 'feature_registry.json'
+            ),
+            squeezing=self.squeezing,
+            batch_size=self.batch_size,
+        )
+        correction_columns = [
+            drsr_correction_name(process, squeezing=self.squeezing)
+            for process in ('wjets', 'qcd', 'ttbar')
+        ]
+        Path(self.output()['schema'].path).write_text(
+            ", ".join(correction_columns)
+            + " calculated for all AR rows\n"
+        )
+        print("DRSR CORRECTION OUTPUT:", feature_path)
+
+
 class CalculateTrainingFractionFakeFactors(law.Task):
-    """Combine process FFs with NN-trained process fractions in data AR."""
+    """Combine process FFs with NN-trained process fractions in all AR rows."""
 
     grouping = luigi.ChoiceParameter(
         default='njets',
@@ -1789,6 +2257,19 @@ class CalculateTrainingFractionFakeFactors(law.Task):
                 output_dir / f'.schema_v2_all_ar_{feature_name}'
             ),
         }
+
+    def complete(self):
+        feature_name = training_fraction_fake_factor_name(
+            grouping=self.grouping,
+            squeezing=self.squeezing,
+        )
+        return (
+            super().complete()
+            and ar_feature_file_is_complete(
+                self.output()['features'].path,
+                feature_name,
+            )
+        )
 
     def run(self):
         feature_path = calculate_and_store_training_fraction_fake_factors(
@@ -1861,9 +2342,22 @@ class CalculateCorrectedTrainingFractionFakeFactors(law.Task):
                 output_dir / f'{feature_name}.feather'
             ),
             'schema': law.LocalFileTarget(
-                output_dir / f'.schema_v1_{feature_name}'
+                output_dir / f'.schema_v2_all_ar_{feature_name}'
             ),
         }
+
+    def complete(self):
+        feature_name = corrected_training_fraction_fake_factor_name(
+            grouping=self.grouping,
+            squeezing=self.squeezing,
+        )
+        return (
+            super().complete()
+            and ar_feature_file_is_complete(
+                self.output()['features'].path,
+                feature_name,
+            )
+        )
 
     def run(self):
         feature_path = (
@@ -1883,6 +2377,7 @@ class CalculateCorrectedTrainingFractionFakeFactors(law.Task):
                 ),
                 grouping=self.grouping,
                 squeezing=self.squeezing,
+                squeezing_loss_limit=self.squeezing_loss_limit,
             )
         )
         Path(self.output()['schema'].path).write_text(
@@ -1890,6 +2385,198 @@ class CalculateCorrectedTrainingFractionFakeFactors(law.Task):
             "keyed by dataframe row index\n"
         )
         print("CORRECTED TRAINING FRACTION FAKE FACTOR OUTPUT:", feature_path)
+
+
+class CalculateExtrapolationCorrectedTrainingFractionFakeFactors(law.Task):
+    """
+    Combine ML fractions with DRSR/extrapolation-corrected process FF models
+    and TauFakeFactors non-closure corrections from the extrapolation workdir.
+    """
+
+    grouping = luigi.ChoiceParameter(default='njets', choices=('njets',))
+    squeezing = luigi.FloatParameter(default=0.99)
+    squeezing_loss_limit = luigi.FloatParameter(default=0.1)
+    correction_set_root = law.Parameter(
+        default="/work/mmoser/TauFakeFactors/workdirs_with_extrapolation_correction"
+    )
+    process_fractions_path = law.Parameter(
+        default=(
+            "/work/mmoser/TauFakeFactors.back/workdir/"
+            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
+        )
+    )
+
+    def requires(self):
+        return {
+            'fractions': PlotFractions(
+                process_fractions_path=self.process_fractions_path,
+            ),
+            'fake_factors': CalculateExtrapolationCorrectedFakeFactors(
+                squeezing=self.squeezing,
+                squeezing_loss_limit=self.squeezing_loss_limit,
+                process_fractions_path=self.process_fractions_path,
+            ),
+        }
+
+    def output(self):
+        feature_name = extrapolation_corrected_training_fraction_fake_factor_name(
+            grouping=self.grouping,
+            squeezing=self.squeezing,
+        )
+        output_dir = (
+            WORKFLOW_FEATURE_ROOT
+            / 'training_fraction_fake_factors_extrapolation_corrected'
+            / squeezing_label(self.squeezing)
+        )
+        output_dir = drsr_limit_subdir(output_dir, self.squeezing_loss_limit)
+        return {
+            'features': law.LocalFileTarget(
+                output_dir / f'{feature_name}.feather'
+            ),
+            'schema': law.LocalFileTarget(
+                output_dir / f'.schema_v1_all_ar_{feature_name}'
+            ),
+        }
+
+    def complete(self):
+        feature_name = extrapolation_corrected_training_fraction_fake_factor_name(
+            grouping=self.grouping,
+            squeezing=self.squeezing,
+        )
+        return (
+            super().complete()
+            and ar_feature_file_is_complete(
+                self.output()['features'].path,
+                feature_name,
+            )
+        )
+
+    def run(self):
+        feature_path = (
+            calculate_and_store_extrapolation_corrected_training_fraction_fake_factors(
+                data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+                masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+                fraction_feature_path=self.input()['fractions']['features'].path,
+                fake_factor_feature_path=(
+                    self.input()['fake_factors']['features'].path
+                ),
+                correction_set_root=self.correction_set_root,
+                feature_store_path=self.output()['features'].path,
+                feature_registry_path=(
+                    WORKFLOW_FEATURE_ROOT / 'feature_registry.json'
+                ),
+                grouping=self.grouping,
+                squeezing=self.squeezing,
+            )
+        )
+        feature_name = extrapolation_corrected_training_fraction_fake_factor_name(
+            grouping=self.grouping,
+            squeezing=self.squeezing,
+        )
+        Path(self.output()['schema'].path).write_text(
+            f"{feature_name} calculated for all AR rows using "
+            "DRSR/extrapolation-corrected process models and "
+            "TauFakeFactors non-closure corrections from "
+            f"{self.correction_set_root}\n"
+        )
+        print(
+            "EXTRAPOLATION-CORRECTED TRAINING FRACTION FAKE FACTOR OUTPUT:",
+            feature_path,
+        )
+
+
+class CalculateDRSRCorrectedTrainingFractionFakeFactors(law.Task):
+    """Apply DRSR process corrections to the MLF-combined fake factor."""
+
+    grouping = luigi.ChoiceParameter(
+        default='njets',
+        choices=GROUPING_NAMES,
+    )
+    squeezing = luigi.FloatParameter(default=0.99)
+    squeezing_loss_limit = luigi.FloatParameter(default=0.1)
+    process_fractions_path = law.Parameter(
+        default=(
+            "/work/mmoser/TauFakeFactors.back/workdir/"
+            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
+        )
+    )
+
+    def requires(self):
+        return {
+            'fractions': PlotFractions(
+                process_fractions_path=self.process_fractions_path,
+            ),
+            'fake_factors': CalculateFakeFactors(
+                squeezing=self.squeezing,
+                process_fractions_path=self.process_fractions_path,
+            ),
+            'drsr_corrections': CalculateDRSRCorrectionFactors(
+                squeezing=self.squeezing,
+                squeezing_loss_limit=self.squeezing_loss_limit,
+            ),
+        }
+
+    def output(self):
+        feature_name = drsr_corrected_training_fraction_fake_factor_name(
+            grouping=self.grouping,
+            squeezing=self.squeezing,
+        )
+        output_dir = (
+            WORKFLOW_FEATURE_ROOT
+            / 'training_fraction_fake_factors_drsr_corrected'
+            / squeezing_label(self.squeezing)
+        )
+        output_dir = drsr_limit_subdir(output_dir, self.squeezing_loss_limit)
+        return {
+            'features': law.LocalFileTarget(
+                output_dir / f'{feature_name}.feather'
+            ),
+            'schema': law.LocalFileTarget(
+                output_dir / f'.schema_v2_all_ar_{feature_name}'
+            ),
+        }
+
+    def complete(self):
+        feature_name = drsr_corrected_training_fraction_fake_factor_name(
+            grouping=self.grouping,
+            squeezing=self.squeezing,
+        )
+        return (
+            super().complete()
+            and ar_feature_file_is_complete(
+                self.output()['features'].path,
+                feature_name,
+            )
+        )
+
+    def run(self):
+        feature_path = (
+            calculate_and_store_drsr_corrected_training_fraction_fake_factors(
+                data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+                masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+                fraction_feature_path=self.input()['fractions']['features'].path,
+                fake_factor_feature_path=(
+                    self.input()['fake_factors']['features'].path
+                ),
+                drsr_correction_feature_path=(
+                    self.input()['drsr_corrections']['features'].path
+                ),
+                feature_store_path=self.output()['features'].path,
+                feature_registry_path=(
+                    WORKFLOW_FEATURE_ROOT / 'feature_registry.json'
+                ),
+                grouping=self.grouping,
+                squeezing=self.squeezing,
+            )
+        )
+        feature_name = drsr_corrected_training_fraction_fake_factor_name(
+            grouping=self.grouping,
+            squeezing=self.squeezing,
+        )
+        Path(self.output()['schema'].path).write_text(
+            f"{feature_name} calculated for all AR rows\n"
+        )
+        print("DRSR-CORRECTED TRAINING FRACTION FAKE FACTOR OUTPUT:", feature_path)
 
 
 class PlotClosure(law.Task):
@@ -1900,7 +2587,7 @@ class PlotClosure(law.Task):
         choices=('njets',),
     )
     squeezing = luigi.OptionalFloatParameter(default=0.99)
-    variable_set = luigi.Parameter(default='variables_set_small')
+    variable_set = luigi.Parameter(default='variables_set_large')
     correction_set_root = law.Parameter(
         default="/work/mmoser/TauFakeFactors/workdirs"
     )
@@ -1956,6 +2643,81 @@ class PlotClosure(law.Task):
             manifest_path=self.output().path,
             variable_set=self.variable_set,
             mlf_column=corrected_training_fraction_fake_factor_name(
+                grouping=self.grouping,
+                squeezing=self.squeezing,
+            ),
+        )
+
+
+class PlotExtrapolationCorrectedClosure(law.Task):
+    """Plot closures for extrapolation-corrected MLF fake factors."""
+
+    grouping = luigi.ChoiceParameter(default='njets', choices=('njets',))
+    squeezing = luigi.FloatParameter(default=0.99)
+    squeezing_loss_limit = luigi.FloatParameter(default=0.1)
+    variable_set = luigi.Parameter(default='variables_set_large')
+    correction_set_root = law.Parameter(
+        default="/work/mmoser/TauFakeFactors/workdirs_with_extrapolation_correction"
+    )
+    process_fractions_path = law.Parameter(
+        default=(
+            "/work/mmoser/TauFakeFactors.back/workdir/"
+            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
+        )
+    )
+    classic_corrections_path = law.Parameter(
+        default=(
+            "/work/mmoser/TauFakeFactors.back/workdir/"
+            "ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz"
+        )
+    )
+
+    def requires(self):
+        return {
+            'mlf_extrapolation_corrected': (
+                CalculateExtrapolationCorrectedTrainingFractionFakeFactors(
+                    grouping=self.grouping,
+                    squeezing=self.squeezing,
+                    squeezing_loss_limit=self.squeezing_loss_limit,
+                    correction_set_root=self.correction_set_root,
+                    process_fractions_path=self.process_fractions_path,
+                )
+            ),
+            'classic': CalculateClassicFakeFactors(
+                fake_factors_path=self.process_fractions_path,
+                corrections_path=self.classic_corrections_path,
+            ),
+        }
+
+    def output(self):
+        output_dir = (
+            WORKFLOW_ROOT
+            / 'plots'
+            / 'training_fraction_fake_factors_extrapolation_corrected'
+            / squeezing_label(self.squeezing)
+        )
+        output_dir = drsr_limit_subdir(output_dir, self.squeezing_loss_limit)
+        return law.LocalFileTarget(
+            output_dir
+            / self.grouping
+            / self.variable_set
+            / 'manifest_closures_v1.json'
+        )
+
+    def run(self):
+        create_extrapolation_corrected_mlf_closure_plots(
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            mlf_feature_path=(
+                self.input()['mlf_extrapolation_corrected']['features'].path
+            ),
+            classic_feature_path=self.input()['classic']['features'].path,
+            plotting_config_path=PROJECT_ROOT / 'configs' / 'plotting.yaml',
+            labels_path=PROJECT_ROOT / 'configs' / 'labels.yaml',
+            output_dir=Path(self.output().path).parent,
+            manifest_path=self.output().path,
+            variable_set=self.variable_set,
+            mlf_column=extrapolation_corrected_training_fraction_fake_factor_name(
                 grouping=self.grouping,
                 squeezing=self.squeezing,
             ),
@@ -2234,6 +2996,121 @@ class PlotFakeFactorDistributionsAllSplits(
     PlotFakeFactorDistributionsOppositeGrouping
 ):
     """Backward-compatible task name for opposite-grouping distributions."""
+
+
+class PlotDRSRProcessFakeFactorDistributions(law.Task):
+    """Plot process FF distributions before and after DRSR correction."""
+
+    process = luigi.ChoiceParameter(
+        default='wjets',
+        choices=('wjets', 'qcd', 'ttbar'),
+    )
+    squeezing = luigi.FloatParameter(default=0.99)
+    squeezing_loss_limit = luigi.FloatParameter(default=0.1)
+    value_min = luigi.FloatParameter(default=0.0)
+    value_max = luigi.FloatParameter(default=10.0)
+    n_bins = luigi.IntParameter(default=80)
+    process_fractions_path = law.Parameter(
+        default=(
+            "/work/mmoser/TauFakeFactors.back/workdir/"
+            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
+        )
+    )
+
+    def requires(self):
+        return {
+            'fake_factors': CalculateFakeFactors(
+                squeezing=self.squeezing,
+                process_fractions_path=self.process_fractions_path,
+            ),
+            'drsr_corrections': CalculateDRSRCorrectionFactors(
+                squeezing=self.squeezing,
+                squeezing_loss_limit=self.squeezing_loss_limit,
+            ),
+        }
+
+    def output(self):
+        output_dir = (
+            WORKFLOW_ROOT
+            / 'plots'
+            / 'drsr_process_fake_factor_distributions'
+            / squeezing_label(self.squeezing)
+        )
+        output_dir = drsr_limit_subdir(output_dir, self.squeezing_loss_limit)
+        return law.LocalFileTarget(
+            output_dir
+            / self.process
+            / f'{self.value_min:g}_{self.value_max:g}'
+            / 'manifest_njets_v3_split_axis_legend_bins.json'
+        )
+
+    def run(self):
+        create_drsr_process_fake_factor_distribution_plots(
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            fake_factor_feature_path=(
+                self.input()['fake_factors']['features'].path
+            ),
+            drsr_correction_feature_path=(
+                self.input()['drsr_corrections']['features'].path
+            ),
+            output_dir=Path(self.output().path).parent,
+            manifest_path=self.output().path,
+            process=self.process,
+            squeezing=self.squeezing,
+            value_min=self.value_min,
+            value_max=self.value_max,
+            n_bins=self.n_bins,
+        )
+
+
+class PlotDRSRCorrectionDistributions(law.Task):
+    """Plot DRSR correction-factor distributions without FF distributions."""
+
+    process = luigi.ChoiceParameter(
+        default='all',
+        choices=('all', 'wjets', 'qcd', 'ttbar'),
+    )
+    squeezing = luigi.FloatParameter(default=0.99)
+    squeezing_loss_limit = luigi.FloatParameter(default=0.1)
+    value_min = luigi.FloatParameter(default=0.0)
+    value_max = luigi.FloatParameter(default=2.0)
+    n_bins = luigi.IntParameter(default=100)
+
+    def requires(self):
+        return CalculateDRSRCorrectionFactors(
+            squeezing=self.squeezing,
+            squeezing_loss_limit=self.squeezing_loss_limit,
+        )
+
+    def output(self):
+        output_dir = (
+            WORKFLOW_ROOT
+            / 'plots'
+            / 'drsr_correction_distributions'
+            / squeezing_label(self.squeezing)
+        )
+        output_dir = drsr_limit_subdir(output_dir, self.squeezing_loss_limit)
+        return law.LocalFileTarget(
+            output_dir
+            / self.process
+            / f'{self.value_min:g}_{self.value_max:g}'
+            / f'manifest_inclusive_v2_linear_{self.n_bins}_bins.json'
+        )
+
+    def run(self):
+        create_drsr_correction_distribution_plots(
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            drsr_correction_feature_path=self.input()['features'].path,
+            output_dir=Path(self.output().path).parent,
+            manifest_path=self.output().path,
+            process=self.process,
+            squeezing=self.squeezing,
+            value_min=self.value_min,
+            value_max=self.value_max,
+            n_bins=self.n_bins,
+        )
 
 
 class PlotHighFakeFactorClosures(law.Task):
