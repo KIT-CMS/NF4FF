@@ -44,6 +44,17 @@ PROCESS_COMPONENTS = (
     ("ST", "Single top", "#717581"),
     ("ttbar", r"$t\bar{t}$", "#832db6"),
 )
+PROCESS_COMPONENTS_QCD_EXTRAPOLATION = (
+    ("wjets", "W+jets", "#e76300"),
+    ("diboson", "Diboson", "#94a4a2"),
+    ("DYjets", r"DY+jets", "#3f90da"),
+    ("ST", "Single top", "#717581"),
+    ("ttbar", r"$t\bar{t}$", "#832db6"),
+    ("diboson_T", r"Diboson true $\tau$", "#b6bfc7"),
+    ("DYjets_T", r"DY+jets true $\tau$", "#92c5f9"),
+    ("ST_T", r"Single top true $\tau$", "#a8abb3"),
+    ("ttbar_T", r"$t\bar{t}$ true $\tau$", "#b37adb"),
+)
 
 
 def _safe_ratio(numerator, denominator):
@@ -99,9 +110,16 @@ def _load_column(region, column):
 
 
 def _qcd_fraction_region(df, process=None):
+    return _configured_region(df, "DR_qcd_fractions", process=process)
+
+
+def _configured_region(df, region_name, process=None):
     manager = df._manager
-    mask = manager.get_mask(df.events, "DR_qcd_fractions")
-    mask &= manager.get_mask(df.events, "preselection")
+    if region_name in manager.regions:
+        mask = manager.get_region_mask(df.events, region_name)
+    else:
+        mask = manager.get_mask(df.events, region_name)
+        mask &= manager.get_mask(df.events, "preselection")
     if process is not None:
         mask &= manager.get_process_mask(df.events, process)
     return df.events.loc[mask]
@@ -131,6 +149,7 @@ def _compute_fraction_histograms(
     nn_output_name,
     qcd_weight_name,
     bins,
+    process_components=PROCESS_COMPONENTS,
 ):
     """Compute histograms for QCD fractions using global equi-populated bins."""
     manager = df._manager
@@ -147,7 +166,7 @@ def _compute_fraction_histograms(
     # Process component histograms
     process_counts = {}
     process_variances = {}
-    for process, _, _ in PROCESS_COMPONENTS:
+    for process, _, _ in process_components:
         process_mask = manager.get_process_mask(inference_region, process)
         process_region = inference_region.loc[process_mask]
         process_output = process_region[nn_output_name].to_numpy(dtype=np.float32)
@@ -211,16 +230,19 @@ def _plot_fraction_closure(
     bins,
     grouping,
     output_dir,
+    process_components=PROCESS_COMPONENTS,
+    filename_prefix="qcd2",
+    title_prefix="QCD fractions",
 ):
     """Plot QCD fractions closure validation."""
     weighted_qcd = histograms["weighted_qcd"]
     data_counts = histograms["data_counts"]
     background_counts = np.sum(
-        [histograms["process_counts"][process] for process, _, _ in PROCESS_COMPONENTS],
+        [histograms["process_counts"][process] for process, _, _ in process_components],
         axis=0,
     )
     background_variance = np.sum(
-        [histograms["process_variances"][process] for process, _, _ in PROCESS_COMPONENTS],
+        [histograms["process_variances"][process] for process, _, _ in process_components],
         axis=0,
     )
     expected_qcd = data_counts - background_counts
@@ -262,7 +284,7 @@ def _plot_fraction_closure(
     )
     axes[0].set_ylabel("Events")
     axes[0].set_title(
-        f"QCD fractions closure: {grouping} | max |Δ|={max_difference:.3g}"
+        f"{title_prefix} closure: {grouping} | max |Δ|={max_difference:.3g}"
     )
     axes[0].legend()
 
@@ -289,10 +311,10 @@ def _plot_fraction_closure(
     axes[1].legend()
 
     fig.savefig(
-        output_dir / f"reduced_closure_qcd2_{grouping}.png",
+        output_dir / f"reduced_closure_{filename_prefix}_{grouping}.png",
         dpi=160,
     )
-    fig.savefig(output_dir / f"reduced_closure_qcd2_{grouping}.pdf")
+    fig.savefig(output_dir / f"reduced_closure_{filename_prefix}_{grouping}.pdf")
     plt.close(fig)
 
 
@@ -301,23 +323,26 @@ def _plot_fraction_training_composition(
     bins,
     grouping,
     output_dir,
+    process_components=PROCESS_COMPONENTS,
+    filename_prefix="qcd2",
+    title_prefix="QCD fractions",
 ):
     """Plot QCD fractions training composition."""
     centers = 0.5 * (bins[:-1] + bins[1:])
     widths = np.diff(bins)
     component_counts = [
         histograms["process_counts"][process]
-        for process, _, _ in PROCESS_COMPONENTS
+        for process, _, _ in process_components
     ]
     component_variances = [
         histograms["process_variances"][process]
-        for process, _, _ in PROCESS_COMPONENTS
+        for process, _, _ in process_components
     ]
     component_counts.append(histograms["weighted_qcd"])
     component_variances.append(histograms["qcd_variance"])
 
-    labels = [label for _, label, _ in PROCESS_COMPONENTS] + ["QCD multijet"]
-    colors = [color for _, _, color in PROCESS_COMPONENTS] + ["#b9ac70"]
+    labels = [label for _, label, _ in process_components] + ["QCD multijet"]
+    colors = [color for _, _, color in process_components] + ["#b9ac70"]
     simulation = np.sum(component_counts, axis=0)
     simulation_variance = np.sum(component_variances, axis=0)
     data_counts = histograms["data_counts"]
@@ -362,7 +387,7 @@ def _plot_fraction_training_composition(
     )
     axes[0].set_ylabel("Events")
     axes[0].set_title(
-        f"QCD fractions enrichment training: {grouping} | max |Δ|={max_difference:.3g}"
+        f"{title_prefix} enrichment training: {grouping} | max |Δ|={max_difference:.3g}"
     )
     axes[0].legend(ncol=3, frameon=False)
 
@@ -400,10 +425,10 @@ def _plot_fraction_training_composition(
     axes[2].set_xlabel("NN output")
 
     fig.savefig(
-        output_dir / f"training_composition_qcd2_{grouping}.png",
+        output_dir / f"training_composition_{filename_prefix}_{grouping}.png",
         dpi=160,
     )
-    fig.savefig(output_dir / f"training_composition_qcd2_{grouping}.pdf")
+    fig.savefig(output_dir / f"training_composition_{filename_prefix}_{grouping}.pdf")
     plt.close(fig)
 
 
@@ -690,6 +715,13 @@ def create_qcd_fraction_training_plots(
     qcd_weight_store_dir=QCD_FRACTION_WEIGHT_STORE_DIR,
     training_variables_path=TRAINING_VARIABLES_PATH,
     n_bins=40,
+    region_name="DR_qcd_fractions",
+    model_output_prefix="qcd_fraction",
+    feature_file_prefix="qcd_fraction_weights",
+    weight_column_prefix="weight_qcd_fraction",
+    plot_file_prefix="qcd2",
+    title_prefix="QCD fractions",
+    process_components=PROCESS_COMPONENTS,
 ):
     data_path = Path(data_path)
     masks_path = Path(masks_path)
@@ -700,7 +732,7 @@ def create_qcd_fraction_training_plots(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     df = load_data(data_path, masks_path)
-    inference_region = _qcd_fraction_region(df).copy()
+    inference_region = _configured_region(df, region_name).copy()
     _validate_qcd_fraction_region(inference_region)
     n_upper_mt = int(
         ((inference_region["mt_1"] >= 50) & (inference_region["mt_1"] < 70))
@@ -716,13 +748,13 @@ def create_qcd_fraction_training_plots(
     for grouping in GROUPINGS:
         df.load_feature_file(
             qcd_weight_store_dir
-            / f"qcd_fraction_weights_{grouping}.feather"
+            / f"{feature_file_prefix}_{grouping}.feather"
         )
         model = load_fold_combined_model(
             even_model_path=model_dir / grouping / "fold_even",
             odd_model_path=model_dir / grouping / "fold_odd",
         ).to(device).eval()
-        nn_output_name = f"nn_output_qcd_fraction_{grouping}"
+        nn_output_name = f"nn_output_{model_output_prefix}_{grouping}"
         df.events.loc[inference_region.index, nn_output_name] = (
             _predict_weight_construction_output(
                 model.even_model,
@@ -733,8 +765,8 @@ def create_qcd_fraction_training_plots(
             )
         )
 
-        qcd_weight_name = f"weight_qcd_fraction_{grouping}"
-        data_region = _qcd_fraction_region(df, "data")
+        qcd_weight_name = f"{weight_column_prefix}_{grouping}"
+        data_region = _configured_region(df, region_name, process="data")
         upper_mt_data = data_region[
             (data_region["mt_1"] >= 50)
             & (data_region["mt_1"] < 70)
@@ -763,6 +795,7 @@ def create_qcd_fraction_training_plots(
             nn_output_name,
             qcd_weight_name,
             bins,
+            process_components=process_components,
         )
         
         # Generate plots
@@ -771,15 +804,50 @@ def create_qcd_fraction_training_plots(
             bins,
             grouping,
             output_dir,
+            process_components=process_components,
+            filename_prefix=plot_file_prefix,
+            title_prefix=title_prefix,
         )
         _plot_fraction_closure(
             histograms,
             bins,
             grouping,
             output_dir,
+            process_components=process_components,
+            filename_prefix=plot_file_prefix,
+            title_prefix=title_prefix,
         )
 
     print(f"Plots written to {output_dir}")
+
+
+def create_qcd_extrapolation_training_plots(
+    data_path=DEFAULT_DATA_PATH,
+    masks_path=DEFAULT_MASKS_PATH,
+    output_dir=PROJECT_ROOT / "plots" / "enrichment_qcd_extrapolation",
+    model_dir=PROJECT_ROOT / "Enrichment_models" / "qcd_extrapolation",
+    qcd_weight_store_dir=(
+        PROJECT_ROOT / "data" / "features" / "qcd_extrapolation"
+    ),
+    training_variables_path=TRAINING_VARIABLES_PATH,
+    n_bins=40,
+):
+    return create_qcd_fraction_training_plots(
+        data_path=data_path,
+        masks_path=masks_path,
+        output_dir=output_dir,
+        model_dir=model_dir,
+        qcd_weight_store_dir=qcd_weight_store_dir,
+        training_variables_path=training_variables_path,
+        n_bins=n_bins,
+        region_name="DR_qcd_extrapolation",
+        model_output_prefix="qcd_extrapolation",
+        feature_file_prefix="qcd_extrapolation_weights",
+        weight_column_prefix="weight_qcd_extrapolation",
+        plot_file_prefix="qcd_extrapolation",
+        title_prefix="QCD extrapolation",
+        process_components=PROCESS_COMPONENTS_QCD_EXTRAPOLATION,
+    )
 
 
 def main():

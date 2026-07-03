@@ -851,7 +851,6 @@ def FF_closure(
     closure_weights,
 	bins,
 	label,
-	grouping = 'tau_decaymode',
     closure_labels=None,
     colors=None,
     main_linestyles=None,

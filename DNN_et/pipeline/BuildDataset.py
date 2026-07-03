@@ -32,7 +32,6 @@ def build_dataset(config_path: str) -> pd.DataFrame:
     }
 
     dfs = []
-
     for name, process_id in processes.items():
         path = in_dir / f"{name}.root"
 

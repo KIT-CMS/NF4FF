@@ -903,6 +903,84 @@ class LikelihoodRatioCalculation(GroupedLayerABC):
         )
 
 
+class DRSRCorrectedFakeFactorModel(t.nn.Module):
+    def __init__(
+        self,
+        fake_factor_model: t.nn.Module,
+        correction_model: t.nn.Module,
+        output_clip: Tuple[float, float] = (0.0, 1.0e30),
+    ) -> None:
+        super().__init__()
+        self.fake_factor_model = fake_factor_model
+        self.correction_model = correction_model
+        self.output_clip = output_clip
+        self._input_nodes = fake_factor_model._input_nodes
+        self._input_names = getattr(fake_factor_model, "_input_names", None)
+
+    def _correction_input(self, X: t.Tensor) -> t.Tensor:
+        if isinstance(self.fake_factor_model, FoldCombinedDNN):
+            return X[1:, ...].T
+        return X
+
+    def forward(self, X: t.Tensor) -> t.Tensor:
+        fake_factor = self.fake_factor_model(X).reshape(-1)
+        correction = self.correction_model(self._correction_input(X)).reshape(-1)
+        if fake_factor.shape != correction.shape:
+            raise RuntimeError(
+                "DRSR-corrected fake-factor shape mismatch: "
+                f"fake_factor={tuple(fake_factor.shape)}, "
+                f"correction={tuple(correction.shape)}."
+            )
+        return (fake_factor * correction).clamp(*self.output_clip)
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.fake_factor_model, name)
+
+    @property
+    def _imports(self) -> str:
+        imports = set()
+        imports.add(
+            f"from {self.__class__.__module__} import {self.__class__.__name__}"
+        )
+        for model in (self.fake_factor_model, self.correction_model):
+            if hasattr(model, "_imports"):
+                for line in model._imports.split("\n"):
+                    if line.strip():
+                        imports.add(line)
+            elif model.__class__.__module__ != "builtins":
+                imports.add(
+                    f"from {model.__class__.__module__} import "
+                    f"{model.__class__.__name__}"
+                )
+        return "\n".join(sorted(imports)) + "\n"
+
+    @property
+    def model_name(self) -> str:
+        fake_factor_name = getattr(
+            self.fake_factor_model,
+            "model_name",
+            self.fake_factor_model.__class__.__name__,
+        )
+        correction_name = getattr(
+            self.correction_model,
+            "model_name",
+            self.correction_model.__class__.__name__,
+        )
+        return (
+            f"{self.__class__.__name__}("
+            f"fake_factor_model={fake_factor_name}, "
+            f"correction_model={correction_name}, "
+            f"output_clip={repr(self.output_clip)}"
+            ")"
+        )
+
+    def __recreate__(self) -> str:
+        return f"{self._imports}__model = {self.model_name}\n\n"
+
+
 
 class FixedMaskDropout(t.nn.Module):
     def __init__(self, ensemble_size: int, feature_dim: int, p: float):

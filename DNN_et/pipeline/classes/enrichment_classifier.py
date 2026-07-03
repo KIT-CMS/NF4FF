@@ -540,6 +540,17 @@ def get_ff_dataset_with_qcd_weights_ss(
             if hasattr(_dataset, "class_weights"):
                 _dataset.class_weights.ss[qcd_mask_sr] *= qcd_weights
 
+    missing_qcd_weights = qcd_mask_ss & torch.isnan(_dataset.qcd_weights_ss)
+    if missing_qcd_weights.any():
+        logger.warning(
+            "Filling %d SS QCD weights with neutral scale factor 1.0 "
+            "because no valid subtraction bin was available.",
+            int(missing_qcd_weights.sum().item()),
+        )
+        neutral_weights = torch.ones_like(_dataset.qcd_weights_ss[missing_qcd_weights])
+        _dataset.qcd_weights_ss[missing_qcd_weights] = neutral_weights
+        _dataset.weights.ss[missing_qcd_weights] = neutral_weights
+
     return _dataset.apply_func(
         lambda x: x.contiguous() if isinstance(x, torch.Tensor) else x
     )

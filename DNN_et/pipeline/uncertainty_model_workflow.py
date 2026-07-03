@@ -21,11 +21,18 @@ from classes import (
     EnsembleStatUncWrapper,
     FoldCombinedDNN,
     GroupedDNN,
+    LikelihoodRatioCalculation,
     create_training_dataset,
     load_data,
     load_fold_combined_model,
+    load_model,
     save_model,
     train_dnn,
+)
+from ff_models_to_onnx import (
+    FOLD_PARITIES,
+    PROCESS_OUTPUT_NAMES,
+    _normalization_result,
 )
 from groupings import grouping_bounds, grouping_source
 from taylor_coefficient_analysis import (
@@ -40,6 +47,11 @@ SEED_START = 100
 SEED_END = 199
 UNCERTAINTY_GROUPINGS = ("njets",)
 PROCESSES = ("wjets", "qcd", "ttbar")
+
+
+def _json_group_key(key):
+    bounds = key[0]
+    return str(bounds[0]) if len(bounds) == 1 else f"{bounds[0]}-{bounds[1]}"
 
 
 @dataclass
@@ -317,6 +329,134 @@ def train_uncertainty_models(
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "training_manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n"
+    )
+    return manifest
+
+
+def save_uncertainty_combined_models(
+    *,
+    data_path,
+    masks_path,
+    trained_models_dir,
+    reduced_weight_dir,
+    output_dir,
+    seed_start=SEED_START,
+    seed_end=SEED_END,
+):
+    """Wrap trained uncertainty folds as likelihood-ratio fake-factor models."""
+    if seed_end < seed_start:
+        raise ValueError("seed_end must be greater than or equal to seed_start")
+
+    trained_models_dir = Path(trained_models_dir)
+    reduced_weight_dir = Path(reduced_weight_dir)
+    output_dir = Path(output_dir)
+    grouping_name = "njets"
+    seeds = list(range(seed_start, seed_end + 1))
+
+    data = load_data(data_path, masks_path)
+    for process in ("wjets", "qcd"):
+        data.load_feature_file(
+            reduced_weight_dir
+            / process
+            / f"reduced_weight_{grouping_name}.feather"
+        )
+
+    constants = {grouping_name: {}}
+    diagnostics = {grouping_name: {}}
+    outputs = []
+    for process in PROCESSES:
+        fold_results = {
+            fold: _normalization_result(
+                data,
+                process,
+                grouping_name,
+                parity=parity,
+            )
+            for fold, parity in FOLD_PARITIES.items()
+        }
+        constants[grouping_name][process] = {
+            fold: result[0]
+            for fold, result in fold_results.items()
+        }
+        diagnostics[grouping_name][process] = {
+            fold: result[1]
+            for fold, result in fold_results.items()
+        }
+
+    for process in PROCESSES:
+        process_output_name = PROCESS_OUTPUT_NAMES[process]
+        for seed in seeds:
+            seed_model_dir = trained_models_dir / grouping_name / process / str(seed)
+            fold_models = {}
+            for fold in FOLD_PARITIES:
+                fold_path = seed_model_dir / fold
+                if not (fold_path / "model_weights.pth").is_file():
+                    raise FileNotFoundError(
+                        f"Missing trained uncertainty fold model: {fold_path}"
+                    )
+                fold_models[fold] = LikelihoodRatioCalculation(
+                    model=load_model(fold_path).eval(),
+                    normalization_constants=(
+                        constants[grouping_name][process][fold]
+                    ),
+                    clip=(1e-4, 10.0),
+                )
+
+            combined_model = FoldCombinedDNN(
+                even_model=fold_models["fold_even"],
+                odd_model=fold_models["fold_odd"],
+                fold_id_name="event",
+            )
+            model_output_dir = (
+                output_dir
+                / process_output_name
+                / grouping_name
+                / str(seed)
+                / "torch_model"
+            )
+            save_model(combined_model, model_output_dir)
+            outputs.append(model_output_dir / "model_weights.pth")
+
+    serializable_constants = {
+        grouping: {
+            process: {
+                fold: {
+                    (
+                        key
+                        if isinstance(key, str)
+                        else _json_group_key(key)
+                    ): value
+                    for key, value in fold_constants.items()
+                }
+                for fold, fold_constants in process_constants.items()
+            }
+            for process, process_constants in grouping_constants.items()
+        }
+        for grouping, grouping_constants in constants.items()
+    }
+    manifest = {
+        "dataset_size": "full",
+        "seed_start": seed_start,
+        "seed_end": seed_end,
+        "n_seeds": len(seeds),
+        "grouping": grouping_name,
+        "processes": list(PROCESSES),
+        "model_layout": (
+            "<output_dir>/<Process>/njets/<seed>/torch_model"
+        ),
+        "combined_models_saved": len(outputs),
+        "normalization_constants": serializable_constants,
+        "normalization_diagnostics": diagnostics,
+        "outputs": [str(path) for path in outputs],
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "combined_models_manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    )
+    logger.info(
+        "Saved %d uncertainty combined FF models to %s.",
+        len(outputs),
+        output_dir,
     )
     return manifest
 
