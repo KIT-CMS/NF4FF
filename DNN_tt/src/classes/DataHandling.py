@@ -180,6 +180,7 @@ class AnalysisDataFrame:
         self._region_cache = {}
         self._process_cache = {}
         self._loaded_feature_files = set()
+        
     def mask(self, region):
 
         if region not in self._region_cache:
