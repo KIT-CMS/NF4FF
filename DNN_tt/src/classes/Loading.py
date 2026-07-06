@@ -17,6 +17,40 @@ def load_config(path: str, cls=None):
 
     return _from_dict(data, cls)
 
+def load_labels(path):
+    labels_by_channel = {}
+    current_channel = None
+
+    with open(path, 'r', encoding='utf-8') as f:
+        for raw_line in f:
+            line = raw_line.rstrip('\n')
+            stripped = line.strip()
+            indent = len(line) - len(line.lstrip(' '))
+
+            if not stripped or stripped.startswith('#'):
+                continue
+
+            # Be tolerant if the channel key is accidentally indented by one space.
+            if stripped.endswith(':') and ':' not in stripped[:-1] and indent <= 1:
+                current_channel = stripped[:-1]
+                labels_by_channel.setdefault(current_channel, {})
+                continue
+
+            if current_channel is None:
+                continue
+
+            if indent < 4:
+                continue
+
+            key_value = line.strip().split(':', 1)
+            if len(key_value) != 2:
+                continue
+
+            key, value = key_value
+            labels_by_channel[current_channel][key] = value.strip().strip('"').strip("'")
+
+    return labels_by_channel
+
 def _from_dict(data: dict, cls):
     """
     Minimal recursive dict → dataclass converter

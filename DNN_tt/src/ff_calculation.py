@@ -1,5 +1,18 @@
 from pathlib import Path
 import copy
+import logging
+import random
+import time
+from typing import Literal, Union
+
+import correctionlib as cr
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+from tap import Tap
+import torch as t
+import yaml
+
 from classes import load_variables, load_data, load_model, load_fold_combined_model, test_data
 from classes import calculate_fake_factors, calculate_fake_factor_dnn, calculate_fake_factor_classic
 from classes import calculate_fake_factors_in_DR_wjets, calculate_fake_factors_in_DR_qcd, calculate_fake_factors_in_DR_ttbar
@@ -10,36 +23,40 @@ from classes import (
     FF_closure_in_DR_ttbar_MC,
     plot_fake_factors_in_DR, 
     plot_fake_factors)
-from pathlib import Path
-import numpy as np
-import matplotlib.pyplot as plt
-import torch as t
-import pandas as pd
-import correctionlib as cr
 from classes import CMS_CHANNEL_TITLE, CMS_CATEGORY_TITLE, CMS_LUMI_TITLE, CMS_LABEL, adjust_ylim_for_legend, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
-from pathlib import Path
-import matplotlib
-import yaml
 from classes import FoldCombinedDNN, load_fold_combined_model
-import time
-import torch as t
-from pathlib import Path
-from typing import Literal, Union
+from classes.Loading import load_config, load_variables, load_labels
 
 
-from classes import DNN
+SEED = 42
+logger = logging.getLogger(__name__)
 
 
-DATA_PATH = '../../data/data_complete.feather'
-MASKS_PATH = '../configs/masks.yaml'
-TRAINING_VAR_PATH = '../configs/training_variables.yaml'
-NN_CONFIG_PATH = '../configs/DNN.yaml'
-CHECKPOINT_DIR = '../Training_results'
+t.manual_seed(SEED)
+np.random.seed(SEED)
+random.seed(SEED)
+t.set_num_threads(8)
 
-PLOTTING_CONFIG_PATH = '../configs/plotting.yaml'
-LABELS_CONFIG_PATH = '../configs/labels.yaml'
+class Args(Tap):
+    taus = [1, 2] #[1, 2, 12] # list of tau fakes
+    embedding: Literal["embedding", "no_embedding"] = "embedding"
+    var = "variables_61"
 
-PLOTS_DIR = Path('../plots/layers_3/ReLU')
+args = Args().parse_args()
+
+cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
+
+DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'
+MASKS_PATH = cfg_path["masks"]
+TRAINING_VAR_PATH = cfg_path["train_var"]
+NN_CONFIG_PATH = cfg_path["DNN"]
+CHECKPOINT_DIR = cfg_path["traininfg_results"]
+
+PLOTTING_CONFIG_PATH = cfg_path["cfg_plotting"]
+LABELS_CONFIG_PATH = cfg_path["labels"]
+
+#PLOTS_DIR = Path('../plots/layers_3/ReLU')
+PLOTS_DIR = Path(cfg_path["plots"])
 PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
 PLOT_GROUPINGS = ('tau_decaymode', 'njets')
@@ -50,48 +67,11 @@ for subdir in PLOT_SUBDIRS:
 
 
 
-def _read_yaml(path):
-    with open(path, 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f)
 
 
-def _read_labels_yaml(path):
-    labels_by_channel = {}
-    current_channel = None
 
-    with open(path, 'r', encoding='utf-8') as f:
-        for raw_line in f:
-            line = raw_line.rstrip('\n')
-            stripped = line.strip()
-            indent = len(line) - len(line.lstrip(' '))
-
-            if not stripped or stripped.startswith('#'):
-                continue
-
-            # Be tolerant if the channel key is accidentally indented by one space.
-            if stripped.endswith(':') and ':' not in stripped[:-1] and indent <= 1:
-                current_channel = stripped[:-1]
-                labels_by_channel.setdefault(current_channel, {})
-                continue
-
-            if current_channel is None:
-                continue
-
-            if indent < 4:
-                continue
-
-            key_value = line.strip().split(':', 1)
-            if len(key_value) != 2:
-                continue
-
-            key, value = key_value
-            labels_by_channel[current_channel][key] = value.strip().strip('"').strip("'")
-
-    return labels_by_channel
-
-
-PLOTTING_CFG = _read_yaml(PLOTTING_CONFIG_PATH)
-LABELS_CFG = _read_labels_yaml(LABELS_CONFIG_PATH)
+PLOTTING_CFG = load_config(PLOTTING_CONFIG_PATH) 
+LABELS_CFG = load_labels(LABELS_CONFIG_PATH)
 
 VARIABLES_SMALL = PLOTTING_CFG.get('variables_set_small', [])
 VARIABLES_LARGE = PLOTTING_CFG.get('variables_set_large', [])
@@ -1043,6 +1023,15 @@ def calculate_fake_factors_ensemble_2sigma(
 
 
 
+
+
+
+###################
+# ----- main -----#
+###################
+
+# ----- load models -----
+
 model_wjets_tdm = load_fold_combined_model(
     even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'wjets' / 'fold_even',
     odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'wjets' / 'fold_odd',
@@ -1098,16 +1087,10 @@ models_ttbar = load_models(
 
 
 
-
-
-
-
-
-
-# ---------------- execution part
+# ----- execution -----
 
 df = load_data(DATA_PATH, MASKS_PATH)
-training_variables = load_variables(TRAINING_VAR_PATH)
+training_variables = load_variables(TRAINING_VAR_PATH, args.var)
 
 '''
 models_wjets = load_models(

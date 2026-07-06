@@ -3,3 +3,6 @@ masks: /work/tapp/TauFF/NF4FF/DNN_tt/configs/masks.yaml
 train_var: /work/tapp/TauFF/NF4FF/DNN_tt/configs/training_variables.yaml
 DNN: /work/tapp/TauFF/NF4FF/DNN_tt/configs/DNN.yaml
 traininfg_results: /work/tapp/TauFF/NF4FF/DNN_tt/Training_results
+cfg_plotting: /work/tapp/TauFF/NF4FF/DNN_tt/configs/plotting.yaml
+labels: /work/tapp/TauFF/NF4FF/DNN_tt/configs/labels.yaml
+plots: /work/tapp/TauFF/NF4FF/DNN_tt/plots

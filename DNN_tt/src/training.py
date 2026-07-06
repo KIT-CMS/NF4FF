@@ -160,7 +160,7 @@ def main():
         )
     }
 
-    for grouping, group_label in zip([[grouping_taudm1, grouping_taudm2], [grouping_njets]], ['tau_decaymode_', 'njets']):
+    for grouping, group_label in zip([[grouping_taudm1, grouping_taudm2], [grouping_njets]], ['tau_decaymode', 'njets']):
         logger.info(f'Group splitting: {group_label}')
         
         i = 0
