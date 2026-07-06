@@ -15,7 +15,7 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 class Args(Tap):
     loc: Literal["remote", "present"] = "present"
-    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
+    embedding: Literal["embedding", "no_embedding"] = "embedding"
 
 
 # ----- functions to load files -----

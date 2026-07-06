@@ -8,10 +8,9 @@ import torch as t
 import torch.nn.functional as F
 from torch.nn.modules.loss import _Loss
 import torch.nn as nn
-import CODE.HELPER as helper
-from CODE.LOSS.LikelihoodsAndUncertainties import (Likelihood,
-                                                   UncertaintyObjects)
-from CODE.TAYLORANALYSIS import TCExtraction
+import classes.helper as helper
+#from CODE.LOSS.LikelihoodsAndUncertainties import (Likelihood, UncertaintyObjects)
+#from CODE.TAYLORANALYSIS import TCExtraction
 
 # ---------------------
 

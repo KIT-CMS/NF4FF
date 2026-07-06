@@ -2,15 +2,18 @@ from dataclasses import is_dataclass, fields
 from typing import Tuple
 import yaml
 
-def load_variables(yaml_path):
+def load_variables(yaml_path, vars: str):
     with open(yaml_path, "r") as f:
         config = yaml.safe_load(f)
-    yaml_vars = config.get("variables", [])
+    yaml_vars = config.get(vars, [])
     return yaml_vars
 
-def load_config(path: str, cls):
+def load_config(path: str, cls=None):
     with open(path, "r") as f:
         data = yaml.safe_load(f)
+
+    if cls == None:
+        return data
 
     return _from_dict(data, cls)
 

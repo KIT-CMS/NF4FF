@@ -36,7 +36,7 @@ t.set_num_threads(8)
 
 class Args(Tap):
     loc: Literal['present', 'remote'] = 'present'
-    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
+    embedding: Literal["embedding", "no_embedding"] = "embedding"
     bins: Literal['equi_populated' , 'uniform'] ='equi_populated'
     n_bins: int = 20
     data_complete_path: str = 'data/data_complete.feather'
@@ -711,6 +711,25 @@ def main() -> None:
         data_DR["weight_qcd"] = np.nan
         data_DR.loc[indices_qcd_DR, "weight_qcd"] = QCD_weights
 
+        print(data_DR["weight_qcd"].value_counts())
+        print(np.isfinite(data_DR["weight_qcd"]).all())
+        h = 0
+        for x in QCD_weights:
+            if not np.isfinite(x):
+                h += 1
+        print(f"Number of non-finite values in 'QCD_weights': {h}")
+
+        h = 0
+        for x in data_DR["weight_qcd"]:
+            if not np.isfinite(x):
+                h += 1
+        print(f"Number of non-finite values in 'QCD_weights': {h}")
+
+        print(len(QCD_weights))
+        print(len(data_DR["weight_qcd"]))
+        print(len(probs_data))
+        exit()
+
 
         if args.write_back:
             # Insert qcd_weights into the FULL data_complete
@@ -1112,8 +1131,8 @@ def main() -> None:
 
         hist_nFF, _ = np.histogram(probs_nFF,weights=weights_nFF, bins= bins)
 
-        print("QCD_counts:", QCD_counts)
-        print("sim_counts:", sim_counts)
+        #print("QCD_counts:", QCD_counts)
+        #print("sim_counts:", sim_counts)
 
         QCD_counts_norm = np.divide(QCD_counts, sim_counts)
         diboson_counts_norm = np.divide(diboson_counts, sim_counts)

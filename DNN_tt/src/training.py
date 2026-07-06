@@ -126,15 +126,25 @@ def main():
 
     cfg = load_config(NN_CONFIG_PATH, Config)
 
-    df = load_data(DATA_PATH, MASKS_PATH)
+    df = load_data(DATA_PATH, MASKS_PATH)    
 
-    training_var = load_variables(TRAINING_VAR_PATH)
+    training_var = load_variables(TRAINING_VAR_PATH, args.var)
 
-    taudm_idx = training_var.index('tau_decaymode_2')
+    taudm1_idx = training_var.index('tau_decaymode_1')
+    taudm2_idx = training_var.index('tau_decaymode_2')
     njets_idx = training_var.index('njets')
 
-    grouping_taudm = {
-        taudm_idx: (
+    grouping_taudm1 = {
+        taudm1_idx: (
+            (0,),
+            (1,),
+            (10,),
+            (11,),
+        )
+    }
+
+    grouping_taudm2 = {
+        taudm2_idx: (
             (0,),
             (1,),
             (10,),
@@ -150,26 +160,23 @@ def main():
         )
     }
 
-    for grouping, group_label in zip([grouping_taudm, grouping_njets], ['tau_decaymode', 'njets']):
-
+    for grouping, group_label in zip([[grouping_taudm1, grouping_taudm2], [grouping_njets]], ['tau_decaymode_', 'njets']):
         logger.info(f'Group splitting: {group_label}')
-
-        for process in ['wjets', 'qcd', 'ttbar']:
+        
+        i = 0
+        for process in ['tau1', 'tau2']:
 
             logger.info(f'Training process: {process}')
             
-            if process == 'wjets':
-                df_sig = df.data.SR_like_wjets
-                df_bkg = df.data.AR_like_wjets
-                weight_column = 'weight_wjets'
-            elif process == 'qcd':
-                df_sig = df.data.SR_like_qcd
-                df_bkg = df.data.AR_like_qcd
+            if process == 'tau1':
+                df_sig = df.data.SR_like
+                df_bkg = df.data.AR_like_tau1
                 weight_column = 'weight_qcd'
-            elif process == 'ttbar':
-                df_sig = df.ttbar.SR_like_ttbar
-                df_bkg = df.ttbar.AR_like_ttbar
-                weight_column = 'weight'
+
+            elif process == 'tau2':
+                df_sig = df.data.SR_like
+                df_bkg = df.data.AR_like_tau2
+                weight_column = 'weight_qcd'
 
             df_sig_plain = df_sig.events
             df_bkg_plain = df_bkg.events
@@ -193,7 +200,7 @@ def main():
             # even_model: trained on odd events, applied to even events
             even_model = _train_fold_model(
                 cfg=cfg,
-                grouping=grouping,
+                grouping=grouping[i],
                 training_var=training_var,
                 df_sig=df_sig_odd,
                 df_bkg=df_bkg_odd,
@@ -206,7 +213,7 @@ def main():
             # odd_model: trained on even events, applied to odd events
             odd_model = _train_fold_model(
                 cfg=cfg,
-                grouping=grouping,
+                grouping=grouping[i],
                 training_var=training_var,
                 df_sig=df_sig_even,
                 df_bkg=df_bkg_even,
@@ -226,6 +233,9 @@ def main():
             save_model(even_model, base_path / 'fold_even')
             save_model(odd_model, base_path / 'fold_odd')
             save_model(model, base_path)
+
+            if group_label == 'tau_decaymode_':
+                i += 1
 
 
 if __name__ == '__main__':
