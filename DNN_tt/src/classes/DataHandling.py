@@ -129,6 +129,9 @@ class ProcessView:
         self._parent = parent
         self._cache = {}
 
+    def __len__(self):
+        return int(self._process_mask.sum())
+
     def mask(self, region):
 
         if region not in self._cache:
@@ -156,7 +159,11 @@ class ProcessView:
         #
         self._parent.ensure_column(name)
 
-        return getattr(self._df, name)
+        current_df = self._parent._df
+        if name in current_df.columns:
+            return current_df.loc[self._process_mask, name]
+
+        return getattr(current_df.loc[self._process_mask], name)
 
     @property
     def events(self):
@@ -180,6 +187,9 @@ class AnalysisDataFrame:
         self._region_cache = {}
         self._process_cache = {}
         self._loaded_feature_files = set()
+
+    def __len__(self):
+        return len(self._df)
         
     def mask(self, region):
 
@@ -207,9 +217,6 @@ class AnalysisDataFrame:
         return self._process_cache[name]
 
     def __getattr__(self, name):
-        if name == "data":
-            return self
-
         if name in self._manager.regions:
             return RegionView(
                 self._df,
@@ -335,6 +342,7 @@ def load_variables(yaml_path):
 def load_data(feather_file, config_file):
 
     df = pd.read_feather(feather_file)
+    print('len df process == 0', len(df[df.process == 0]))
 
     manager = SelectionManager(config_file)
 
