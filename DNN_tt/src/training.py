@@ -234,7 +234,7 @@ def main():
             save_model(odd_model, base_path / 'fold_odd')
             save_model(model, base_path)
 
-            if group_label == 'tau_decaymode_':
+            if group_label == 'tau_decaymode':
                 i += 1
 
 

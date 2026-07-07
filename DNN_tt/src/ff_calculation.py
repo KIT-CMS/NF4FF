@@ -41,6 +41,8 @@ class Args(Tap):
     taus = [1, 2] #[1, 2, 12] # list of tau fakes
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables_61"
+    ff: bool = True
+    ff_unc: bool = False
 
 args = Args().parse_args()
 
@@ -832,8 +834,6 @@ class EnsembleStatUncWrapper(t.nn.Module):
         return f"{self._imports}__model = {self.model_name}\n\n"
 
 
-CHECKPOINT_DIR = '../Training_results'
-
 def calculate_fake_factors_ensemble(
     df,
     model_wjets: t.nn.Module,
@@ -1030,262 +1030,257 @@ def calculate_fake_factors_ensemble_2sigma(
 # ----- main -----#
 ###################
 
-# ----- load models -----
+def main():
 
-model_wjets_tdm = load_fold_combined_model(
-    even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'wjets' / 'fold_even',
-    odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'wjets' / 'fold_odd',
-)
-model_qcd_tdm = load_fold_combined_model(
-    even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'qcd' / 'fold_even',
-    odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'qcd' / 'fold_odd',
-)
+    # ----- load models from training.py -----
 
-model_ttbar_tdm = load_fold_combined_model(
-    even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'ttbar' / 'fold_even',
-    odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'ttbar' / 'fold_odd',
-)
+    # tau decay mode
+    model_tau1_tdm = load_fold_combined_model(
+        even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau1' / 'fold_even',
+        odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau1' / 'fold_odd',
+    )
+    model_tau2_tdm = load_fold_combined_model(
+        even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau2' / 'fold_even',
+        odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau2' / 'fold_odd',
+    )
 
-'''
-model_wjets_njets = load_fold_combined_model(
-    even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'wjets' / 'fold_even',
-    odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'wjets' / 'fold_odd',
-)
-model_qcd_njets = load_fold_combined_model(
-    even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'qcd' / 'fold_even',
-    odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'qcd' / 'fold_odd',
-)
+    # njets
+    model_tau1_njets = load_fold_combined_model(
+        even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau1' / 'fold_even',
+        odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau1' / 'fold_odd',
+    )
+    model_tau2_njets = load_fold_combined_model(
+        even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau2' / 'fold_even',
+        odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau2' / 'fold_odd',
+    )
+    
 
-model_ttbar_njets = load_fold_combined_model(
-    even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'ttbar' / 'fold_even',
-    odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'ttbar' / 'fold_odd',
-)
-'''
+    grouping_njets = (
+        (0,),
+        (1,),
+        (2, 1000),
+    )
 
-grouping_njets = (
-    (0,),
-    (1,),
-    (2, 1000),
-)
+    if args.ff_unc:
+        # ----- load models from training_uncertainty_models.py -----
+        models_wjets = load_models(
+            checkpoint_dir='../Training_results_uncertainties',
+            seeds = range(100, 200),
+        )
 
-models_wjets = load_models(
-    checkpoint_dir='../Training_results_uncertainties',
-    seeds = range(100, 200),
-)
+        models_qcd = load_models(
+            checkpoint_dir='../Training_results_uncertainties',
+            seeds = range(100, 200),
+            process = 'qcd',
+        )
 
-models_qcd = load_models(
-    checkpoint_dir='../Training_results_uncertainties',
-    seeds = range(100, 200),
-    process = 'qcd',
-)
-
-models_ttbar = load_models(
-    checkpoint_dir='../Training_results_uncertainties',
-    seeds = range(100, 200),
-    process = 'ttbar',
-)
+        models_ttbar = load_models(
+            checkpoint_dir='../Training_results_uncertainties',
+            seeds = range(100, 200),
+            process = 'ttbar',
+        )
 
 
+    # ----- execution -----
 
-# ----- execution -----
+    df = load_data(DATA_PATH, MASKS_PATH)
+    training_variables = load_variables(TRAINING_VAR_PATH, args.var)
 
-df = load_data(DATA_PATH, MASKS_PATH)
-training_variables = load_variables(TRAINING_VAR_PATH, args.var)
+    if args.ff:
 
-'''
-models_wjets = load_models(
-    checkpoint_dir='../Training_results_uncertainties',
-    seeds = range(100, 200),
-)
+        # ----- calculate fake factors -----
+        # tau decay mode
+        calculate_fake_factors(
+            df=df,
+            model_wjets=model_wjets_tdm,
+            model_qcd=model_qcd_tdm,
+            model_ttbar=model_ttbar_tdm,
+            training_variables=training_variables,
+            grouping_variable = 'njets',
+            grouping_definition = grouping_njets,
+            output_suffix = '',
+        )
 
-
-
-calculate_fake_factors(
-    df=df,
-    model_wjets=model_wjets_tdm,
-    model_qcd=model_qcd_tdm,
-    model_ttbar=model_ttbar_tdm,
-    training_variables=training_variables,
-	grouping_variable = 'njets',
-    grouping_definition = grouping_njets,
-    output_suffix = '',
-)
-
-calculate_fake_factors(
-    df=df,
-    model_wjets=model_wjets_njets,
-    model_qcd=model_qcd_njets,
-    model_ttbar=model_ttbar_njets,
-    training_variables=training_variables,
-	grouping_variable = 'njets',
-    grouping_definition = grouping_njets,
-    output_suffix = 'njets',
-)
+        # njets
+        calculate_fake_factors(
+            df=df,
+            model_wjets=model_wjets_njets,
+            model_qcd=model_qcd_njets,
+            model_ttbar=model_ttbar_njets,
+            training_variables=training_variables,
+            grouping_variable = 'njets',
+            grouping_definition = grouping_njets,
+            output_suffix = 'njets',
+        )
 
 
-calculate_fake_factor_classic(
-    df = df.AR,
-)
+        calculate_fake_factor_classic(
+            df = df.AR,
+        )
 
-calculate_fake_factor_dnn(
-    df = df.AR,
-	grouping = 'tau_decaymode',
-)
+        calculate_fake_factor_dnn(
+            df = df.AR,
+            grouping = 'tau_decaymode',
+        )
 
-calculate_fake_factor_dnn(
-    df = df.AR,
-	grouping = 'njets',
-)
+        calculate_fake_factor_dnn(
+            df = df.AR,
+            grouping = 'njets',
+        )
 
-calculate_fake_factors_in_DR_wjets(
-    df,
-    model_wjets_tdm,
-    training_variables,
-    'njets',
-    grouping_njets,
-)
+        calculate_fake_factors_in_DR_wjets(
+            df,
+            model_wjets_tdm,
+            training_variables,
+            'njets',
+            grouping_njets,
+        )
 
-calculate_fake_factors_in_DR_qcd(
-	df, model_qcd_tdm,
-    training_variables,
-    'njets',
-    grouping_njets,
-)
+        calculate_fake_factors_in_DR_qcd(
+            df, model_qcd_tdm,
+            training_variables,
+            'njets',
+            grouping_njets,
+        )
 
-calculate_fake_factors_in_DR_ttbar(
-    df, model_ttbar_tdm,
-    training_variables,
-    'njets',
-    grouping_njets,
-)
+        calculate_fake_factors_in_DR_ttbar(
+            df, model_ttbar_tdm,
+            training_variables,
+            'njets',
+            grouping_njets,
+        )
 
-calculate_fake_factors_in_DR_wjets(
-    df,
-    model_wjets_njets,
-    training_variables,
-    'njets',
-    grouping_njets,
-    'njets',
-)
+        calculate_fake_factors_in_DR_wjets(
+            df,
+            model_wjets_njets,
+            training_variables,
+            'njets',
+            grouping_njets,
+            'njets',
+        )
 
-calculate_fake_factors_in_DR_qcd(
-	df, model_qcd_njets,
-    training_variables,
-    'njets',
-    grouping_njets,
-    'njets',
-)
+        calculate_fake_factors_in_DR_qcd(
+            df, model_qcd_njets,
+            training_variables,
+            'njets',
+            grouping_njets,
+            'njets',
+        )
 
-calculate_fake_factors_in_DR_ttbar(
-    df, model_ttbar_njets,
-    training_variables,
-    'njets',
-    grouping_njets,
-    'njets'
-)
+        calculate_fake_factors_in_DR_ttbar(
+            df, model_ttbar_njets,
+            training_variables,
+            'njets',
+            grouping_njets,
+            'njets'
+        )
 
 
-'''
+    if args.ff_unc:
 
-calculate_fake_factor_mean_std(
-    df= df,
-    models= models_wjets,
-    training_variables=training_variables,
-    grouping_variable='njets',
-    grouping_definition=grouping_njets,
-    process = 'wjets',
-    output_mean='ff_wjets_mean',
-    output_std='ff_wjets_std',
-)
+        calculate_fake_factor_mean_std(
+            df= df,
+            models= models_wjets,
+            training_variables=training_variables,
+            grouping_variable='njets',
+            grouping_definition=grouping_njets,
+            process = 'wjets',
+            output_mean='ff_wjets_mean',
+            output_std='ff_wjets_std',
+        )
 
 
 
-calculate_fake_factor_mean_std_in_DR(
-    df= df,
-    models= models_qcd,
-    training_variables=training_variables,
-    grouping_variable='njets',
-    grouping_definition=grouping_njets,
-    process = 'qcd',
-    output_mean='ff_qcd_mean',
-    output_std='ff_qcd_std',
-)
+        calculate_fake_factor_mean_std_in_DR(
+            df= df,
+            models= models_qcd,
+            training_variables=training_variables,
+            grouping_variable='njets',
+            grouping_definition=grouping_njets,
+            process = 'qcd',
+            output_mean='ff_qcd_mean',
+            output_std='ff_qcd_std',
+        )
 
-calculate_fake_factor_mean_std_in_DR(
-    df= df,
-    models= models_ttbar,
-    training_variables=training_variables,
-    grouping_variable='njets',
-    grouping_definition=grouping_njets,
-    process = 'ttbar',
-    output_mean='ff_ttbar_mean',
-    output_std='ff_ttbar_std',
-)
-
-
-calculate_fake_factor_mean_std_dropout_mask_variation(
-    df= df,
-    model= model_wjets_tdm,
-    training_variables=training_variables,
-    grouping_variable='njets',
-    grouping_definition=grouping_njets,
-    process = 'wjets',
-    output_mean='ff_wjets_mean_pmask',
-    output_std='ff_wjets_std_pmask',
-)
+        calculate_fake_factor_mean_std_in_DR(
+            df= df,
+            models= models_ttbar,
+            training_variables=training_variables,
+            grouping_variable='njets',
+            grouping_definition=grouping_njets,
+            process = 'ttbar',
+            output_mean='ff_ttbar_mean',
+            output_std='ff_ttbar_std',
+        )
 
 
-calculate_fake_factor_mean_std_in_DR_dropout_mask_variation(
-    df = df,
-    model = model_wjets_tdm,
-    training_variables = training_variables,
-    grouping_variable = 'njets',
-    grouping_definition = grouping_njets,
-    process='wjets',
-    output_mean='ff_wjets_mean_pmask',
-    output_std='ff_wjets_std_pmask',
-)
-
-calculate_fake_factor_mean_std_in_DR_dropout_mask_variation(
-    df = df,
-    model = model_qcd_tdm,
-    training_variables = training_variables,
-    grouping_variable = 'njets',
-    grouping_definition = grouping_njets,
-    process='qcd',
-    output_mean='ff_qcd_mean_pmask',
-    output_std='ff_qcd_std_pmask',
-)
-
-calculate_fake_factor_mean_std_in_DR_dropout_mask_variation(
-    df = df,
-    model = model_ttbar_tdm,
-    training_variables = training_variables,
-    grouping_variable = 'njets',
-    grouping_definition = grouping_njets,
-    process='ttbar',
-    output_mean='ff_ttbar_mean_pmask',
-    output_std='ff_ttbar_std_pmask',
-)
+        calculate_fake_factor_mean_std_dropout_mask_variation(
+            df= df,
+            model= model_wjets_tdm,
+            training_variables=training_variables,
+            grouping_variable='njets',
+            grouping_definition=grouping_njets,
+            process = 'wjets',
+            output_mean='ff_wjets_mean_pmask',
+            output_std='ff_wjets_std_pmask',
+        )
 
 
-'''
-grouping_njets = (
-    (0,),
-    (1,),
-    (2, 1000),
-)
+        calculate_fake_factor_mean_std_in_DR_dropout_mask_variation(
+            df = df,
+            model = model_wjets_tdm,
+            training_variables = training_variables,
+            grouping_variable = 'njets',
+            grouping_definition = grouping_njets,
+            process='wjets',
+            output_mean='ff_wjets_mean_pmask',
+            output_std='ff_wjets_std_pmask',
+        )
+
+        calculate_fake_factor_mean_std_in_DR_dropout_mask_variation(
+            df = df,
+            model = model_qcd_tdm,
+            training_variables = training_variables,
+            grouping_variable = 'njets',
+            grouping_definition = grouping_njets,
+            process='qcd',
+            output_mean='ff_qcd_mean_pmask',
+            output_std='ff_qcd_std_pmask',
+        )
+
+        calculate_fake_factor_mean_std_in_DR_dropout_mask_variation(
+            df = df,
+            model = model_ttbar_tdm,
+            training_variables = training_variables,
+            grouping_variable = 'njets',
+            grouping_definition = grouping_njets,
+            process='ttbar',
+            output_mean='ff_ttbar_mean_pmask',
+            output_std='ff_ttbar_std_pmask',
+        )
 
 
-calculate_fake_factors_ensemble_2sigma(
-    df=df,
-    model_wjets=model_wjets_tdm,
-    training_variables=training_variables,
-	grouping_variable='njets',
-    grouping_definition=grouping_njets,
-)
-
-'''
+        '''
+        grouping_njets = (
+            (0,),
+            (1,),
+            (2, 1000),
+        )
 
 
-df.to_feather(DATA_PATH)
+        calculate_fake_factors_ensemble_2sigma(
+            df=df,
+            model_wjets=model_wjets_tdm,
+            training_variables=training_variables,
+            grouping_variable='njets',
+            grouping_definition=grouping_njets,
+        )
+
+        '''
+
+
+    df.to_feather(DATA_PATH)
+
+
+if __name__ == '__main__':
+    main()
