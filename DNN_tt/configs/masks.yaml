@@ -69,9 +69,13 @@ regions:
     - preselection
     - SR
 
-  AR:
+  AR_tau1:
     - preselection
-    - AR
+    - AR_tau1
+
+  AR_tau2:
+    - preselection
+    - AR_tau2
 
   SR_like:
     - preselection

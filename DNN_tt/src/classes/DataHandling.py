@@ -342,7 +342,7 @@ def load_variables(yaml_path):
 def load_data(feather_file, config_file):
 
     df = pd.read_feather(feather_file)
-    print('len df process == 0', len(df[df.process == 0]))
+    #print('len df process == 0', len(df[df.process == 0]))
 
     manager = SelectionManager(config_file)
 

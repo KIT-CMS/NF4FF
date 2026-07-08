@@ -52,197 +52,191 @@ def _build_group_masks(values, grouping_definition):
 
 def calculate_fake_factors(
     df,
-    model_wjets: t.nn.Module = None,
-    model_qcd: t.nn.Module = None,
-    model_ttbar: t.nn.Module = None,
+    model_tau1: t.nn.Module = None,
+    model_tau2: t.nn.Module = None,
     training_variables=None,
-#    grouping_variable=None,
-#    grouping_definition=None,
-#    output_suffix=None,
+    grouping_variable=None,
+    grouping_definition=None,
+    output_suffix=None,
 ):
-    grouping_variable = 'tau_decaymode_2'
-    
-    grouping_tdm = (
-        (0,),
-        (1,),
-        (10,),
-        (11,),
-    )
-    grouping_definition = grouping_tdm
 
-    X = test_data(df.AR, training_variables)
-    X_tensor = t.from_numpy(X.X).float()
+    X_tau1 = test_data(df.AR_tau1, training_variables)
+    X_tau1_tensor = t.from_numpy(X_tau1.X).float()
+
+    X_tau2 = test_data(df.AR_tau2, training_variables)
+    X_tau2_tensor = t.from_numpy(X_tau2.X).float()
 
     eps = 1e-6
-#    suffix = f"_{output_suffix}" if output_suffix else ""
-    suffix = ""
+    suffix = f"_{output_suffix}" if output_suffix else ""
+
     # ------------------------------------------------------------------
     # Helper to run inference only if model exists
     # ------------------------------------------------------------------
-    def _compute_ratio(model):
-        if model is None:
-            return None
+    def _compute_ratio(model_tau1, model_tau2):
+        if model_tau1 is None or model_tau2 is None:
+            return None, None
 
-        X_prepared = _prepare_input_tensor(model, X_tensor, df.AR)
+        X_tau1_prepared = _prepare_input_tensor(model_tau1, X_tau1_tensor, df.AR_tau1)
+        X_tau2_prepared = _prepare_input_tensor(model_tau2, X_tau2_tensor, df.AR_tau2)
 
         with t.no_grad():
-            f = model(X_prepared).cpu().numpy().flatten()
+            f_tau1 = model_tau1(X_tau1_prepared).cpu().numpy().flatten()
+            f_tau2 = model_tau2(X_tau2_prepared).cpu().numpy().flatten()
 
-        f = np.clip(f, eps, 1 - eps)
+        f_tau1_ = np.clip(f_tau1, eps, 1 - eps)
+        f_tau2_ = np.clip(f_tau2, eps, 1 - eps)
 
-        return f / (1.0 - f)
+        return f_tau1_ / (1.0 - f_tau1_), f_tau2_ / (1.0 - f_tau2_)
 
-    ratio_wjets = _compute_ratio(model_wjets)
-    ratio_qcd = _compute_ratio(model_qcd)
-    ratio_ttbar = _compute_ratio(model_ttbar)
+    ratio_tau1, ratio_tau2 = _compute_ratio(model_tau1, model_tau2)
 
     # ------------------------------------------------------------------
     # Allocate outputs only for existing models
     # ------------------------------------------------------------------
-    fake_factor_wjets = (
-        np.zeros_like(ratio_wjets) if ratio_wjets is not None else None
+    fake_factor_tau1 = (
+        np.zeros_like(ratio_tau1) if ratio_tau1 is not None else None
     )
 
-    fake_factor_qcd = (
-        np.zeros_like(ratio_qcd) if ratio_qcd is not None else None
+    fake_factor_tau2 = (
+        np.zeros_like(ratio_tau2) if ratio_tau2 is not None else None
     )
 
-    fake_factor_ttbar = (
-        np.zeros_like(ratio_ttbar) if ratio_ttbar is not None else None
-    )
+    if isinstance(grouping_variable, list):
+        ar_tau1_group_values = np.asarray(df.AR_tau1[grouping_variable[0]])
+        ar_tau2_group_values = np.asarray(df.AR_tau2[grouping_variable[1]])
+    else:
+        ar_tau1_group_values = np.asarray(df.AR_tau1[grouping_variable])
+        ar_tau2_group_values = np.asarray(df.AR_tau2[grouping_variable])
 
-    ar_group_values = np.asarray(df.AR[grouping_variable])
-
-    group_masks = _build_group_masks(
-        ar_group_values,
+    group_tau1_masks = _build_group_masks(
+        ar_tau1_group_values,
         grouping_definition,
     )
+
+    group_tau2_masks = _build_group_masks(
+        ar_tau2_group_values,
+        grouping_definition,
+    )
+
 
     # ------------------------------------------------------------------
     # Build masks once outside the loop
     # ------------------------------------------------------------------
-    if model_wjets is not None:
-        sr_wjets_masks = dict(
-            _build_group_masks(
-                np.asarray(df.data.SR_like_wjets[grouping_variable]),
-                grouping_definition,
+    if isinstance(grouping_variable, list):
+        if model_tau1 is not None:
+            sr_tau1_masks = dict(
+                _build_group_masks(
+                    np.asarray(df.data.SR_like[grouping_variable[0]]),
+                    grouping_definition,
+                )
             )
-        )
 
-        ar_wjets_masks = dict(
-            _build_group_masks(
-                np.asarray(df.data.AR_like_wjets[grouping_variable]),
-                grouping_definition,
+            ar_tau1_masks = dict(
+                _build_group_masks(
+                    np.asarray(df.data.AR_like_tau1[grouping_variable[0]]),
+                    grouping_definition,
+                )
             )
-        )
 
-    if model_qcd is not None:
-        sr_qcd_masks = dict(
-            _build_group_masks(
-                np.asarray(df.data.SR_like_qcd[grouping_variable]),
-                grouping_definition,
+        if model_tau2 is not None:
+            sr_tau2_masks = dict(
+                _build_group_masks(
+                    np.asarray(df.data.SR_like[grouping_variable[1]]),
+                    grouping_definition,
+                )
             )
-        )
 
-        ar_qcd_masks = dict(
-            _build_group_masks(
-                np.asarray(df.data.AR_like_qcd[grouping_variable]),
-                grouping_definition,
+            ar_tau2_masks = dict(
+                _build_group_masks(
+                    np.asarray(df.data.AR_like_tau2[grouping_variable[1]]),
+                    grouping_definition,
+                )
             )
-        )
+    else:
+        if model_tau1 is not None:
+            sr_tau1_masks = dict(
+                _build_group_masks(
+                    np.asarray(df.data.SR_like[grouping_variable]),
+                    grouping_definition,
+                )
+            )
 
-    if model_ttbar is not None:
-        sr_ttbar_masks = dict(
-            _build_group_masks(
-                np.asarray(df.data.SR_like_ttbar[grouping_variable]),
-                grouping_definition,
+            ar_tau1_masks = dict(
+                _build_group_masks(
+                    np.asarray(df.data.AR_like_tau1[grouping_variable]),
+                    grouping_definition,
+                )
             )
-        )
 
-        ar_ttbar_masks = dict(
-            _build_group_masks(
-                np.asarray(df.data.AR_like_ttbar[grouping_variable]),
-                grouping_definition,
+        if model_tau2 is not None:
+            sr_tau2_masks = dict(
+                _build_group_masks(
+                    np.asarray(df.data.SR_like[grouping_variable]),
+                    grouping_definition,
+                )
             )
-        )
+
+            ar_tau2_masks = dict(
+                _build_group_masks(
+                    np.asarray(df.data.AR_like_tau2[grouping_variable]),
+                    grouping_definition,
+                )
+            )
 
     # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
-    for group_name, ar_mask in group_masks:
+    for group_name, ar_mask in group_tau1_masks:
 
         print_parts = [f"[{group_name}]"]
 
-        # ---------------- WJets ----------------
-        if model_wjets is not None:
+        # ---------------- Tau 1 ----------------
+        if model_tau1 is not None:
 
-            sr_wjets_mask = sr_wjets_masks[group_name]
-            ar_wjets_mask = ar_wjets_masks[group_name]
+            sr_tau1_mask = sr_tau1_masks[group_name]
+            ar_tau1_mask = ar_tau1_masks[group_name]
 
-            norm_wjets = (
-                np.sum(df.data.SR_like_wjets.weight[sr_wjets_mask])
-                / np.sum(df.data.AR_like_wjets.weight[ar_wjets_mask])
+            norm_tau1 = (
+                np.sum(df.data.SR_like.weight[sr_tau1_mask])
+                / np.sum(df.data.AR_like_tau1.weight[ar_tau1_mask])
             )
 
-            fake_factor_wjets[ar_mask] = (
-                norm_wjets * ratio_wjets[ar_mask]
+            fake_factor_tau1[ar_mask] = (
+                norm_tau1 * ratio_tau1[ar_mask]
             )
 
-            print_parts.append(f"WJets norm = {norm_wjets:.4f}")
+            print_parts.append(f"tau1 norm = {norm_tau1:.4f}")
 
-        # ---------------- QCD ----------------
-        if model_qcd is not None:
+    for group_name, ar_mask in group_tau2_masks:
+        # ---------------- Tau 2 ----------------
+        if model_tau2 is not None:
 
-            sr_qcd_mask = sr_qcd_masks[group_name]
-            ar_qcd_mask = ar_qcd_masks[group_name]
+            sr_tau2_mask = sr_tau2_masks[group_name]
+            ar_tau2_mask = ar_tau2_masks[group_name]
 
-            norm_qcd = (
-                np.sum(df.data.SR_like_qcd.weight[sr_qcd_mask])
-                / np.sum(df.data.AR_like_qcd.weight[ar_qcd_mask])
+            norm_tau2 = (
+                np.sum(df.data.SR_like.weight[sr_tau2_mask])
+                / np.sum(df.data.AR_like_tau2.weight[ar_tau2_mask])
             )
 
-            fake_factor_qcd[ar_mask] = (
-                norm_qcd * ratio_qcd[ar_mask]
+            fake_factor_tau2[ar_mask] = (
+                norm_tau2 * ratio_tau2[ar_mask]
             )
 
-            print_parts.append(f"QCD norm = {norm_qcd:.4f}")
-
-        # ---------------- ttbar ----------------
-        if model_ttbar is not None:
-
-            sr_ttbar_mask = sr_ttbar_masks[group_name]
-            ar_ttbar_mask = ar_ttbar_masks[group_name]
-
-            norm_ttbar = (
-                np.sum(df.data.SR_like_ttbar.weight[sr_ttbar_mask])
-                / np.sum(df.data.AR_like_ttbar.weight[ar_ttbar_mask])
-            )
-
-            if np.isnan(norm_ttbar):
-                norm_ttbar = 0
-
-            fake_factor_ttbar[ar_mask] = (
-                norm_ttbar * ratio_ttbar[ar_mask]
-            )
-
-            print_parts.append(f"ttbar norm = {norm_ttbar:.4f}")
+            print_parts.append(f"tau2 norm = {norm_tau2:.4f}")
 
         print(", ".join(print_parts))
 
     # ------------------------------------------------------------------
     # Optional clipping + output assignment
     # ------------------------------------------------------------------
-    if fake_factor_wjets is not None:
-        fake_factor_wjets = np.clip(fake_factor_wjets, 0, 1)
-        df.AR[f"ff_dnn_wjets{suffix}"] = fake_factor_wjets
+    if fake_factor_tau1 is not None:
+        fake_factor_tau1 = np.clip(fake_factor_tau1, 0, 1)
+        df.AR_tau1[f"ff_dnn_tau1{suffix}"] = fake_factor_tau1
 
-    if fake_factor_qcd is not None:
-        fake_factor_qcd = np.clip(fake_factor_qcd, 0, 1)
-        df.AR[f"ff_dnn_qcd{suffix}"] = fake_factor_qcd
-
-    if fake_factor_ttbar is not None:
-        fake_factor_ttbar = np.clip(fake_factor_ttbar, 0, 1)
-        df.AR[f"ff_dnn_ttbar{suffix}"] = fake_factor_ttbar
+    if fake_factor_tau2 is not None:
+        fake_factor_tau2 = np.clip(fake_factor_tau2, 0, 1)
+        df.AR_tau2[f"ff_dnn_tau2{suffix}"] = fake_factor_tau2
 
 
 def calculate_fake_factors_in_DR_wjets(
@@ -545,37 +539,25 @@ def evaluate_compound_ff_correction(correction_set, compound_name: str, df: pd.D
 
 
 def calculate_fake_factor_dnn(
-        df,
+        df1,
+        df2,
         grouping,
 ):
-    _df = df.copy()
+    _df1 = df1.copy()
+    _df2 = df2.copy()
 
-    _ff_file = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors.back/workdir/ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz')
-    _corr_file = cr.CorrectionSet.from_file('/work/mmoser/TauFakeFactors.back/workdir/ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz')
-
-    _frac = _ff_file['process_fractions']
-
-
-    _df['process_fraction_wjets'] = _frac.evaluate('Wjets', _df.mt_1.values, _df.njets.values, 'nominal')
-    _df['process_fraction_qcd'] = _frac.evaluate('QCD', _df.mt_1.values, _df.njets.values, 'nominal')
-    _df['process_fraction_ttbar'] = _frac.evaluate('ttbar', _df.mt_1.values, _df.njets.values, 'nominal')
-
-
+    # factor 0.5 here globally since FF only used for QCD, not Wjets and ttbar
     if grouping == 'tau_decaymode':
-        _df['ff_dnn'] = (
-            _df['process_fraction_wjets'] * _df['ff_dnn_wjets']
-            + _df['process_fraction_qcd'] * _df['ff_dnn_qcd']
-            + _df['process_fraction_ttbar'] * _df['ff_dnn_ttbar']
-        )
-        df['ff_dnn'] = _df['ff_dnn']
+        _df1['ff_dnn_tau_dm'] = (0.5 * _df1['ff_dnn_tau1_tau_dm'])
+        df1['ff_dnn_tau_dm'] = _df1['ff_dnn_tau_dm']
+        _df2['ff_dnn_tau_dm'] = (0.5 * _df2['ff_dnn_tau2_tau_dm'])
+        df2['ff_dnn_tau_dm'] = _df2['ff_dnn_tau_dm']
 
     elif grouping == 'njets':
-        _df['ff_dnn_njets'] = (
-            _df['process_fraction_wjets'] * _df['ff_dnn_wjets_njets']
-            + _df['process_fraction_qcd'] * _df['ff_dnn_qcd_njets']
-            + _df['process_fraction_ttbar'] * _df['ff_dnn_ttbar_njets']
-        )
-        df['ff_dnn_njets'] = _df['ff_dnn_njets']
+        _df1['ff_dnn_njets'] = (0.5 * _df1['ff_dnn_tau1_njets'])
+        df1['ff_dnn_njets'] = _df1['ff_dnn_njets']
+        _df2['ff_dnn_njets'] = (0.5 * _df2['ff_dnn_tau2_njets'])
+        df2['ff_dnn_njets'] = _df2['ff_dnn_njets']
         
 
 # -------------- classic fake factor determination -------------
