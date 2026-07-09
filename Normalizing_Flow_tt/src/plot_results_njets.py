@@ -865,6 +865,7 @@ def normalizing_flow_ff(
     tau2_clipped_percent = 100.0 * (1.0 - float(np.mean(clip_mask_tau2)))
 
     # ----- Factor 0.5 to avoid over-scaling when combining two taus' FFs in the final product -----
+    # added at the end
     df1 = df1[clip_mask_tau1].copy()
     df1['ff_nf_tau1'] = ff_full_tau1[clip_mask_tau1]
 

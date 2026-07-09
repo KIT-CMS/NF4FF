@@ -5,25 +5,12 @@ import random
 import time
 from typing import Literal, Union
 
-import correctionlib as cr
 import numpy as np
-import matplotlib.pyplot as plt
-import pandas as pd
 from tap import Tap
 import torch as t
-import yaml
 
-from classes import load_variables, load_data, load_model, load_fold_combined_model, test_data
+from classes import load_variables, load_data, load_fold_combined_model, test_data
 from classes import calculate_fake_factors, calculate_fake_factor_dnn, calculate_fake_factor_classic
-from classes import calculate_fake_factors_in_DR_wjets, calculate_fake_factors_in_DR_qcd, calculate_fake_factors_in_DR_ttbar
-from classes import (
-    FF_closure_in_DR_wjets, 
-    FF_closure_in_DR_qcd, 
-    FF_closure_in_DR_ttbar,
-    FF_closure_in_DR_ttbar_MC,
-    plot_fake_factors_in_DR, 
-    plot_fake_factors)
-from classes import CMS_CHANNEL_TITLE, CMS_CATEGORY_TITLE, CMS_LUMI_TITLE, CMS_LABEL, adjust_ylim_for_legend, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
 from classes import FoldCombinedDNN, load_fold_combined_model
 from classes.Loading import load_config, load_variables, load_labels
 

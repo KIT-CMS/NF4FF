@@ -1,17 +1,65 @@
-from classes import load_variables, load_data, load_model, load_fold_combined_model, test_data
-from classes import calculate_fake_factors, calculate_fake_factor_dnn, calculate_fake_factor_classic, calculate_fake_factors_in_DR_wjets, calculate_fake_factors_in_DR_qcd
-from classes import FF_closure_in_DR_wjets, FF_closure_in_DR_qcd, plot_fake_factors_in_DR, plot_fake_factors
 from pathlib import Path
+import logging
+import random
+
 import numpy as np
 import matplotlib.pyplot as plt
 import torch as t
 import pandas as pd
 import correctionlib as cr
-from classes import CMS_CHANNEL_TITLE, CMS_CATEGORY_TITLE, CMS_LUMI_TITLE, CMS_LABEL, adjust_ylim_for_legend, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
 from pathlib import Path
 import matplotlib
 import yaml
 import uproot
+from typing import Literal
+from tap import Tap
+
+from classes import load_variables, load_data, load_model, load_fold_combined_model, test_data
+from classes import calculate_fake_factors, calculate_fake_factor_dnn, calculate_fake_factor_classic, calculate_fake_factors_in_DR_wjets, calculate_fake_factors_in_DR_qcd
+from classes import FF_closure_in_DR_wjets, FF_closure_in_DR_qcd, plot_fake_factors_in_DR, plot_fake_factors
+from classes import load_config
+from classes import CMS_CHANNEL_TITLE, CMS_CATEGORY_TITLE, CMS_LUMI_TITLE, CMS_LABEL, adjust_ylim_for_legend, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
+
+
+SEED = 42
+logger = logging.getLogger(__name__)
+
+
+t.manual_seed(SEED)
+np.random.seed(SEED)
+random.seed(SEED)
+t.set_num_threads(8)
+
+class Args(Tap):
+    taus = [1, 2] #[1, 2, 12] # list of tau fakes
+    embedding: Literal["embedding", "no_embedding"] = "embedding"
+    var = "variables_61"
+    ff: bool = True
+    ff_unc: bool = False
+
+args = Args().parse_args()
+
+cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
+
+DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'
+MASKS_PATH = cfg_path["masks"]
+TRAINING_VAR_PATH = cfg_path["train_var"]
+NN_CONFIG_PATH = cfg_path["DNN"]
+CHECKPOINT_DIR = cfg_path["traininfg_results"]
+
+PLOTTING_CONFIG_PATH = cfg_path["cfg_plotting"]
+LABELS_CONFIG_PATH = cfg_path["labels"]
+
+#PLOTS_DIR = Path('../plots/layers_3/ReLU')
+PLOTS_DIR = Path(cfg_path["plots"])
+PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+
+PLOT_GROUPINGS = ('tau_decaymode', 'njets')
+PLOT_SUBDIRS = ('closure_in_DR', 'FF_distribution_AR', 'FF_distribution_DR', 'closure_plots')
+for subdir in PLOT_SUBDIRS:
+    for grouping in PLOT_GROUPINGS:
+        (PLOTS_DIR / subdir / grouping).mkdir(parents=True, exist_ok=True)
+
 
 matplotlib.rcParams.update({
     'font.size': 16,
@@ -27,25 +75,6 @@ matplotlib.rcParams.update({
     'xtick.top': True,
     'ytick.right': True,
 })
-
-
-DATA_PATH = '../../data/data_complete.feather'
-MASKS_PATH = '../configs/masks.yaml'
-TRAINING_VAR_PATH = '../configs/training_variables.yaml'
-NN_CONFIG_PATH = '../configs/DNN.yaml'
-CHECKPOINT_DIR = '../Training_results'
-
-PLOTTING_CONFIG_PATH = '../configs/plotting.yaml'
-LABELS_CONFIG_PATH = '../configs/labels.yaml'
-
-PLOTS_DIR = Path('../plots/layers_3/ReLU')
-PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-
-PLOT_GROUPINGS = ('tau_decaymode', 'njets')
-PLOT_SUBDIRS = ('closure_in_DR', 'FF_distribution_AR', 'FF_distribution_DR', 'closure_plots')
-for subdir in PLOT_SUBDIRS:
-    for grouping in PLOT_GROUPINGS:
-        (PLOTS_DIR / subdir / grouping).mkdir(parents=True, exist_ok=True)
 
 
 def _read_yaml(path):
