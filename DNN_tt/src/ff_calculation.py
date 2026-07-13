@@ -1163,9 +1163,6 @@ def main():
         )
 
 
-
-    if args.ff_unc:
-
         calculate_fake_factor_mean_std(
             df= df,
             models= models_wjets,

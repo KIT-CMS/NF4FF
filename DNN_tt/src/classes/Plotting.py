@@ -16,7 +16,9 @@ def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
     )
 
 def CMS_CATEGORY_TITLE(ax, title="tau_DM: inclusive", *args, **kwargs):
-    ax[0].set_title(
+    if isinstance(ax, Iterable):
+        ax = ax[0]
+    ax.set_title(
         title,
         #fontsize=10,
         loc="center",
@@ -157,11 +159,11 @@ def plot_closure(
     label: str,
     grouping = 'tau_decaymode',
     corr_emb_ff = 1.0,
-    plot_classic_ff_comp = True,
-    plot_corr_hline = True,
+    plot_classic_ff_comp = False,
+    plot_corr_hline = False,
 ):
     if grouping == 'tau_decaymode':
-        ff_dnn = 'ff_dnn'
+        ff_dnn = 'ff_dnn_tau_dm'
     elif grouping == 'njets':
         ff_dnn = 'ff_dnn_njets'
 
@@ -172,8 +174,9 @@ def plot_closure(
         'diboson',
         'DYjets',
         'ST',
-        'ttbar_L',
+        'ttbar',
         'embedding',
+        'Wjets',
     ]
 
 
@@ -191,12 +194,12 @@ def plot_closure(
         }
 
 
-    jet_fakes_classic, var_jet_fakes_classic = estimate_jet_fakes(
-        df,
-        bins,
-        var,
-        'ff_classic',
-    )
+    #jet_fakes_classic, var_jet_fakes_classic = estimate_jet_fakes(
+    #    df,
+    #    bins,
+    #    var,
+    #    'ff_classic',
+    #)
 
     jet_fakes_dnn, var_jet_fakes_dnn = estimate_jet_fakes(
         df,
@@ -205,10 +208,10 @@ def plot_closure(
         ff_dnn,
     )
 
-    histograms['jet_fakes_classic'] = {
-        'counts': jet_fakes_classic,
-        'variance': var_jet_fakes_classic,
-    }
+    #histograms['jet_fakes_classic'] = {
+    #    'counts': jet_fakes_classic,
+    #    'variance': var_jet_fakes_classic,
+    #}
 
     histograms['jet_fakes_dnn'] = {
         'counts': jet_fakes_dnn,
@@ -219,19 +222,20 @@ def plot_closure(
         histograms['diboson']['counts']
         + histograms['DYjets']['counts']
         + histograms['ST']['counts']
-        + histograms['ttbar_L']['counts']
+        + histograms['ttbar']['counts']
         + histograms['embedding']['counts']
+        + histograms['Wjets']['counts']
         + histograms['jet_fakes_dnn']['counts']
     )
 
-    background_classic = (
-        histograms['diboson']['counts']
-        + histograms['DYjets']['counts']
-        + histograms['ST']['counts']
-        + histograms['ttbar_L']['counts']
-        + histograms['embedding']['counts']
-        + histograms['jet_fakes_classic']['counts']
-    )
+    #background_classic = (
+    #    histograms['diboson']['counts']
+    #    + histograms['DYjets']['counts']
+    #    + histograms['ST']['counts']
+    #    + histograms['ttbar_L']['counts']
+    #    + histograms['embedding']['counts']
+    #    + histograms['jet_fakes_classic']['counts']
+    #)
 
     variance_background_dnn = (
         histograms['diboson']['variance']
@@ -242,24 +246,24 @@ def plot_closure(
         + histograms['jet_fakes_dnn']['variance']
     )
 
-    variance_background_classic = (
-        histograms['diboson']['variance']
-        + histograms['DYjets']['variance']
-        + histograms['ST']['variance']
-        + histograms['ttbar_L']['variance']
-        + histograms['embedding']['variance']
-        + histograms['jet_fakes_classic']['variance']
-    )
+    #variance_background_classic = (
+    #    histograms['diboson']['variance']
+    #    + histograms['DYjets']['variance']
+    #    + histograms['ST']['variance']
+    #    + histograms['ttbar_L']['variance']
+    #    + histograms['embedding']['variance']
+    #    + histograms['jet_fakes_classic']['variance']
+    #)
 
     histograms['background_dnn'] = {
         'counts': background_dnn,
         'variance': variance_background_dnn,
     }
 
-    histograms['background_classic'] = {
-        'counts': background_classic,
-        'variance': variance_background_classic,
-    }
+    #histograms['background_classic'] = {
+    #    'counts': background_classic,
+    #    'variance': variance_background_classic,
+    #}
 
 
     bin_widths = np.diff(bin_edges)
@@ -274,9 +278,9 @@ def plot_closure(
         histograms['background_dnn']['variance']
     )
 
-    err_stat_classic = np.sqrt(
-        histograms['background_classic']['variance']
-    )
+    #err_stat_classic = np.sqrt(
+    #    histograms['background_classic']['variance']
+    #)
 
 
     err_stat_rel_dnn = np.divide(
@@ -286,44 +290,45 @@ def plot_closure(
         where=histograms['background_dnn']['counts'] > 0,
     )
 
-    err_stat_rel_classic = np.divide(
-        err_stat_classic,
-        histograms['background_classic']['counts'],
-        out=np.zeros_like(err_stat_classic),
-        where=histograms['background_classic']['counts'] > 0,
-    )
-    if plot_classic_ff_comp == True:
-        fig, ax = plt.subplots(
-            4,
-            1,
-            figsize=(9, 9),
-            sharex=True,
-            gridspec_kw={
-                'height_ratios': [4, 1, 0.2, 1],
-                'hspace': 0.05,
-            },
-            constrained_layout=True,
-        )
-    else:
-        fig, ax = plt.subplots(
-            2,
-            1,
-            figsize=(9, 7),
-            sharex=True,
-            gridspec_kw={
-                'height_ratios': [3, 1],
-                'hspace': 0.05,
-            },
-            constrained_layout=True,
-        )    
+    #err_stat_rel_classic = np.divide(
+    #    err_stat_classic,
+    #    histograms['background_classic']['counts'],
+    #    out=np.zeros_like(err_stat_classic),
+    #    where=histograms['background_classic']['counts'] > 0,
+    #)
+    #if plot_classic_ff_comp == True:
+    #    fig, ax = plt.subplots(
+    #        4,
+    #        1,
+    #        figsize=(9, 9),
+    #        sharex=True,
+    #        gridspec_kw={
+    #            'height_ratios': [4, 1, 0.2, 1],
+    #            'hspace': 0.05,
+    #        },
+    #        constrained_layout=True,
+    #    )
+    #else:
+    fig, ax = plt.subplots(
+        2,
+        1,
+        figsize=(9, 7),
+        sharex=True,
+        gridspec_kw={
+            'height_ratios': [3, 1],
+            'hspace': 0.05,
+        },
+        constrained_layout=True,
+    )    
 
     stack_components = [
         (histograms['diboson']['counts'], "#94a4a2", 'Diboson'),
-        (histograms['ttbar_L']['counts'], '#832db6', r'$t\bar{t} \to \tau$'),
+        (histograms['ttbar']['counts'], '#832db6', r'$t\bar{t} \to \tau$'),
         (histograms['ST']['counts'], "#717581", r"Single t"),
         (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
         (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
         (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
+        (histograms['Wjets']['counts'], '#e76300', r"W+jets"),
     ]
 
     counts_stack_total = draw_stacked_stepfill(
@@ -405,27 +410,27 @@ def plot_closure(
         ax[1].axhline(1/corr_emb_ff, color='blue', linestyle='--', linewidth=1.5)
     ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
     
-    ax[1].set_ylabel("Data / Model")
+    ax[1].set_ylabel("Data / Model", loc='center')
     ax[1].set_ylim([0.75, 1.25])
     ax[1].grid(True, linestyle=':', alpha=0.7)
     ax[1].tick_params(direction='in', top=True, right=True)
     ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
 
-    ratio_classic = np.divide(
-        histograms['data']['counts'],
-        histograms['background_classic']['counts'],
-        out=np.zeros_like(histograms['data']['counts'], dtype=float),
-        where=histograms['background_classic']['counts'] > 0,
-    )
+    if plot_classic_ff_comp:
 
-    ratio_err_classic = np.divide(
-        err_data,
-        histograms['background_classic']['counts'],
-        out=np.zeros_like(err_data),
-        where=histograms['background_classic']['counts'] > 0,
-    )
+        ratio_classic = np.divide(
+            histograms['data']['counts'],
+            histograms['background_classic']['counts'],
+            out=np.zeros_like(histograms['data']['counts'], dtype=float),
+            where=histograms['background_classic']['counts'] > 0,
+        )
 
-    if plot_classic_ff_comp == True:
+        ratio_err_classic = np.divide(
+            err_data,
+            histograms['background_classic']['counts'],
+            out=np.zeros_like(err_data),
+            where=histograms['background_classic']['counts'] > 0,
+        )
 
         ax[2].axis('off')
 
@@ -2065,20 +2070,33 @@ def FF_closure_in_DR_wjets_with_stat_unc_ensemble(
 
 
 def _grouping_masks(frame, grouping):
-	if grouping == 'tau_decaymode':
-		return [
-			(frame.tau_decaymode_2 == 0, r't_dm $=$ 0'),
-			(frame.tau_decaymode_2 == 1, r't_dm $=$ 1'),
-			(frame.tau_decaymode_2 == 10, r't_dm $=$ 10'),
-			(frame.tau_decaymode_2 == 11, r't_dm $=$ 11'),
-		]
-	if grouping == 'njets':
-		return [
-			(frame.njets == 0, r'njets $=$ 0'),
-			(frame.njets == 1, r'njets $=$ 1'),
-			(frame.njets >= 2, r'njets $\geq$ 2'),
-		]
-	raise ValueError(f'Unsupported grouping: {grouping}')
+    if grouping == 'tau_decaymode':
+        grouping = 'tau_decaymode_2'
+
+    if grouping == 'tau_decaymode_2':
+        return [
+            (frame.tau_decaymode_2 == 0, r't_dm $=$ 0'),
+            (frame.tau_decaymode_2 == 1, r't_dm $=$ 1'),
+            (frame.tau_decaymode_2 == 10, r't_dm $=$ 10'),
+            (frame.tau_decaymode_2 == 11, r't_dm $=$ 11'),
+        ]
+
+    if grouping == 'njets':
+        return [
+            (frame.njets == 0, r'njets $=$ 0'),
+            (frame.njets == 1, r'njets $=$ 1'),
+            (frame.njets >= 2, r'njets $\geq$ 2'),
+        ]
+
+    if grouping == 'tau_decaymode_1':
+        return [
+            (frame.tau_decaymode_1 == 0, r't_dm $=$ 0'),
+            (frame.tau_decaymode_1 == 1, r't_dm $=$ 1'),
+            (frame.tau_decaymode_1 == 10, r't_dm $=$ 10'),
+            (frame.tau_decaymode_1 == 11, r't_dm $=$ 11'),
+        ]
+
+    raise ValueError(f'Unsupported grouping: {grouping}')
 
 
 
@@ -2133,30 +2151,39 @@ def plot_fake_factors_grouped_c(df, category_title, grouping='tau_decaymode', sq
 
 
 def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode'):
+    hep.style.use(hep.style.CMS)
+
     if grouping == 'tau_decaymode':
-        ff_wjets = 'ff_dnn_wjets'
-        ff_qcd = 'ff_dnn_qcd'
-        ff_ttbar = 'ff_dnn_ttbar'
+        ff_tau1 = 'ff_dnn_tau1_tau_dm'
+        ff_tau2 = 'ff_dnn_tau2_tau_dm'
+        grouping = ['tau_decaymode_1', 'tau_decaymode_2']
     elif grouping == 'njets':
-        ff_wjets = 'ff_dnn_wjets_njets'
-        ff_qcd = 'ff_dnn_qcd_njets'
-        ff_ttbar = 'ff_dnn_ttbar_njets'
+        ff_tau1 = 'ff_dnn_tau1_njets'
+        ff_tau2 = 'ff_dnn_tau2_njets'
     else:
         raise ValueError(f'Unsupported grouping: {grouping}')
 
-    bins_wjets = np.linspace(0, 1, 50)
-    bins_qcd = np.linspace(0, 0.5, 50)
-    bins_ttbar = np.linspace(0, 1, 50)
+    bins_tau1 = np.linspace(0, 1.0, 50)
+    bins_tau2 = np.linspace(0, 1.0, 50)
 
-    frame = df.data.AR
+    frame_tau1 = df.data.AR_tau1
+    frame_tau2 = df.data.AR_tau2
 
-    fig, ax = plt.subplots(3, 1, figsize=(10, 7))
+    if isinstance(grouping, list):
+        group_mask_tau1 = _grouping_masks(frame_tau1, grouping[0])
+        group_mask_tau2 = _grouping_masks(frame_tau2, grouping[1])
+    else:
+        group_mask_tau1 = _grouping_masks(frame_tau1, grouping)
+        group_mask_tau2 = _grouping_masks(frame_tau2, grouping)
 
-    ax[0].hist(frame[ff_wjets], bins=bins_wjets, histtype='step', linewidth=2, label='Wjets: incl')
-    for mask, mask_label in _grouping_masks(frame, grouping):
-        ax[0].hist(frame[ff_wjets][mask], bins=bins_wjets, histtype='step', ls='--', label=f'{mask_label}')
+    fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
+
+    n1 = ax[0].hist(frame_tau1[ff_tau1], bins=bins_tau1, histtype='step', linewidth=2, label=r'Leading $\tau_h$: incl')
+    for mask, mask_label in group_mask_tau1:
+        ax[0].hist(frame_tau1[ff_tau1][mask], bins=bins_tau1, histtype='step', ls='--', label=f'{mask_label}')
     ax[0].set_ylabel('Events')
-    ax[0].legend(prop={'size': 9}, loc = 'upper right')
+    ax[0].legend(loc = 'center left', prop={'size': 15})
+    ax[0].set_ylim(top=1.2 * np.max(n1[0]))
 
 
     CMS_CHANNEL_TITLE([ax[0]])
@@ -2165,19 +2192,122 @@ def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode'):
     CMS_CATEGORY_TITLE([ax[0]], title=category_title)
 
     ax[1].set_ylabel('Events')
-    ax[1].hist(frame[ff_qcd], bins=bins_qcd, histtype='step', linewidth=2, label='QCD: incl')
-    for mask, mask_label in _grouping_masks(frame, grouping):
-        ax[1].hist(frame[ff_qcd][mask], bins=bins_qcd, histtype='step', ls='--', label=f'{mask_label}')
-    ax[1].legend(prop={'size': 9})
+    n2 = ax[1].hist(frame_tau2[ff_tau2], bins=bins_tau2, histtype='step', linewidth=2, label=r'Trailing $\tau_h$: incl')
+    for mask, mask_label in group_mask_tau2:
+        ax[1].hist(frame_tau2[ff_tau2][mask], bins=bins_tau2, histtype='step', ls='--', label=f'{mask_label}')
+    ax[1].set_xlabel(r'$F_{\mathrm{F}}$ value')
+    ax[1].legend(loc = 'upper left', prop={'size': 15})
 
-    ax[2].set_ylabel('Events')
-    ax[2].hist(frame[ff_ttbar], bins=bins_ttbar, histtype='step', linewidth=2, label='ttbar: incl')
-    for mask, mask_label in _grouping_masks(frame, grouping):
-        ax[2].hist(frame[ff_ttbar][mask], bins=bins_ttbar, histtype='step', ls='--', label=f'{mask_label}')
-    ax[2].set_xlabel(r'$F_{\mathrm{F}}$ value')
-    ax[2].legend(prop={'size': 9})
+    return fig, ax
 
 
+def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymode'):
+    hep.style.use(hep.style.CMS)
+
+    if grouping == 'tau_decaymode':
+        ff = 'ff_dnn_tau_dm'
+        grouping = ['tau_decaymode_1', 'tau_decaymode_2']
+    elif grouping == 'njets':
+        ff = 'ff_dnn_njets'
+    else:
+        raise ValueError(f'Unsupported grouping: {grouping}')
+
+    bins_tau1 = np.linspace(0, 0.5, 50)
+    bins_tau2 = np.linspace(0, 0.5, 50)
+
+    frame_tau1 = df.data.AR_tau1
+    frame_tau2 = df.data.AR_tau2
+
+    if isinstance(grouping, list):
+        group_mask_tau1 = _grouping_masks(frame_tau1, grouping[0])
+        group_mask_tau2 = _grouping_masks(frame_tau2, grouping[1])
+    else:
+        group_mask_tau1 = _grouping_masks(frame_tau1, grouping)
+        group_mask_tau2 = _grouping_masks(frame_tau2, grouping)
+
+    n1, binedges = np.histogram(frame_tau1[ff], bins=bins_tau1)
+    n2, _ = np.histogram(frame_tau2[ff], bins=bins_tau2)
+
+    n = n1 + n2
+
+    n1_split = []
+    n2_split = []
+
+    for mask, mask_label in group_mask_tau1:
+        h,_ = np.histogram(frame_tau1[ff][mask], bins=bins_tau1)
+        n1_split.append(h)
+
+    for mask, mask_label in group_mask_tau2:
+        h,_ = np.histogram(frame_tau2[ff][mask], bins=bins_tau2)
+        n2_split.append(h)
+
+    n_split = []
+    for i in range(len(n1_split)):
+        n_split.append(n1_split[i] + n2_split[i])
+      
+    fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+    CMS_CHANNEL_TITLE(ax)
+    CMS_LUMI_TITLE(ax)
+    CMS_LABEL(ax)
+    CMS_CATEGORY_TITLE(ax, title=category_title)
+
+    ax.stairs(n, binedges, linewidth=2, label=r'Combined $\tau_h$: incl')
+
+    for x, (_, mask_label) in zip(n_split, group_mask_tau1):
+        ax.stairs(x, binedges, ls='--', label=f'{mask_label}')
+
+    ax.set_ylabel('Events')
+    ax.set_xlabel(r'$F_{\mathrm{F}}$ value')
+    ax.set_ylabel('Events')
+    ax.legend(loc = 'upper right', prop={'size': 20})
+
+    return fig, ax
+
+
+def plot_fake_factors_in_dr_grouped(df, category_title, grouping='tau_decaymode'):
+    hep.style.use(hep.style.CMS)
+
+    if grouping == 'tau_decaymode':
+        ff_tau1 = 'ff_dnn_tau1_tau_dm'
+        ff_tau2 = 'ff_dnn_tau2_tau_dm'
+        grouping = ['tau_decaymode_1', 'tau_decaymode_2']
+    elif grouping == 'njets':
+        ff_tau1 = 'ff_dnn_tau1_njets'
+        ff_tau2 = 'ff_dnn_tau2_njets'
+    else:
+        raise ValueError(f'Unsupported grouping: {grouping}')
+
+    bins_tau1 = np.linspace(0, 1.0, 50)
+    bins_tau2 = np.linspace(0, 1.0, 50)
+
+    frame_tau1 = df.data.AR_like_tau1
+    frame_tau2 = df.data.AR_like_tau2
+
+    if isinstance(grouping, list):
+        group_mask_tau1 = _grouping_masks(frame_tau1, grouping[0])
+        group_mask_tau2 = _grouping_masks(frame_tau2, grouping[1])
+    else:
+        group_mask_tau1 = _grouping_masks(frame_tau1, grouping)
+        group_mask_tau2 = _grouping_masks(frame_tau2, grouping)
+
+    fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
+    n1 = ax[0].hist(frame_tau1[ff_tau1], bins=bins_tau1, histtype='step', linewidth=2, label=r'Leading $\tau_h$: incl')
+    for mask, mask_label in group_mask_tau1:
+        ax[0].hist(frame_tau1[ff_tau1][mask], bins=bins_tau1, histtype='step', ls='--', label=f'{mask_label}')
+    ax[0].set_ylabel('Events')
+    ax[0].legend(loc = 'center left', prop={'size': 15})
+    ax[0].set_ylim(top=1.2 * np.max(n1[0]))
+
+    CMS_CHANNEL_TITLE([ax[0]])
+    CMS_LUMI_TITLE([ax[0]])
+    CMS_LABEL([ax[0]])
+    CMS_CATEGORY_TITLE([ax[0]], title=category_title)
+
+    ax[1].set_ylabel('Events')
+    ax[1].hist(frame_tau2[ff_tau2], bins=bins_tau2, histtype='step', linewidth=2, label=r'Trailing $\tau_h$: incl')
+    for mask, mask_label in group_mask_tau2:
+        ax[1].hist(frame_tau2[ff_tau2][mask], bins=bins_tau2, histtype='step', ls='--', label=f'{mask_label}')
+    ax[1].legend(loc = 'upper left', prop={'size': 15})
 
     return fig, ax
 
@@ -2205,56 +2335,6 @@ def plot_fake_factors_in_dr_grouped_c(df, category_title, squeeze_upper_bound, g
         ax[0].hist(frame_wjets[ff_wjets][mask], bins=bins_wjets, histtype='step', ls='--', label=f'{mask_label}')
     ax[0].set_ylabel('Events')
     ax[0].legend(prop={'size': 9}, loc = 'upper right')
-
-    CMS_CHANNEL_TITLE([ax[0]])
-    CMS_LUMI_TITLE([ax[0]])
-    CMS_LABEL([ax[0]])
-    CMS_CATEGORY_TITLE([ax[0]], title=category_title)
-
-    ax[1].set_ylabel('Events')
-    ax[1].hist(frame_qcd[ff_qcd], bins=bins_qcd, histtype='step', linewidth=2, label='QCD: incl')
-    for mask, mask_label in _grouping_masks(frame_qcd, grouping):
-        ax[1].hist(frame_qcd[ff_qcd][mask], bins=bins_qcd, histtype='step', ls='--', label=f'{mask_label}')
-    ax[1].legend(prop={'size': 9})
-
-    ax[2].set_ylabel('Events')
-    ax[2].hist(frame_ttbar[ff_ttbar], bins=bins_ttbar, histtype='step', linewidth=2, label='ttbar: incl')
-    for mask, mask_label in _grouping_masks(frame_ttbar, grouping):
-        ax[2].hist(frame_ttbar[ff_ttbar][mask], bins=bins_ttbar, histtype='step', ls='--', label=f'{mask_label}')
-    ax[2].set_xlabel(r'$F_{\mathrm{F}}$ value')
-    ax[2].legend(prop={'size': 9})
-
-    return fig, ax
-
-
-
-def plot_fake_factors_in_dr_grouped(df, category_title, grouping='tau_decaymode'):
-    if grouping == 'tau_decaymode':
-        ff_wjets = 'ff_dnn_wjets'
-        ff_qcd = 'ff_dnn_qcd'
-        ff_ttbar = 'ff_dnn_ttbar'
-    elif grouping == 'njets':
-        ff_wjets = 'ff_dnn_wjets_njets'
-        ff_qcd = 'ff_dnn_qcd_njets'
-        ff_ttbar = 'ff_dnn_ttbar_njets'
-    else:
-        raise ValueError(f'Unsupported grouping: {grouping}')
-
-    bins_wjets = np.linspace(0, 1, 50)
-    bins_qcd = np.linspace(0, 0.5, 50)
-    bins_ttbar = np.linspace(0, 1, 50)
-
-    frame_wjets = df.data.AR_like_wjets
-    frame_qcd = df.data.AR_like_qcd
-    frame_ttbar = df.data.AR_like_ttbar
-
-    fig, ax = plt.subplots(3, 1, figsize=(10, 7))
-    ax[0].hist(frame_wjets[ff_wjets], bins=bins_wjets, histtype='step', linewidth=2, label='Wjets: incl')
-    for mask, mask_label in _grouping_masks(frame_wjets, grouping):
-        ax[0].hist(frame_wjets[ff_wjets][mask], bins=bins_wjets, histtype='step', ls='--', label=f'{mask_label}')
-    ax[0].set_ylabel('Events')
-    ax[0].legend(prop={'size': 9}, loc = 'upper right')
-    ax[0].set_ylim(0, 20000)
 
     CMS_CHANNEL_TITLE([ax[0]])
     CMS_LUMI_TITLE([ax[0]])
@@ -2306,4 +2386,3 @@ def plot_NN_output_FF(
     ax[1].hist(FF, bins=bins, histtype='step', linewidth=2)
     ax[1].set_xlabel('fake factors')
     return fig, ax
-
