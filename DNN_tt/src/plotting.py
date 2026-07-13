@@ -16,9 +16,11 @@ from tap import Tap
 
 from classes import load_variables, load_data, load_model, load_fold_combined_model, test_data
 from classes import calculate_fake_factors, calculate_fake_factor_dnn, calculate_fake_factor_classic, calculate_fake_factors_in_DR_wjets, calculate_fake_factors_in_DR_qcd
-from classes import FF_closure_in_DR_wjets, FF_closure_in_DR_qcd, plot_fake_factors_in_DR, plot_fake_factors
-from classes import load_config
+from classes import plot_fake_factors_in_DR, plot_fake_factors
 from classes import CMS_CHANNEL_TITLE, CMS_CATEGORY_TITLE, CMS_LUMI_TITLE, CMS_LABEL, adjust_ylim_for_legend, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
+from classes.Loading import load_config, load_variables, load_labels
+from classes.Plotting import FF_closure_in_DR_tau1
+
 
 
 SEED = 42
@@ -34,8 +36,6 @@ class Args(Tap):
     taus = [1, 2] #[1, 2, 12] # list of tau fakes
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables_61"
-    ff: bool = True
-    ff_unc: bool = False
 
 args = Args().parse_args()
 
@@ -54,7 +54,7 @@ LABELS_CONFIG_PATH = cfg_path["labels"]
 PLOTS_DIR = Path(cfg_path["plots"])
 PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
-PLOT_GROUPINGS = ('tau_decaymode', 'njets')
+PLOT_GROUPINGS = ('njets', 'tau_decaymode')
 PLOT_SUBDIRS = ('closure_in_DR', 'FF_distribution_AR', 'FF_distribution_DR', 'closure_plots')
 for subdir in PLOT_SUBDIRS:
     for grouping in PLOT_GROUPINGS:
@@ -76,49 +76,8 @@ matplotlib.rcParams.update({
     'ytick.right': True,
 })
 
-
-def _read_yaml(path):
-    with open(path, 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f)
-
-
-def _read_labels_yaml(path):
-    labels_by_channel = {}
-    current_channel = None
-
-    with open(path, 'r', encoding='utf-8') as f:
-        for raw_line in f:
-            line = raw_line.rstrip('\n')
-            stripped = line.strip()
-            indent = len(line) - len(line.lstrip(' '))
-
-            if not stripped or stripped.startswith('#'):
-                continue
-
-            # Be tolerant if the channel key is accidentally indented by one space.
-            if stripped.endswith(':') and ':' not in stripped[:-1] and indent <= 1:
-                current_channel = stripped[:-1]
-                labels_by_channel.setdefault(current_channel, {})
-                continue
-
-            if current_channel is None:
-                continue
-
-            if indent < 4:
-                continue
-
-            key_value = line.strip().split(':', 1)
-            if len(key_value) != 2:
-                continue
-
-            key, value = key_value
-            labels_by_channel[current_channel][key] = value.strip().strip('"').strip("'")
-
-    return labels_by_channel
-
-
-PLOTTING_CFG = _read_yaml(PLOTTING_CONFIG_PATH)
-LABELS_CFG = _read_labels_yaml(LABELS_CONFIG_PATH)
+PLOTTING_CFG = load_config(PLOTTING_CONFIG_PATH)
+LABELS_CFG = load_labels(LABELS_CONFIG_PATH)
 
 VARIABLES_SMALL = PLOTTING_CFG.get('variables_set_small', [])
 VARIABLES_LARGE = PLOTTING_CFG.get('variables_set_large', [])
@@ -151,42 +110,28 @@ def main():
     df = load_data(DATA_PATH, MASKS_PATH)
 
 
-    grouping_njets = (
-        (0,),
-        (1,),
-        (2, 1000),
-    )
-
-
-
+    # ----- Closure plots in DR -----
     for grouping in PLOT_GROUPINGS:
         for var in VARIABLES_SMALL:
             bins, label = get_bins_and_label(var)
-            fig_w, _ = FF_closure_in_DR_wjets(
-                df=df,
-                var=var,
-                bins=bins,
-                label=label,
-                grouping=grouping,
-            )
-            plt.savefig(PLOTS_DIR / 'closure_in_DR' / grouping / f'FF_closure_DR_wjets_{var}.png', dpi=150, bbox_inches='tight')
-            plt.savefig(PLOTS_DIR / 'closure_in_DR' / grouping / f'FF_closure_DR_wjets_{var}.pdf', dpi=150, bbox_inches='tight')
-            plt.close(fig_w)
 
-            fig_q, _ = FF_closure_in_DR_qcd(
+            fig_q, _ = FF_closure_in_DR_tau1(
                 df=df,
                 var=var,
                 bins=bins,
                 label=label,
                 grouping=grouping,
             )
-            plt.savefig(PLOTS_DIR / 'closure_in_DR' / grouping / f'FF_closure_DR_qcd_{var}.png', dpi=150, bbox_inches='tight')
-            plt.savefig(PLOTS_DIR / 'closure_in_DR' / grouping / f'FF_closure_DR_qcd_{var}.pdf', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'closure_in_DR' / grouping / f'FF_closure_DR_tau1_{var}.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'closure_in_DR' / grouping / f'FF_closure_DR_tau1_{var}.pdf', dpi=150, bbox_inches='tight')
             plt.close(fig_q)
 
-        print(f'Saved closure plots for {grouping}')
+        logger.info(f'Saved closure plots in DR for {grouping}')
+    
+    exit()
 
 
+    # ----- Fake-factor distributions -----
     for grouping in PLOT_GROUPINGS:
         fig_ar, ax_ar = plot_fake_factors_grouped(
             df=df,
@@ -246,7 +191,7 @@ def main():
         plt.savefig(PLOTS_DIR / 'closure_plots' / 'njets' / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
         plt.close(fig)
 
-    print('Saved all closure plots in njets')
+    logger.info('Saved all closure plots in njets')
 
 # -------------------------------------------
 

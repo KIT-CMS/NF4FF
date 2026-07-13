@@ -42,7 +42,7 @@ def CMS_LABEL(ax, *args, **kwargs):
         fontsize=20,
         verticalalignment='top',
         style ="italic",
-        #fontproperties="Tex Gyre Heros:italic",
+        fontproperties="Tex Gyre Heros:italic",
         bbox=dict(facecolor="white", alpha=0, edgecolor="white", boxstyle="round,pad=0.5"),
         transform=ax.transAxes
     )

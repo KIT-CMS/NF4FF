@@ -115,6 +115,9 @@ class RegionView:
         """Assign values to the underlying dataframe for masked rows."""
         self._current_df().loc[self._mask, key] = value
 
+    def __len__(self):
+        return int(self._mask.sum())
+
     def copy(self):
         """Return a plain DataFrame copy of the masked events."""
         return self._current_df().loc[self._mask].copy()

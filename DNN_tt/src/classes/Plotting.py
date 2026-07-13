@@ -1,41 +1,50 @@
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+import mplhep as hep
 import pandas as pd
+from collections.abc import Iterable
 
 def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
-    ax[0].set_title(
-        r"$e\tau_h$",
-        fontsize=20,
+    if isinstance(ax, Iterable):
+        ax = ax[0]
+    ax.set_title(
+        r"$\mathrm{\tau_h\tau_h}$",
+        #fontsize=20,
         loc="left",
-        fontproperties="Tex Gyre Heros"
+        #fontproperties="Tex Gyre Heros"
     )
 
 def CMS_CATEGORY_TITLE(ax, title="tau_DM: inclusive", *args, **kwargs):
     ax[0].set_title(
         title,
-        fontsize=10,
+        #fontsize=10,
         loc="center",
-        fontproperties="Tex Gyre Heros"
+        #fontproperties="Tex Gyre Heros"
     )
 
 def CMS_LUMI_TITLE(ax, *args, **kwargs):
-    ax[0].set_title(
-        "59.8 $fb^{-1}$ (2018, 13 TeV)",
-        fontsize=20,
+    if isinstance(ax, Iterable):
+        ax = ax[0]
+    ax.set_title(
+        r"59.8 $\mathrm{fb}^{-1}$ (2018, 13 TeV)",
+        #fontsize=20,
         loc="right",
-        fontproperties="Tex Gyre Heros"
+        #fontproperties="Tex Gyre Heros"
     )
 
 def CMS_LABEL(ax, *args, **kwargs):
-    ax[0].text(
+    if isinstance(ax, Iterable):
+        ax = ax[0]
+    ax.text(
         0.025, 0.95,
         "Private work (CMS data/simulation)",
-        fontsize=15,
+        fontsize=20,
         verticalalignment='top',
+        style ="italic",
         fontproperties="Tex Gyre Heros:italic",
         bbox=dict(facecolor="white", alpha=0, edgecolor="white", boxstyle="round,pad=0.5"),
-        transform=ax[0].transAxes
+        transform=ax.transAxes
     )
 
 
@@ -1317,25 +1326,27 @@ def FF_closure_in_DR_wjets_with_stat_unc(
 
     return fig, ax
 
-def FF_closure_in_DR_qcd(
+def FF_closure_in_DR_tau1(
     df,
 	var,
 	bins,
 	label,
-	grouping = 'tau_decaymode',
+	grouping = 'njets',
 ):
+    hep.style.use(hep.style.CMS)
+
     if grouping == 'tau_decaymode':
-        ff_dnn_qcd = 'ff_dnn_qcd'
+        ff_dnn_tau1 = 'ff_dnn_tau1_tau_dm'
     elif grouping == 'njets':
-        ff_dnn_qcd = 'ff_dnn_qcd_njets'
+        ff_dnn_tau1 = 'ff_dnn_tau1_njets'
 
-    counts_SR_like, bin_edges = np.histogram(df.data.SR_like_qcd[var], weights = df.data.SR_like_qcd.weight_qcd, bins = bins)
-    counts_FF_AR_like, _ = np.histogram(df.data.AR_like_qcd[var], weights = df.data.AR_like_qcd.weight_qcd * df.data.AR_like_qcd[ff_dnn_qcd], bins = bins)
+    counts_SR_like, bin_edges = np.histogram(df.data.SR_like[var], weights = df.data.SR_like.weight_qcd, bins = bins)
+    counts_FF_AR_like, _ = np.histogram(df.data.AR_like_tau1[var], weights = df.data.AR_like_tau1.weight_qcd * df.data.AR_like_tau1[ff_dnn_tau1], bins = bins)
 
-    variance_SR_like, _ = np.histogram(df.data.SR_like_qcd[var], weights = df.data.SR_like_qcd.weight_qcd**2, bins = bins)
+    variance_SR_like, _ = np.histogram(df.data.SR_like[var], weights = df.data.SR_like.weight_qcd**2, bins = bins)
     variance_FF_AR_like, _ = np.histogram(
-        df.data.AR_like_qcd[var], 
-        weights = (df.data.AR_like_qcd.weight_qcd * df.data.AR_like_qcd[ff_dnn_qcd])**2,
+        df.data.AR_like_tau1[var], 
+        weights = (df.data.AR_like_tau1.weight_qcd * df.data.AR_like_tau1[ff_dnn_tau1])**2,
         bins = bins)
 
     err_SR_like = np.sqrt(variance_SR_like)
@@ -1349,7 +1360,7 @@ def FF_closure_in_DR_qcd(
     fig, ax = plt.subplots(
         2,
         1,
-        figsize=(9, 7),
+        figsize=(11.7, 9.1),
         sharex=True,
         gridspec_kw={
             'height_ratios': [4, 1],
@@ -1394,7 +1405,7 @@ def FF_closure_in_DR_qcd(
         step='mid',
         label='Sys. Unc.',
     )
-    ax[1].set_ylabel("Data / Model")
+    ax[1].set_ylabel("Data / Model", loc='center')
     ax[1].set_ylim([0.75, 1.25])
     ax[1].grid(True, linestyle=':', alpha=0.7)
     ax[1].tick_params(direction='in', top=True, right=True)

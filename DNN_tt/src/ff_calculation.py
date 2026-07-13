@@ -10,7 +10,7 @@ from tap import Tap
 import torch as t
 
 from classes import load_variables, load_data, load_fold_combined_model, test_data
-from classes import calculate_fake_factors, calculate_fake_factor_dnn, calculate_fake_factor_classic
+from classes import calculate_fake_factors, calculate_fake_factor_dnn, calculate_fake_factor_classic, calculate_fake_factors_in_DR_qcd
 from classes import FoldCombinedDNN, load_fold_combined_model
 from classes.Loading import load_config, load_variables, load_labels
 
@@ -1129,22 +1129,38 @@ def main():
         )
 
         #the equivalent would be saving the tau1 and tau2 FF seperately
-        '''
+        
+        # ----- calculate fake factors in DR -----
+        logger.info("Calculating fake factors in DR...")
         calculate_fake_factors_in_DR_qcd(
-            df, model_qcd_tdm,
-            training_variables,
-            'njets',
-            grouping_njets,
+            df=df,
+            model_tau1=model_tau1_tdm,
+            model_tau2=model_tau2_tdm,
+            training_variables=training_variables,
+            grouping_variable = ['tau_decaymode_1', 'tau_decaymode_2'],
+            grouping_definition = grouping_tdm,
+            output_suffix = 'tau_dm',
         )
 
         calculate_fake_factors_in_DR_qcd(
-            df, model_qcd_njets,
-            training_variables,
+            df=df,
+            model_tau1=model_tau1_njets,
+            model_tau2=model_tau2_njets,
+            training_variables=training_variables,
+            grouping_variable = 'njets',
+            grouping_definition = grouping_njets,
+            output_suffix = 'njets',
+        )
+
+
+
+    if args.ff_unc:
+
+        calculate_fake_factor_mean_std(
             'njets',
             grouping_njets,
             'njets',
         )
-        '''
 
 
 

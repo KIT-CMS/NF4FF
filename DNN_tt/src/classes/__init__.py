@@ -55,7 +55,6 @@ from .Plotting import (
 )
 from .Plotting import (
     FF_closure,
-    FF_closure_in_DR_qcd,
     FF_closure_in_DR_wjets,
     FF_closure_in_DR_wjets_with_stat_unc,
     FF_closure_in_DR_qcd_with_stat_unc,
