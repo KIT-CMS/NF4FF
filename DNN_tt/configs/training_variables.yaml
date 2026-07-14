@@ -22,8 +22,8 @@ variables:
   - jpt_2
   - jeta_1
   - jeta_2
-  - m_fastmtt
-  - pt_fastmtt
+  #- m_fastmtt
+  #- pt_fastmtt
   - met
   - njets
   - mt_tot
@@ -49,4 +49,5 @@ variables:
   - deltaEta_2j2
   - deltaEta_12j1
   - deltaEta_12j2
+  - tau_decaymode_1
   - tau_decaymode_2

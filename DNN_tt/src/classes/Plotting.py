@@ -108,23 +108,7 @@ def adjust_ylim_for_legend(ax=None, spacing=0.05):
         new_ymax = 10 ** new_log_ymax
         ax.set_ylim(ymin, new_ymax)
 
-def estimate_jet_fakes(
-	df,
-	bins,
-	var,
-	ff_var,
-):
-	counts = {}
-	variance = {}
-	list_processes = ['data', 'diboson', 'DYjets', 'ST', 'embedding', 'ttbar_L']
-	for proc in list_processes:	
-		counts[proc], _ = np.histogram(df[proc].AR[var], weights = df[proc].AR.weight * df[proc].AR[ff_var], bins = bins)
-		variance[proc], _ = np.histogram(df[proc].AR[var], weights = (df[proc].AR.weight * df[proc].AR[ff_var])**2, bins = bins)
 
-	jet_fakes = counts['data'] - counts['diboson'] - counts['DYjets'] - counts['ST'] - counts['embedding'] - counts['ttbar_L']
-	var_jet_fakes = variance['data'] + variance['diboson'] + variance['DYjets'] + variance['ST'] + variance['embedding'] + variance['ttbar_L']
-
-	return jet_fakes, var_jet_fakes
 
 def weighted_histogram(values, weights, bins):
     counts, edges = np.histogram(values, weights=weights, bins=bins)
@@ -162,10 +146,14 @@ def plot_closure(
     plot_classic_ff_comp = False,
     plot_corr_hline = False,
 ):
+    hep.style.use(hep.style.CMS)
+
     if grouping == 'tau_decaymode':
-        ff_dnn = 'ff_dnn_tau_dm'
+        ff_dnn_tau1 = 'ff_dnn_tau1_tau_dm'
+        ff_dnn_tau2 = 'ff_dnn_tau2_tau_dm'
     elif grouping == 'njets':
-        ff_dnn = 'ff_dnn_njets'
+        ff_dnn_tau1 = 'ff_dnn_tau1_njets'
+        ff_dnn_tau2 = 'ff_dnn_tau2_njets'
 
     histograms = {}
 
@@ -176,7 +164,7 @@ def plot_closure(
         'ST',
         'ttbar',
         'embedding',
-        'Wjets',
+        'wjets',
     ]
 
 
@@ -205,7 +193,8 @@ def plot_closure(
         df,
         bins,
         var,
-        ff_dnn,
+        ff_dnn_tau1,
+        ff_dnn_tau2,
     )
 
     #histograms['jet_fakes_classic'] = {
@@ -224,7 +213,7 @@ def plot_closure(
         + histograms['ST']['counts']
         + histograms['ttbar']['counts']
         + histograms['embedding']['counts']
-        + histograms['Wjets']['counts']
+        + histograms['wjets']['counts']
         + histograms['jet_fakes_dnn']['counts']
     )
 
@@ -241,8 +230,9 @@ def plot_closure(
         histograms['diboson']['variance']
         + histograms['DYjets']['variance']
         + histograms['ST']['variance']
-        + histograms['ttbar_L']['variance']
+        + histograms['ttbar']['variance']
         + histograms['embedding']['variance']
+        + histograms['wjets']['variance']
         + histograms['jet_fakes_dnn']['variance']
     )
 
@@ -312,7 +302,7 @@ def plot_closure(
     fig, ax = plt.subplots(
         2,
         1,
-        figsize=(9, 7),
+        figsize=(11.7, 9.1),
         sharex=True,
         gridspec_kw={
             'height_ratios': [3, 1],
@@ -328,7 +318,7 @@ def plot_closure(
         (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
         (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
         (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
-        (histograms['Wjets']['counts'], '#e76300', r"W+jets"),
+        (histograms['wjets']['counts'], '#e76300', r"W+jets"),
     ]
 
     counts_stack_total = draw_stacked_stepfill(
@@ -406,7 +396,7 @@ def plot_closure(
         step='mid',
         label='Stat. Unc.',
     )
-    if plot_corr_hline == True:
+    if plot_corr_hline:
         ax[1].axhline(1/corr_emb_ff, color='blue', linestyle='--', linewidth=1.5)
     ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
     
@@ -2386,3 +2376,36 @@ def plot_NN_output_FF(
     ax[1].hist(FF, bins=bins, histtype='step', linewidth=2)
     ax[1].set_xlabel('fake factors')
     return fig, ax
+
+
+
+def estimate_jet_fakes(
+	df,
+	bins,
+	var,
+	ff_var_tau1,
+    ff_var_tau2
+):
+    counts_tau1 = {}
+    counts_tau2 = {}
+    variance_tau1 = {}
+    variance_tau2 = {}
+
+    list_processes = ['data', 'diboson', 'DYjets', 'ST', 'embedding', 'ttbar', 'wjets']
+    for proc in list_processes:
+        counts_tau1[proc], _ = np.histogram(df[proc].AR_tau1[var], weights = df[proc].AR_tau1.weight * df[proc].AR_tau1[ff_var_tau1], bins = bins)
+        variance_tau1[proc], _ = np.histogram(df[proc].AR_tau1[var], weights = (df[proc].AR_tau1.weight * df[proc].AR_tau1[ff_var_tau1])**2, bins = bins)
+        
+        counts_tau2[proc], _ = np.histogram(df[proc].AR_tau2[var], weights = df[proc].AR_tau2.weight * df[proc].AR_tau2[ff_var_tau2], bins = bins)
+        variance_tau2[proc], _ = np.histogram(df[proc].AR_tau2[var], weights = (df[proc].AR_tau2.weight * df[proc].AR_tau2[ff_var_tau2])**2, bins = bins)
+
+    jet_fakes_tau1 = counts_tau1['data'] - counts_tau1['diboson'] - counts_tau1['DYjets'] - counts_tau1['ST'] - counts_tau1['embedding'] - counts_tau1['ttbar'] - counts_tau1['wjets']
+    var_jet_fakes_tau1 = variance_tau1['data'] + variance_tau1['diboson'] + variance_tau1['DYjets'] + variance_tau1['ST'] + variance_tau1['embedding'] + variance_tau1['ttbar'] + variance_tau1['wjets']
+
+    jet_fakes_tau2 = counts_tau2['data'] - counts_tau2['diboson'] - counts_tau2['DYjets'] - counts_tau2['ST'] - counts_tau2['embedding'] - counts_tau2['ttbar'] - counts_tau2['wjets']
+    var_jet_fakes_tau2 = variance_tau2['data'] + variance_tau2['diboson'] + variance_tau2['DYjets'] + variance_tau2['ST'] + variance_tau2['embedding'] + variance_tau2['ttbar'] + variance_tau2['wjets']
+
+    jet_fakes = 0.5 * (jet_fakes_tau1 + jet_fakes_tau2)
+    var_jet_fakes  = var_jet_fakes_tau1 + var_jet_fakes_tau2
+
+    return jet_fakes, var_jet_fakes

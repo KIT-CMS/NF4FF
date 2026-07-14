@@ -37,8 +37,8 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables_61"
     closure_DR: bool = False
-    FF_dist: bool = True
-    closure_AR: bool = False
+    FF_dist: bool = False
+    closure_AR: bool = True
 
 args = Args().parse_args()
 
@@ -167,7 +167,6 @@ def main():
             plt.savefig(PLOTS_DIR / 'FF_distribution_DR' / grouping / f'plot_ff_DR_splitTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
             plt.close(fig_dr)
             logger.info(f'Saved FF distributions in DR for {grouping}')
-            exit()
 
     if args.closure_AR:
 
@@ -191,7 +190,7 @@ def main():
             plt.savefig(PLOTS_DIR / 'closure_plots' / 'tau_decaymode' / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
             plt.close(fig)
 
-        print('Saved all closure plots in tau decaymode')
+        logger.info('Saved all closure plots in tau decaymode')
 
 
         for var in VARIABLES_SMALL:
