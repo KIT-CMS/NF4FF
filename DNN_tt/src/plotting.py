@@ -36,8 +36,10 @@ class Args(Tap):
     taus = [1, 2] #[1, 2, 12] # list of tau fakes
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables_61"
+    dnn_grouped: bool = True
+
     closure_DR: bool = False
-    FF_dist: bool = False
+    FF_dist: bool = True
     closure_AR: bool = True
 
 args = Args().parse_args()
@@ -57,11 +59,13 @@ LABELS_CONFIG_PATH = cfg_path["labels"]
 PLOTS_DIR = Path(cfg_path["plots"])
 PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
-PLOT_GROUPINGS = ('njets', 'tau_decaymode')
+PLOT_GROUPINGS = ('njets', 'tau_decaymode', 'ungrouped')
 PLOT_SUBDIRS = ('closure_in_DR', 'FF_distribution_AR', 'FF_distribution_DR', 'closure_plots')
 for subdir in PLOT_SUBDIRS:
     for grouping in PLOT_GROUPINGS:
         (PLOTS_DIR / subdir / grouping).mkdir(parents=True, exist_ok=True)
+
+PLOT_GROUPINGS = ('njets', 'tau_decaymode')
 
 
 matplotlib.rcParams.update({
@@ -136,37 +140,45 @@ def main():
 
     # ----- Fake-factor distributions -----
     if args.FF_dist:
-        for grouping in PLOT_GROUPINGS:
-            fig_ar, ax_ar = plot_fake_factors_grouped(
-                df=df,
-                category_title=f'split in {grouping}',
-                grouping=grouping,
-            )
-            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / grouping / f'plot_ff_splitTaus_{grouping}.png', dpi=150, bbox_inches='tight')
-            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / grouping / f'plot_ff_splitTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
+        if args.dnn_grouped:
+            for grouping in PLOT_GROUPINGS:
+                fig_ar, ax_ar = plot_fake_factors_grouped(
+                    df=df,
+                    category_title=f'split in {grouping}',
+                    grouping=grouping,
+                )
+                plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / grouping / f'plot_ff_splitTaus_{grouping}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / grouping / f'plot_ff_splitTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig_ar)
+                logger.info(f'Saved FF distributions in AR for {grouping}')
+
+
+                fig_ar_ct, ax_ar_ct = plot_fake_factors_grouped_combTaus(
+                    df=df,
+                    category_title=f'split in {grouping}',
+                    grouping=grouping,
+                )
+                plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / grouping / f'plot_ff_combTaus_{grouping}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / grouping / f'plot_ff_combTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig_ar_ct)
+                logger.info(f'Saved FF distributions in AR for combined Taus for {grouping}')
+
+                fig_dr, ax_dr = plot_fake_factors_in_dr_grouped(
+                    df=df,
+                    category_title=f'split in {grouping}',
+                    grouping=grouping,
+                )
+                plt.savefig(PLOTS_DIR / 'FF_distribution_DR' / grouping / f'plot_ff_DR_splitTaus_{grouping}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'FF_distribution_DR' / grouping / f'plot_ff_DR_splitTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig_dr)
+                logger.info(f'Saved FF distributions in DR for {grouping}')
+        else:
+            fig_ar, ax_ar = plot_fake_factors(df=df)
+            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_splitTaus.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_splitTaus.pdf', dpi=150, bbox_inches='tight')
             plt.close(fig_ar)
-            logger.info(f'Saved FF distributions in AR for {grouping}')
+            logger.info(f'Saved FF distributions in AR for ungrouped DNN')
 
-
-            fig_ar_ct, ax_ar_ct = plot_fake_factors_grouped_combTaus(
-                df=df,
-                category_title=f'split in {grouping}',
-                grouping=grouping,
-            )
-            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / grouping / f'plot_ff_combTaus_{grouping}.png', dpi=150, bbox_inches='tight')
-            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / grouping / f'plot_ff_combTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
-            plt.close(fig_ar_ct)
-            logger.info(f'Saved FF distributions in AR for combined Taus for {grouping}')
-
-            fig_dr, ax_dr = plot_fake_factors_in_dr_grouped(
-                df=df,
-                category_title=f'split in {grouping}',
-                grouping=grouping,
-            )
-            plt.savefig(PLOTS_DIR / 'FF_distribution_DR' / grouping / f'plot_ff_DR_splitTaus_{grouping}.png', dpi=150, bbox_inches='tight')
-            plt.savefig(PLOTS_DIR / 'FF_distribution_DR' / grouping / f'plot_ff_DR_splitTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
-            plt.close(fig_dr)
-            logger.info(f'Saved FF distributions in DR for {grouping}')
 
     if args.closure_AR:
 
@@ -174,41 +186,60 @@ def main():
         bkgs = [it for it in x.keys() if "#q_1;" in it and "Nominal" in it and any(subit in it for subit in ["TT-TTL", "DY-ZL", "jetFakes#", "VV-VVL", "EMB#"])]
         corr_emb_ff = sum([x[it].to_numpy()[0] for it in bkgs]) / [x[next(it for it in x.keys() if "data" in it and "Nominal" in it and "#q_1" in it)].to_numpy()[0]]
 
+        if args.dnn_grouped:
 
-        for var in VARIABLES_SMALL:
-            bins, label = get_bins_and_label(var)
-            fig, ax, _ = plot_closure(
-                    df = df,
-                    var = var,
-                    bins = bins,
-                    label = label,
-                    grouping = 'tau_decaymode',
-                    corr_emb_ff = corr_emb_ff,
-                )
-            
-            plt.savefig(PLOTS_DIR / 'closure_plots' / 'tau_decaymode' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
-            plt.savefig(PLOTS_DIR / 'closure_plots' / 'tau_decaymode' / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
-            plt.close(fig)
+            for var in VARIABLES_SMALL:
+                bins, label = get_bins_and_label(var)
+                fig, ax, _ = plot_closure(
+                        df = df,
+                        var = var,
+                        bins = bins,
+                        label = label,
+                        grouping = 'tau_decaymode',
+                        corr_emb_ff = corr_emb_ff,
+                    )
+                
+                plt.savefig(PLOTS_DIR / 'closure_plots' / 'tau_decaymode' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'closure_plots' / 'tau_decaymode' / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig)
 
-        logger.info('Saved all closure plots in tau decaymode')
+            logger.info('Saved all closure plots in tau decaymode')
 
 
-        for var in VARIABLES_SMALL:
-            bins, label = get_bins_and_label(var)
-            fig, ax, _ = plot_closure(
-                    df = df,
-                    var = var,
-                    bins = bins,
-                    label = label,
-                    grouping = 'njets',
-                    corr_emb_ff = corr_emb_ff,
-                )
-            
-            plt.savefig(PLOTS_DIR / 'closure_plots' / 'njets' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
-            plt.savefig(PLOTS_DIR / 'closure_plots' / 'njets' / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
-            plt.close(fig)
+            for var in VARIABLES_SMALL:
+                bins, label = get_bins_and_label(var)
+                fig, ax, _ = plot_closure(
+                        df = df,
+                        var = var,
+                        bins = bins,
+                        label = label,
+                        grouping = 'njets',
+                        corr_emb_ff = corr_emb_ff,
+                    )
+                
+                plt.savefig(PLOTS_DIR / 'closure_plots' / 'njets' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'closure_plots' / 'njets' / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig)
 
-        logger.info('Saved all closure plots in njets')
+            logger.info('Saved all closure plots in njets')
+        else:
+            for var in VARIABLES_SMALL:
+                bins, label = get_bins_and_label(var)
+                fig, ax, _ = plot_closure(
+                        df = df,
+                        var = var,
+                        bins = bins,
+                        label = label,
+                        grouping = None,
+                        corr_emb_ff = corr_emb_ff,
+                    )
+                
+                plt.savefig(PLOTS_DIR / 'closure_plots' / 'ungrouped' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'closure_plots' / 'ungrouped' / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig)
+
+            logger.info('Saved all closure plots for ungrouped DNN')
+
 
 # -------------------------------------------
 

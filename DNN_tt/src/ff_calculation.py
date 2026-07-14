@@ -30,6 +30,7 @@ class Args(Tap):
     var = "variables_61"
     ff: bool = True
     ff_unc: bool = False
+    dnn_grouped: bool = False
 
 args = Args().parse_args()
 
@@ -1020,27 +1021,40 @@ def calculate_fake_factors_ensemble_2sigma(
 def main():
 
     # ----- load models from training.py -----
-    logger.info("Loading models from training.py...")
+    if args.dnn_grouped:
+        logger.info("Loading models from training.py for grouped DNN...")
 
-    # tau decay mode
-    model_tau1_tdm = load_fold_combined_model(
-        even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau1' / 'fold_even',
-        odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau1' / 'fold_odd',
-    )
-    model_tau2_tdm = load_fold_combined_model(
-        even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau2' / 'fold_even',
-        odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau2' / 'fold_odd',
-    )
+        # tau decay mode
+        model_tau1_tdm = load_fold_combined_model(
+            even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau1' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau1' / 'fold_odd',
+        )
+        model_tau2_tdm = load_fold_combined_model(
+            even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau2' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau2' / 'fold_odd',
+        )
 
-    # njets
-    model_tau1_njets = load_fold_combined_model(
-        even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau1' / 'fold_even',
-        odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau1' / 'fold_odd',
-    )
-    model_tau2_njets = load_fold_combined_model(
-        even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau2' / 'fold_even',
-        odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau2' / 'fold_odd',
-    )
+        # njets
+        model_tau1_njets = load_fold_combined_model(
+            even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau1' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau1' / 'fold_odd',
+        )
+        model_tau2_njets = load_fold_combined_model(
+            even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau2' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau2' / 'fold_odd',
+        )
+    else:
+        logger.info("Loading models from training.py for grouped DNN...")
+
+        model_tau1 = load_fold_combined_model(
+            even_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau1' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau1' / 'fold_odd',
+        )
+        model_tau2 = load_fold_combined_model(
+            even_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau2' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau2' / 'fold_odd',
+        )
+
 
 
     if args.ff_unc:
@@ -1089,68 +1103,97 @@ def main():
     if args.ff:
 
         # ----- calculate fake factors -----
-        # tau decay mode
-        logger.info("Calculating fake factors for tau decay mode...")
-        calculate_fake_factors(
-            df=df,
-            model_tau1=model_tau1_tdm,
-            model_tau2=model_tau2_tdm,
-            training_variables=training_variables,
-            grouping_variable = ['tau_decaymode_1', 'tau_decaymode_2'],
-            grouping_definition = grouping_tdm,
-            output_suffix = 'tau_dm',
-        )
 
-        # njets
-        logger.info("Calculating fake factors for njets...")
-        calculate_fake_factors(
-            df=df,
-            model_tau1=model_tau1_njets,
-            model_tau2=model_tau2_njets,
-            training_variables=training_variables,
-            grouping_variable = 'njets',
-            grouping_definition = grouping_njets,
-            output_suffix = 'njets',
-        )
+        if args.dnn_grouped:
+            # tau decay mode
+            logger.info("Calculating fake factors for tau decay mode...")
+            calculate_fake_factors(
+                df=df,
+                model_tau1=model_tau1_tdm,
+                model_tau2=model_tau2_tdm,
+                training_variables=training_variables,
+                grouping_variable = ['tau_decaymode_1', 'tau_decaymode_2'],
+                grouping_definition = grouping_tdm,
+                output_suffix = 'tau_dm',
+            )
 
-        #calculate_fake_factor_classic(df = df.AR)
+            # njets
+            logger.info("Calculating fake factors for njets...")
+            calculate_fake_factors(
+                df=df,
+                model_tau1=model_tau1_njets,
+                model_tau2=model_tau2_njets,
+                training_variables=training_variables,
+                grouping_variable = 'njets',
+                grouping_definition = grouping_njets,
+                output_suffix = 'njets',
+            )
 
-        logger.info("Saving fake factors to df in ff_dnn_tau_dm and ff_dnn_njets columns...")
-        calculate_fake_factor_dnn(
-            df1 = df.AR_tau1,
-            df2 = df.AR_tau2,
-            grouping = 'tau_decaymode',
-        )
+            #calculate_fake_factor_classic(df = df.AR)
 
-        calculate_fake_factor_dnn(
-            df1 = df.AR_tau1,
-            df2 = df.AR_tau2,
-            grouping = 'njets',
-        )
+            logger.info("Saving fake factors to df in ff_dnn_tau_dm and ff_dnn_njets columns...")
+            calculate_fake_factor_dnn(
+                df1 = df.AR_tau1,
+                df2 = df.AR_tau2,
+                grouping = 'tau_decaymode',
+            )
 
-        #the equivalent would be saving the tau1 and tau2 FF seperately
-        
-        # ----- calculate fake factors in DR -----
-        logger.info("Calculating fake factors in DR...")
-        calculate_fake_factors_in_DR_qcd(
-            df=df,
-            model_tau1=model_tau1_tdm,
-            model_tau2=model_tau2_tdm,
-            training_variables=training_variables,
-            grouping_variable = ['tau_decaymode_1', 'tau_decaymode_2'],
-            grouping_definition = grouping_tdm,
-            output_suffix = 'tau_dm',
-        )
+            calculate_fake_factor_dnn(
+                df1 = df.AR_tau1,
+                df2 = df.AR_tau2,
+                grouping = 'njets',
+            )
 
-        calculate_fake_factors_in_DR_qcd(
-            df=df,
-            model_tau1=model_tau1_njets,
-            model_tau2=model_tau2_njets,
-            training_variables=training_variables,
-            grouping_variable = 'njets',
-            grouping_definition = grouping_njets,
-            output_suffix = 'njets',
-        )
+            #the equivalent would be saving the tau1 and tau2 FF seperately
+            
+            # ----- calculate fake factors in DR -----
+            logger.info("Calculating fake factors in DR...")
+            calculate_fake_factors_in_DR_qcd(
+                df=df,
+                model_tau1=model_tau1_tdm,
+                model_tau2=model_tau2_tdm,
+                training_variables=training_variables,
+                grouping_variable = ['tau_decaymode_1', 'tau_decaymode_2'],
+                grouping_definition = grouping_tdm,
+                output_suffix = 'tau_dm',
+            )
+
+            calculate_fake_factors_in_DR_qcd(
+                df=df,
+                model_tau1=model_tau1_njets,
+                model_tau2=model_tau2_njets,
+                training_variables=training_variables,
+                grouping_variable = 'njets',
+                grouping_definition = grouping_njets,
+                output_suffix = 'njets',
+            )
+
+        else:
+            logger.info("Calculating fake factors...")
+            calculate_fake_factors(
+                df=df,
+                model_tau1=model_tau1,
+                model_tau2=model_tau2,
+                training_variables=training_variables,
+            )
+
+            #calculate_fake_factor_classic(df = df.AR)
+
+            #logger.info("Saving fake factors to df in ff_dnn_tau_dm and ff_dnn_njets columns...")
+            #calculate_fake_factor_dnn(
+            #    df1 = df.AR_tau1,
+            #    df2 = df.AR_tau2,
+            #)
+            
+            # ----- calculate fake factors in DR -----
+            #logger.info("Calculating fake factors in DR...")
+            #calculate_fake_factors_in_DR_qcd(
+            #    df=df,
+            #    model_tau1=model_tau1_tdm,
+            #    model_tau2=model_tau2_tdm,
+            #    training_variables=training_variables,
+            #)
+
 
 
 

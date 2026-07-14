@@ -28,6 +28,7 @@ class Args(Tap):
     taus = [1, 2] #[1, 2, 12] # list of tau fakes
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables_61"
+    dnn_grouped: bool = False
 
 args = Args().parse_args()
 
@@ -96,10 +97,14 @@ def _train_fold_model(cfg, grouping, training_var, df_sig, df_bkg, weight_column
         scale=train.X.std(dim=0) + 1e-6,
     )
 
-    model = GroupedDNN(
-        grouping=grouping,
-        default_model=base_model,
-    )
+
+    if args.dnn_grouped:    
+        model = GroupedDNN(
+            grouping=grouping,
+            default_model=base_model,
+        )
+    else:
+        model = base_model
 
     model, best_loss = train_dnn(
         model=model,
@@ -160,10 +165,87 @@ def main():
         )
     }
 
-    for grouping, group_label in zip([[grouping_taudm1, grouping_taudm2], [grouping_njets]], ['tau_decaymode', 'njets']):
-        logger.info(f'Group splitting: {group_label}')
-        
-        i = 0
+
+    if args.dnn_grouped:
+        logger.info('Training uses the grouped DNN.')
+        for grouping, group_label in zip([[grouping_taudm1, grouping_taudm2], [grouping_njets]], ['tau_decaymode', 'njets']):
+            logger.info(f'Group splitting: {group_label}')
+            
+            i = 0
+            for process in ['tau1', 'tau2']:
+
+                logger.info(f'Training process: {process}')
+                
+                if process == 'tau1':
+                    df_sig = df.data.SR_like
+                    df_bkg = df.data.AR_like_tau1
+                    weight_column = 'weight_qcd'
+
+                elif process == 'tau2':
+                    df_sig = df.data.SR_like
+                    df_bkg = df.data.AR_like_tau2
+                    weight_column = 'weight_qcd'
+
+                df_sig_plain = df_sig.events
+                df_bkg_plain = df_bkg.events
+                df_sig_even = df_sig_plain[df_sig_plain['event']%2 == 0]
+                df_sig_odd  = df_sig_plain[df_sig_plain['event']%2 == 1]
+                df_bkg_even = df_bkg_plain[df_bkg_plain['event']%2 == 0]
+                df_bkg_odd  = df_bkg_plain[df_bkg_plain['event']%2 == 1]
+
+                logger.info(
+                    "%s/%s fold sizes: even=%d (sig=%d, bkg=%d), odd=%d (sig=%d, bkg=%d)",
+                    group_label,
+                    process,
+                    len(df_sig_even) + len(df_bkg_even),
+                    len(df_sig_even),
+                    len(df_bkg_even),
+                    len(df_sig_odd) + len(df_bkg_odd),
+                    len(df_sig_odd),
+                    len(df_bkg_odd),
+                )
+
+                # even_model: trained on odd events, applied to even events
+                even_model = _train_fold_model(
+                    cfg=cfg,
+                    grouping=grouping[i],
+                    training_var=training_var,
+                    df_sig=df_sig_odd,
+                    df_bkg=df_bkg_odd,
+                    weight_column=weight_column,
+                    device=device,
+                    checkpoint_dir=CHECKPOINT_DIR,
+                    fold_label='fold_odd',
+                )
+
+                # odd_model: trained on even events, applied to odd events
+                odd_model = _train_fold_model(
+                    cfg=cfg,
+                    grouping=grouping[i],
+                    training_var=training_var,
+                    df_sig=df_sig_even,
+                    df_bkg=df_bkg_even,
+                    weight_column=weight_column,
+                    device=device,
+                    checkpoint_dir=CHECKPOINT_DIR,
+                    fold_label='fold_even',
+                )
+
+                model = FoldCombinedDNN(
+                    even_model=even_model,
+                    odd_model=odd_model,
+                    fold_id_name='event',
+                )
+
+                base_path = Path(CHECKPOINT_DIR) / group_label / process
+                save_model(even_model, base_path / 'fold_even')
+                save_model(odd_model, base_path / 'fold_odd')
+                save_model(model, base_path)
+
+                if group_label == 'tau_decaymode':
+                    i += 1
+    else:
+        logger.info('Training uses the ungrouped DNN.')
         for process in ['tau1', 'tau2']:
 
             logger.info(f'Training process: {process}')
@@ -186,8 +268,7 @@ def main():
             df_bkg_odd  = df_bkg_plain[df_bkg_plain['event']%2 == 1]
 
             logger.info(
-                "%s/%s fold sizes: even=%d (sig=%d, bkg=%d), odd=%d (sig=%d, bkg=%d)",
-                group_label,
+                "%s fold sizes: even=%d (sig=%d, bkg=%d), odd=%d (sig=%d, bkg=%d)",
                 process,
                 len(df_sig_even) + len(df_bkg_even),
                 len(df_sig_even),
@@ -200,7 +281,7 @@ def main():
             # even_model: trained on odd events, applied to even events
             even_model = _train_fold_model(
                 cfg=cfg,
-                grouping=grouping[i],
+                grouping=None,
                 training_var=training_var,
                 df_sig=df_sig_odd,
                 df_bkg=df_bkg_odd,
@@ -213,7 +294,7 @@ def main():
             # odd_model: trained on even events, applied to odd events
             odd_model = _train_fold_model(
                 cfg=cfg,
-                grouping=grouping[i],
+                grouping=None,
                 training_var=training_var,
                 df_sig=df_sig_even,
                 df_bkg=df_bkg_even,
@@ -229,14 +310,10 @@ def main():
                 fold_id_name='event',
             )
 
-            base_path = Path(CHECKPOINT_DIR) / group_label / process
+            base_path = Path(CHECKPOINT_DIR) / 'ungrouped' / process
             save_model(even_model, base_path / 'fold_even')
             save_model(odd_model, base_path / 'fold_odd')
             save_model(model, base_path)
-
-            if group_label == 'tau_decaymode':
-                i += 1
-
 
 if __name__ == '__main__':
     main()

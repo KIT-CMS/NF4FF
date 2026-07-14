@@ -104,19 +104,23 @@ def calculate_fake_factors(
     if isinstance(grouping_variable, list):
         ar_tau1_group_values = np.asarray(df.AR_tau1[grouping_variable[0]])
         ar_tau2_group_values = np.asarray(df.AR_tau2[grouping_variable[1]])
+    elif grouping_variable is None:
+        ar_tau1_values = np.asarray(df.AR_tau1)
+        ar_tau2_values = np.asarray(df.AR_tau2)
     else:
         ar_tau1_group_values = np.asarray(df.AR_tau1[grouping_variable])
         ar_tau2_group_values = np.asarray(df.AR_tau2[grouping_variable])
 
-    group_tau1_masks = _build_group_masks(
-        ar_tau1_group_values,
-        grouping_definition,
-    )
+    if grouping_variable is not None:
+        group_tau1_masks = _build_group_masks(
+            ar_tau1_group_values,
+            grouping_definition,
+        )
 
-    group_tau2_masks = _build_group_masks(
-        ar_tau2_group_values,
-        grouping_definition,
-    )
+        group_tau2_masks = _build_group_masks(
+            ar_tau2_group_values,
+            grouping_definition,
+        )
 
 
     # ------------------------------------------------------------------
@@ -152,7 +156,7 @@ def calculate_fake_factors(
                     grouping_definition,
                 )
             )
-    else:
+    elif grouping_variable is not None:
         if model_tau1 is not None:
             sr_tau1_masks = dict(
                 _build_group_masks(
@@ -186,46 +190,73 @@ def calculate_fake_factors(
     # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
-    for group_name, ar_mask in group_tau1_masks:
+    if grouping_variable is not None:
+        for group_name, ar_mask in group_tau1_masks:
 
-        print_parts = [f"[{group_name}]"]
+            print_parts = [f"[{group_name}]"]
 
-        # ---------------- Tau 1 ----------------
+            # ---------------- Tau 1 ----------------
+            if model_tau1 is not None:
+
+                sr_tau1_mask = sr_tau1_masks[group_name]
+                ar_tau1_mask = ar_tau1_masks[group_name]
+
+                norm_tau1 = (
+                    np.sum(df.data.SR_like.weight[sr_tau1_mask])
+                    / np.sum(df.data.AR_like_tau1.weight[ar_tau1_mask])
+                )
+
+                fake_factor_tau1[ar_mask] = (
+                    norm_tau1 * ratio_tau1[ar_mask]
+                )
+
+                print_parts.append(f"tau1 norm = {norm_tau1:.4f}")
+
+        for group_name, ar_mask in group_tau2_masks:
+            # ---------------- Tau 2 ----------------
+            if model_tau2 is not None:
+
+                sr_tau2_mask = sr_tau2_masks[group_name]
+                ar_tau2_mask = ar_tau2_masks[group_name]
+
+                norm_tau2 = (
+                    np.sum(df.data.SR_like.weight[sr_tau2_mask])
+                    / np.sum(df.data.AR_like_tau2.weight[ar_tau2_mask])
+                )
+
+                fake_factor_tau2[ar_mask] = (
+                    norm_tau2 * ratio_tau2[ar_mask]
+                )
+
+                print_parts.append(f"tau2 norm = {norm_tau2:.4f}")
+
+            print(", ".join(print_parts))
+    else:
         if model_tau1 is not None:
 
-            sr_tau1_mask = sr_tau1_masks[group_name]
-            ar_tau1_mask = ar_tau1_masks[group_name]
-
             norm_tau1 = (
-                np.sum(df.data.SR_like.weight[sr_tau1_mask])
-                / np.sum(df.data.AR_like_tau1.weight[ar_tau1_mask])
+                np.sum(df.data.SR_like.weight)
+                / np.sum(df.data.AR_like_tau1.weight)
             )
 
-            fake_factor_tau1[ar_mask] = (
-                norm_tau1 * ratio_tau1[ar_mask]
+            fake_factor_tau1 = (
+                norm_tau1 * ratio_tau1
             )
 
-            print_parts.append(f"tau1 norm = {norm_tau1:.4f}")
+            print(f"tau1 norm = {norm_tau1:.4f}")
 
-    for group_name, ar_mask in group_tau2_masks:
-        # ---------------- Tau 2 ----------------
         if model_tau2 is not None:
 
-            sr_tau2_mask = sr_tau2_masks[group_name]
-            ar_tau2_mask = ar_tau2_masks[group_name]
-
             norm_tau2 = (
-                np.sum(df.data.SR_like.weight[sr_tau2_mask])
-                / np.sum(df.data.AR_like_tau2.weight[ar_tau2_mask])
+                np.sum(df.data.SR_like.weight)
+                / np.sum(df.data.AR_like_tau2.weight)
             )
 
-            fake_factor_tau2[ar_mask] = (
-                norm_tau2 * ratio_tau2[ar_mask]
+            fake_factor_tau2 = (
+                norm_tau2 * ratio_tau2
             )
 
-            print_parts.append(f"tau2 norm = {norm_tau2:.4f}")
-
-        print(", ".join(print_parts))
+            print(f"tau2 norm = {norm_tau2:.4f}")
 
     # ------------------------------------------------------------------
     # Optional clipping + output assignment

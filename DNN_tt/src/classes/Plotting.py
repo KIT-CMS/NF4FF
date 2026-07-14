@@ -141,7 +141,7 @@ def plot_closure(
     var: str,
     bins: np.ndarray,
     label: str,
-    grouping = 'tau_decaymode',
+    grouping = None,
     corr_emb_ff = 1.0,
     plot_classic_ff_comp = False,
     plot_corr_hline = False,
@@ -154,6 +154,9 @@ def plot_closure(
     elif grouping == 'njets':
         ff_dnn_tau1 = 'ff_dnn_tau1_njets'
         ff_dnn_tau2 = 'ff_dnn_tau2_njets'
+    else:
+        ff_dnn_tau1 = 'ff_dnn_tau1'
+        ff_dnn_tau2 = 'ff_dnn_tau2'
 
     histograms = {}
 
@@ -320,7 +323,7 @@ def plot_closure(
         (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
         (histograms['wjets']['counts'], '#e76300', r"W+jets"),
     ]
-
+    #print(histograms['wjets']['counts'])
     counts_stack_total = draw_stacked_stepfill(
         ax[0],
         bin_edges,
@@ -772,46 +775,43 @@ def plot_closure_c(
 
 def plot_fake_factors(
         df,
-        category_title,
-		grouping = 'tau_decaymode',
+        category_title = None,
+		grouping = None,
 ) -> None:
+    hep.style.use(hep.style.CMS)
+	
+    ff_dnn_tau1 = 'ff_dnn_tau1'
+    ff_dnn_tau2 = 'ff_dnn_tau2'
+	
+    bins_tau1 = np.linspace(0, 1, 50)
+    bins_tau2 = np.linspace(0, 1., 50)
 
-	if grouping == 'tau_decaymode':
-		ff_dnn_qcd = 'ff_dnn_qcd'
-		ff_dnn_wjets = 'ff_dnn_wjets'
-	elif grouping == 'njets':
-		ff_dnn_qcd = 'ff_dnn_qcd_njets'
-		ff_dnn_wjets = 'ff_dnn_wjets_njets'
-    
+    fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
 
-	bins_wjets = np.linspace(0, 1, 50)
-	bins_qcd = np.linspace(0, 0.5, 50)
+    ax[0].hist(df.data.AR_tau1[ff_dnn_tau1], bins=bins_tau1, histtype = 'step', linewidth = 2, label='Tau 1')
+    #ax[0].hist(df.data.AR[ff_dnn_tau1][df.data.AR.tau_decaymode_2 == 1], bins=bins_tau1, histtype = 'step', ls = '--', label='Wjets: t_dm = 0')
+    #ax[0].hist(df.data.AR[ff_dnn_tau1][df.data.AR.tau_decaymode_2 == 0], bins=bins_tau1, histtype = 'step', ls = '--', label='Wjets: t_dm = 1')
+    #ax[0].hist(df.data.AR[ff_dnn_tau1][df.data.AR.tau_decaymode_2 == 10], bins=bins_tau1, histtype = 'step', ls = '--', label='Wjets: t_dm = 10')
+    #ax[0].hist(df.data.AR[ff_dnn_tau1][df.data.AR.tau_decaymode_2 == 11], bins=bins_tau1, histtype = 'step', ls = '--', label='Wjets: t_dm = 11')
+    ax[0].set_ylabel("Events")
+    ax[0].legend()
+    #ax[0].set_ylim(0, 33000)
 
-	fig, ax = plt.subplots(2, 1, figsize=(10, 7))
-	ax[0].hist(df.data.AR[ff_dnn_wjets], bins=bins_wjets, histtype = 'step', linewidth = 2, label='Wjets: t_dm incl')
-	ax[0].hist(df.data.AR[ff_dnn_wjets][df.data.AR.tau_decaymode_2 == 1], bins=bins_wjets, histtype = 'step', ls = '--', label='Wjets: t_dm = 0')
-	ax[0].hist(df.data.AR[ff_dnn_wjets][df.data.AR.tau_decaymode_2 == 0], bins=bins_wjets, histtype = 'step', ls = '--', label='Wjets: t_dm = 1')
-	ax[0].hist(df.data.AR[ff_dnn_wjets][df.data.AR.tau_decaymode_2 == 10], bins=bins_wjets, histtype = 'step', ls = '--', label='Wjets: t_dm = 10')
-	ax[0].hist(df.data.AR[ff_dnn_wjets][df.data.AR.tau_decaymode_2 == 11], bins=bins_wjets, histtype = 'step', ls = '--', label='Wjets: t_dm = 11')
-	ax[0].set_ylabel("Events")
-	ax[0].legend()
-	ax[0].set_ylim(0, 33000)
+    CMS_CHANNEL_TITLE([ax[0]])
+    CMS_LUMI_TITLE([ax[0]])
+    CMS_LABEL([ax[0]])
+    CMS_CATEGORY_TITLE([ax[0]], title = category_title)
 
-	CMS_CHANNEL_TITLE([ax[0]])
-	CMS_LUMI_TITLE([ax[0]])
-	CMS_LABEL([ax[0]])
-	CMS_CATEGORY_TITLE([ax[0]], title = category_title)
+    ax[1].set_ylabel('Events')
+    ax[1].hist(df.data.AR_tau2[ff_dnn_tau2], bins=bins_tau2, histtype = 'step', linewidth = 2, label="Tau 2")
+    #ax[1].hist(df.data.AR[ff_dnn_tau2][df.data.AR.tau_decaymode_2 == 0], bins=bins_tau2, histtype = 'step', ls = '--', label = "QCD: t_dm = 0")
+    #ax[1].hist(df.data.AR[ff_dnn_tau2][df.data.AR.tau_decaymode_2 == 1], bins=bins_tau2, histtype = 'step', ls = '--', label = "QCD: t_dm = 1")
+    #ax[1].hist(df.data.AR[ff_dnn_tau2][df.data.AR.tau_decaymode_2 == 10], bins=bins_tau2, histtype = 'step', ls = '--', label = "QCD : t_dm = 10")
+    #ax[1].hist(df.data.AR[ff_dnn_tau2][df.data.AR.tau_decaymode_2 == 11], bins=bins_tau2, histtype = 'step', ls = '--', label = "QCD : t_dm = 11")
 
-	ax[1].set_ylabel('Events')
-	ax[1].hist(df.data.AR[ff_dnn_qcd], bins=bins_qcd, histtype = 'step', linewidth = 2, label="QCD: t_dm: incl")
-	ax[1].hist(df.data.AR[ff_dnn_qcd][df.data.AR.tau_decaymode_2 == 0], bins=bins_qcd, histtype = 'step', ls = '--', label = "QCD: t_dm = 0")
-	ax[1].hist(df.data.AR[ff_dnn_qcd][df.data.AR.tau_decaymode_2 == 1], bins=bins_qcd, histtype = 'step', ls = '--', label = "QCD: t_dm = 1")
-	ax[1].hist(df.data.AR[ff_dnn_qcd][df.data.AR.tau_decaymode_2 == 10], bins=bins_qcd, histtype = 'step', ls = '--', label = "QCD : t_dm = 10")
-	ax[1].hist(df.data.AR[ff_dnn_qcd][df.data.AR.tau_decaymode_2 == 11], bins=bins_qcd, histtype = 'step', ls = '--', label = "QCD : t_dm = 11")
-
-	ax[1].set_xlabel("fake_factor")
-	ax[1].legend()
-	return fig, ax
+    ax[1].set_xlabel("fake_factor")
+    ax[1].legend()
+    return fig, ax
 
 def plot_fake_factors_in_DR(
         df,
