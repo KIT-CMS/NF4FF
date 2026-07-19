@@ -1,4 +1,5 @@
 import pandas as pd
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 from tap import Tap
@@ -15,7 +16,8 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 class Args(Tap):
     loc: Literal["remote", "present"] = "present"
-    embedding: Literal["embedding", "no_embedding"] = "embedding"
+    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
+    classic: bool = True
 
 
 # ----- functions to load files -----
@@ -91,8 +93,10 @@ def main():
     
 
     for i in range(len(datasets)):
-
-        file = cfg['input_dir'][args.embedding][args.loc] + dataset_names[i]
+        if args.classic:
+            file = cfg['input_dir_classic'] + dataset_names[i]
+        else:
+            file = cfg['input_dir'][args.embedding][args.loc] + dataset_names[i]
         
         # ----- Load the ROOT file and convert it to a pandas DataFrame -----
         datasets[i] = load_root_file_as_pd(file)
@@ -107,15 +111,16 @@ def main():
         # set process name
         datasets[i]['process']= i
 
-        # even or odd number of events
-        datasets[i]['event_var'] = datasets[i]['event'] % 2
-        
-        # set njets to 2 if it is greater than or equal to 2
-        datasets[i]['njets'].values[datasets[i]['njets'].values >= 2] = 2
-        
-        # same sign, opposite sign
-        datasets[i]['SS'] = (datasets[i]['q_1'] * datasets[i]['q_2']) > 0 #change 1 * charge 2, if same sign: >0
-        datasets[i]['OS'] = (datasets[i]['q_1'] * datasets[i]['q_2']) < 0
+        if not args.classic:
+            # even or odd number of events
+            datasets[i]['event_var'] = datasets[i]['event'] % 2
+            
+            # set njets to 2 if it is greater than or equal to 2
+            datasets[i]['njets'].values[datasets[i]['njets'].values >= 2] = 2
+            
+            # same sign, opposite sign
+            datasets[i]['SS'] = (datasets[i]['q_1'] * datasets[i]['q_2']) > 0 #change 1 * charge 2, if same sign: >0
+            datasets[i]['OS'] = (datasets[i]['q_1'] * datasets[i]['q_2']) < 0
 
         #class weights for process
         #datasets[i]['class_weights_process'] = get_class_weight_per_process(datasets[i], len(dataset_names), i)
@@ -130,8 +135,14 @@ def main():
 
     # set class weights for process
     combined_data['class_weights'] = get_class_weights(weights = combined_data.weight, Y = combined_data.Label, classes = (0, 1), class_weighted=True)
-    print(combined_data['class_weights'].value_counts())
-    combined_data.to_feather(cfg['output_dir'][args.loc] + args.embedding + "/combined_data.feather")
+    #print(combined_data['class_weights'].value_counts())
+    
+    if args.classic:
+        out_classic = Path(cfg['output_dir'][args.loc] + "classic")
+        out_classic.mkdir(parents=True, exist_ok=True)
+        combined_data.to_feather(out_classic / "combined_data_jvoss.feather")
+    else:
+        combined_data.to_feather(cfg['output_dir'][args.loc] + args.embedding + "/combined_data.feather")
 
 if __name__ == "__main__":
     main()

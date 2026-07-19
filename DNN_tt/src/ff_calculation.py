@@ -37,6 +37,7 @@ args = Args().parse_args()
 cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
 
 DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'
+DATA_CLASSIC_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_jvoss.feather"
 MASKS_PATH = cfg_path["masks"]
 TRAINING_VAR_PATH = cfg_path["train_var"]
 NN_CONFIG_PATH = cfg_path["DNN"]
@@ -1097,12 +1098,16 @@ def main():
     # ----- execution -----
     logger.info("Loading data...")
     df = load_data(DATA_PATH, MASKS_PATH)
+    df_classic = load_data(DATA_CLASSIC_PATH, MASKS_PATH)
 
     training_variables = load_variables(TRAINING_VAR_PATH, args.var)
 
     if args.ff:
 
         # ----- calculate fake factors -----
+        # classic: at the moment from jvoss smhtt ul v12
+        calculate_fake_factor_classic(df_classic.AR_tau1_jvoss, df_classic.AR_tau2_jvoss)
+
 
         if args.dnn_grouped:
             # tau decay mode
@@ -1129,7 +1134,6 @@ def main():
                 output_suffix = 'njets',
             )
 
-            calculate_fake_factor_classic(df.AR_tau1, df.AR_tau2)
 
             logger.info("Saving fake factors to df in ff_dnn_tau_dm and ff_dnn_njets columns...")
             calculate_fake_factor_dnn(

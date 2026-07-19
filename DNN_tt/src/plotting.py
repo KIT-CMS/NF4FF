@@ -47,6 +47,7 @@ args = Args().parse_args()
 cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
 
 DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'
+DATA_CLASSIC_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_jvoss.feather"
 MASKS_PATH = cfg_path["masks"]
 TRAINING_VAR_PATH = cfg_path["train_var"]
 NN_CONFIG_PATH = cfg_path["DNN"]
