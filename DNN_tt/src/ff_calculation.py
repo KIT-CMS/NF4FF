@@ -30,7 +30,7 @@ class Args(Tap):
     var = "variables_61"
     ff: bool = True
     ff_unc: bool = False
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
 
 args = Args().parse_args()
 
@@ -1129,7 +1129,7 @@ def main():
                 output_suffix = 'njets',
             )
 
-            #calculate_fake_factor_classic(df = df.AR)
+            calculate_fake_factor_classic(df.AR_tau1, df.AR_tau2)
 
             logger.info("Saving fake factors to df in ff_dnn_tau_dm and ff_dnn_njets columns...")
             calculate_fake_factor_dnn(

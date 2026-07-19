@@ -40,7 +40,7 @@ class Args(Tap):
 
     closure_DR: bool = False
     FF_dist: bool = True
-    closure_AR: bool = True
+    closure_AR: bool = False
 
 args = Args().parse_args()
 
@@ -141,6 +141,8 @@ def main():
     # ----- Fake-factor distributions -----
     if args.FF_dist:
         if args.dnn_grouped:
+
+            # ----- clipped FF -----
             for grouping in PLOT_GROUPINGS:
                 fig_ar, ax_ar = plot_fake_factors_grouped(
                     df=df,
@@ -172,12 +174,32 @@ def main():
                 plt.savefig(PLOTS_DIR / 'FF_distribution_DR' / grouping / f'plot_ff_DR_splitTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig_dr)
                 logger.info(f'Saved FF distributions in DR for {grouping}')
+
+
+                # ----- unclipped FF -----
+                fig_ar, ax_ar = plot_fake_factors_grouped(
+                    df=df,
+                    category_title=f'split in {grouping}',
+                    grouping=grouping,
+                    clipped=False
+                )
+                plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / grouping / f'plot_ff_unclipped_splitTaus_{grouping}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / grouping / f'plot_ff_unclipped_splitTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig_ar)
+                logger.info(f'Saved FF distributions in AR for {grouping}')
+        
         else:
             fig_ar, ax_ar = plot_fake_factors(df=df)
             plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_splitTaus.png', dpi=150, bbox_inches='tight')
             plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_splitTaus.pdf', dpi=150, bbox_inches='tight')
             plt.close(fig_ar)
             logger.info(f'Saved FF distributions in AR for ungrouped DNN')
+
+            fig_ar, ax_ar = plot_fake_factors(df=df, clipped=False)
+            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_unclipped_splitTaus.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_unclipped_splitTaus.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar)
+            logger.info(f'Saved unclipped FF distributions in AR for ungrouped DNN')
 
 
     if args.closure_AR:
@@ -222,6 +244,7 @@ def main():
                 plt.close(fig)
 
             logger.info('Saved all closure plots in njets')
+
         else:
             for var in VARIABLES_SMALL:
                 bins, label = get_bins_and_label(var)

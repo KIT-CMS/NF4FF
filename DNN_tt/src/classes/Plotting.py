@@ -777,14 +777,22 @@ def plot_fake_factors(
         df,
         category_title = None,
 		grouping = None,
+        clipped = True
 ) -> None:
     hep.style.use(hep.style.CMS)
 	
-    ff_dnn_tau1 = 'ff_dnn_tau1'
-    ff_dnn_tau2 = 'ff_dnn_tau2'
+    if clipped:
+        ff_dnn_tau1 = 'ff_dnn_tau1'
+        ff_dnn_tau2 = 'ff_dnn_tau2'
 	
-    bins_tau1 = np.linspace(0, 1, 50)
-    bins_tau2 = np.linspace(0, 1., 50)
+        bins_tau1 = np.linspace(0, 1, 50)
+        bins_tau2 = np.linspace(0, 1., 50)
+    else:
+        ff_dnn_tau1 = 'ff_unclipped_dnn_tau1'
+        ff_dnn_tau2 = 'ff_unclipped_dnn_tau2'
+	
+        bins_tau1 = np.linspace(0, 10, 50)
+        bins_tau2 = np.linspace(0, 10, 50)
 
     fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
 
@@ -2140,21 +2148,36 @@ def plot_fake_factors_grouped_c(df, category_title, grouping='tau_decaymode', sq
     return fig, ax
 
 
-def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode'):
+def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode', clipped = True):
     hep.style.use(hep.style.CMS)
 
-    if grouping == 'tau_decaymode':
-        ff_tau1 = 'ff_dnn_tau1_tau_dm'
-        ff_tau2 = 'ff_dnn_tau2_tau_dm'
-        grouping = ['tau_decaymode_1', 'tau_decaymode_2']
-    elif grouping == 'njets':
-        ff_tau1 = 'ff_dnn_tau1_njets'
-        ff_tau2 = 'ff_dnn_tau2_njets'
-    else:
-        raise ValueError(f'Unsupported grouping: {grouping}')
+    if clipped:
+        bins_tau1 = np.linspace(0, 1.0, 50)
+        bins_tau2 = np.linspace(0, 1.0, 50)
 
-    bins_tau1 = np.linspace(0, 1.0, 50)
-    bins_tau2 = np.linspace(0, 1.0, 50)
+        if grouping == 'tau_decaymode':
+            ff_tau1 = 'ff_dnn_tau1_tau_dm'
+            ff_tau2 = 'ff_dnn_tau2_tau_dm'
+            grouping = ['tau_decaymode_1', 'tau_decaymode_2']
+        elif grouping == 'njets':
+            ff_tau1 = 'ff_dnn_tau1_njets'
+            ff_tau2 = 'ff_dnn_tau2_njets'
+        else:
+            raise ValueError(f'Unsupported grouping: {grouping}')
+    else:
+        bins_tau1 = np.linspace(0, 2., 50)
+        bins_tau2 = np.linspace(0, 2., 50)
+
+        if grouping == 'tau_decaymode':
+            ff_tau1 = 'ff_unclipped_dnn_tau1_tau_dm'
+            ff_tau2 = 'ff_unclipped_dnn_tau2_tau_dm'
+            grouping = ['tau_decaymode_1', 'tau_decaymode_2']
+        elif grouping == 'njets':
+            ff_tau1 = 'ff_unclipped_dnn_tau1_njets'
+            ff_tau2 = 'ff_unclipped_dnn_tau2_njets'
+        else:
+            raise ValueError(f'Unsupported grouping: {grouping}')
+
 
     frame_tau1 = df.data.AR_tau1
     frame_tau2 = df.data.AR_tau2
@@ -2167,6 +2190,11 @@ def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode'):
         group_mask_tau2 = _grouping_masks(frame_tau2, grouping)
 
     fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
+
+    
+    for x in frame_tau1[ff_tau1]:
+        if x > 3.0: print(x)
+
 
     n1 = ax[0].hist(frame_tau1[ff_tau1], bins=bins_tau1, histtype='step', linewidth=2, label=r'Leading $\tau_h$: incl')
     for mask, mask_label in group_mask_tau1:
