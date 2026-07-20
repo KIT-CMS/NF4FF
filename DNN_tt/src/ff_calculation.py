@@ -13,6 +13,7 @@ from classes import load_variables, load_data, load_fold_combined_model, test_da
 from classes import calculate_fake_factors, calculate_fake_factor_dnn, calculate_fake_factor_classic, calculate_fake_factors_in_DR_qcd
 from classes import FoldCombinedDNN, load_fold_combined_model
 from classes.Loading import load_config, load_variables, load_labels
+from classes.FF_calculation import calculate_fake_factors_incl
 
 
 SEED = 42
@@ -25,12 +26,12 @@ random.seed(SEED)
 t.set_num_threads(8)
 
 class Args(Tap):
-    taus = [1, 2] #[1, 2, 12] # list of tau fakes
+    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables_61"
     ff: bool = True
     ff_unc: bool = False
-    dnn_grouped: bool = True
+    dnn_grouped: bool = False
 
 args = Args().parse_args()
 
@@ -39,6 +40,7 @@ cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
 DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'
 DATA_CLASSIC_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_jvoss.feather"
 MASKS_PATH = cfg_path["masks"]
+MASKS_PATH_INCL = cfg_path["masks_incl"]
 TRAINING_VAR_PATH = cfg_path["train_var"]
 NN_CONFIG_PATH = cfg_path["DNN"]
 CHECKPOINT_DIR = cfg_path["traininfg_results"]
@@ -1045,7 +1047,7 @@ def main():
             odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau2' / 'fold_odd',
         )
     else:
-        logger.info("Loading models from training.py for grouped DNN...")
+        logger.info("Loading models from training.py for ungrouped DNN...")
 
         model_tau1 = load_fold_combined_model(
             even_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau1' / 'fold_even',
@@ -1055,6 +1057,11 @@ def main():
             even_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau2' / 'fold_even',
             odd_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau2' / 'fold_odd',
         )
+        model_incl = load_fold_combined_model(
+            even_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau_incl' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau_incl' / 'fold_odd',
+        )
+
 
 
 
@@ -1098,8 +1105,9 @@ def main():
     # ----- execution -----
     logger.info("Loading data...")
     df = load_data(DATA_PATH, MASKS_PATH)
+    df_incl = load_data(DATA_PATH, MASKS_PATH_INCL)
     df_classic = load_data(DATA_CLASSIC_PATH, MASKS_PATH)
-    print(df_classic.columns)
+    #print(df_incl.columns)
     #exit()
 
     training_variables = load_variables(TRAINING_VAR_PATH, args.var)
@@ -1175,13 +1183,21 @@ def main():
             )
 
         else:
-            logger.info("Calculating fake factors...")
-            calculate_fake_factors(
-                df=df,
-                model_tau1=model_tau1,
-                model_tau2=model_tau2,
-                training_variables=training_variables,
-            )
+            if args.taus == 'split':
+                logger.info("Calculating fake factors...")
+                calculate_fake_factors(
+                    df=df,
+                    model_tau1=model_tau1,
+                    model_tau2=model_tau2,
+                    training_variables=training_variables,
+                )
+            elif args.taus == 'incl':
+                logger.info("Calculating fake factors inclusive...")
+                calculate_fake_factors_incl(
+                    df=df,
+                    model=model_incl,
+                    training_variables=training_variables,
+                )
 
             #calculate_fake_factor_classic(df = df.AR)
 
