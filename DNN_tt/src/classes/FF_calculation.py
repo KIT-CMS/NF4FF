@@ -611,11 +611,10 @@ def calculate_fake_factor_dnn(
 
 
 def calculate_fake_factor_classic(
-        df1,
-        df2,
+        df
         ):
-    _df1 = df1.copy()
-    _df2 = df2.copy()
+    _df1 = df.AR_tau1_jvoss.copy()
+    _df2 = df.AR_tau2_jvoss.copy()
 
     ff = cr.CorrectionSet.from_file('/work/jvoss/KingMaker_sda/CROWN/analysis_configurations/tau/payloads/fake_factors/sm/2018_v3/fake_factors_tt.json.gz')
 
@@ -689,12 +688,12 @@ def calculate_fake_factor_classic(
     _df1['classic_ff_tau1'] = _df1['process_fraction_tau1'] * _df1['tau1_classic_ff']
     _df2['classic_ff_tau2'] = _df2['process_fraction_tau2'] * _df2['tau2_classic_ff']
 
-    df1['ff_classic_tau1'] = _df1['classic_ff_tau1']
-    df2['ff_classic_tau2'] = _df2['classic_ff_tau2']
+    df.AR_tau1_jvoss['ff_classic_tau1'] = _df1['classic_ff_tau1']
+    df.AR_tau2_jvoss['ff_classic_tau2'] = _df2['classic_ff_tau2']
 
     #df['ff_classic'] = _df['corrected_ff']
 
-    return df1, df2
+    #return df1, df2
 
      
 

@@ -776,7 +776,6 @@ def plot_closure_c(
 def plot_fake_factors(
         df,
         category_title = None,
-		grouping = None,
         clipped = True
 ) -> None:
     hep.style.use(hep.style.CMS)
@@ -784,15 +783,16 @@ def plot_fake_factors(
     if clipped:
         ff_dnn_tau1 = 'ff_dnn_tau1'
         ff_dnn_tau2 = 'ff_dnn_tau2'
-	
+    
         bins_tau1 = np.linspace(0, 1, 50)
         bins_tau2 = np.linspace(0, 1., 50)
     else:
         ff_dnn_tau1 = 'ff_unclipped_dnn_tau1'
         ff_dnn_tau2 = 'ff_unclipped_dnn_tau2'
-	
+    
         bins_tau1 = np.linspace(0, 10, 50)
         bins_tau2 = np.linspace(0, 10, 50)
+    
 
     fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
 
@@ -820,6 +820,55 @@ def plot_fake_factors(
     ax[1].set_xlabel("fake_factor")
     ax[1].legend()
     return fig, ax
+
+
+def plot_classic_fake_factors(
+        df,
+        category_title = None,
+        clipped = True
+) -> None:
+    hep.style.use(hep.style.CMS)
+	
+    if clipped:
+        ff_tau1 = 'ff_classic_tau1'
+        ff_tau2 = 'ff_classic_tau2'
+    
+        bins_tau1 = np.linspace(0, 0.5, 50)
+        bins_tau2 = np.linspace(0, 0.5, 50)
+    else:
+        ff_tau1 = 'ff_unclipped_classic_tau1'
+        ff_tau2 = 'ff_unclipped_classic_tau2'
+    
+        bins_tau1 = np.linspace(0, 10, 50)
+        bins_tau2 = np.linspace(0, 10, 50)
+
+    fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
+
+    ax[0].hist(df.data.AR_tau1_jvoss[ff_tau1], bins=bins_tau1, histtype = 'step', linewidth = 2, label='Tau 1')
+    #ax[0].hist(df.data.AR[ff_dnn_tau1][df.data.AR.tau_decaymode_2 == 1], bins=bins_tau1, histtype = 'step', ls = '--', label='Wjets: t_dm = 0')
+    #ax[0].hist(df.data.AR[ff_dnn_tau1][df.data.AR.tau_decaymode_2 == 0], bins=bins_tau1, histtype = 'step', ls = '--', label='Wjets: t_dm = 1')
+    #ax[0].hist(df.data.AR[ff_dnn_tau1][df.data.AR.tau_decaymode_2 == 10], bins=bins_tau1, histtype = 'step', ls = '--', label='Wjets: t_dm = 10')
+    #ax[0].hist(df.data.AR[ff_dnn_tau1][df.data.AR.tau_decaymode_2 == 11], bins=bins_tau1, histtype = 'step', ls = '--', label='Wjets: t_dm = 11')
+    ax[0].set_ylabel("Events")
+    ax[0].legend()
+    #ax[0].set_ylim(0, 33000)
+
+    CMS_CHANNEL_TITLE([ax[0]])
+    CMS_LUMI_TITLE([ax[0]])
+    CMS_LABEL([ax[0]])
+    CMS_CATEGORY_TITLE([ax[0]], title = category_title)
+
+    ax[1].set_ylabel('Events')
+    ax[1].hist(df.data.AR_tau2_jvoss[ff_tau2], bins=bins_tau2, histtype = 'step', linewidth = 2, label="Tau 2")
+    #ax[1].hist(df.data.AR[ff_dnn_tau2][df.data.AR.tau_decaymode_2 == 0], bins=bins_tau2, histtype = 'step', ls = '--', label = "QCD: t_dm = 0")
+    #ax[1].hist(df.data.AR[ff_dnn_tau2][df.data.AR.tau_decaymode_2 == 1], bins=bins_tau2, histtype = 'step', ls = '--', label = "QCD: t_dm = 1")
+    #ax[1].hist(df.data.AR[ff_dnn_tau2][df.data.AR.tau_decaymode_2 == 10], bins=bins_tau2, histtype = 'step', ls = '--', label = "QCD : t_dm = 10")
+    #ax[1].hist(df.data.AR[ff_dnn_tau2][df.data.AR.tau_decaymode_2 == 11], bins=bins_tau2, histtype = 'step', ls = '--', label = "QCD : t_dm = 11")
+
+    ax[1].set_xlabel("fake_factor")
+    ax[1].legend()
+    return fig, ax
+
 
 def plot_fake_factors_in_DR(
         df,

@@ -1099,6 +1099,8 @@ def main():
     logger.info("Loading data...")
     df = load_data(DATA_PATH, MASKS_PATH)
     df_classic = load_data(DATA_CLASSIC_PATH, MASKS_PATH)
+    print(df_classic.columns)
+    #exit()
 
     training_variables = load_variables(TRAINING_VAR_PATH, args.var)
 
@@ -1106,7 +1108,7 @@ def main():
 
         # ----- calculate fake factors -----
         # classic: at the moment from jvoss smhtt ul v12
-        calculate_fake_factor_classic(df_classic.AR_tau1_jvoss, df_classic.AR_tau2_jvoss)
+        calculate_fake_factor_classic(df_classic)
 
 
         if args.dnn_grouped:
@@ -1311,8 +1313,11 @@ def main():
         '''
 
     #print(list(df.columns))
-    logger.info(f"Saving df to feather file: {DATA_PATH}")
+    logger.info(f"Saving main dataframe to feather file: {DATA_PATH}")
     df.to_feather(DATA_PATH)
+
+    logger.info(f"Saving classic dataframe with fake-factor columns to feather file: {DATA_CLASSIC_PATH}")
+    df_classic.to_feather(DATA_CLASSIC_PATH)
 
 
 if __name__ == '__main__':

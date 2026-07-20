@@ -36,6 +36,23 @@ masks:
     - extramuon_veto < 0.5
     - extraelec_veto < 0.5
 
+  
+  AR_tau1_jvoss:
+    - id_tau_vsJet_Medium_1 > 0.5
+    - id_tau_vsJet_Tight_1 < 0.5
+    - id_tau_vsJet_Tight_2 > 0.5
+    - (q_1*q_2) < 0
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+  
+  AR_tau2_jvoss:
+    - id_tau_vsJet_Medium_2 > 0.5
+    - id_tau_vsJet_Tight_2 < 0.5
+    - id_tau_vsJet_Tight_1 > 0.5
+    - (q_1*q_2) < 0
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+
   #AR_SS was here once -> makes no sense for me
 
 
@@ -85,11 +102,11 @@ regions:
 
   AR_tau1_jvoss:
     - preselection_jvoss
-    - AR_tau1
+    - AR_tau1_jvoss
 
   AR_tau2_jvoss:
     - preselection_jvoss
-    - AR_tau2
+    - AR_tau2_jvoss
 
   SR_like:
     - preselection

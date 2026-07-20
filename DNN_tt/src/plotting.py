@@ -19,7 +19,7 @@ from classes import calculate_fake_factors, calculate_fake_factor_dnn, calculate
 from classes import plot_fake_factors_in_DR, plot_fake_factors
 from classes import CMS_CHANNEL_TITLE, CMS_CATEGORY_TITLE, CMS_LUMI_TITLE, CMS_LABEL, adjust_ylim_for_legend, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
 from classes.Loading import load_config, load_variables, load_labels
-from classes.Plotting import FF_closure_in_DR_tau1, plot_fake_factors_grouped_combTaus
+from classes.Plotting import FF_closure_in_DR_tau1, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors
 
 
 
@@ -36,7 +36,7 @@ class Args(Tap):
     taus = [1, 2] #[1, 2, 12] # list of tau fakes
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables_61"
-    dnn_grouped: bool = True
+    dnn_grouped: bool = False
 
     closure_DR: bool = False
     FF_dist: bool = True
@@ -60,7 +60,7 @@ LABELS_CONFIG_PATH = cfg_path["labels"]
 PLOTS_DIR = Path(cfg_path["plots"])
 PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
-PLOT_GROUPINGS = ('njets', 'tau_decaymode', 'ungrouped')
+PLOT_GROUPINGS = ('njets', 'tau_decaymode', 'ungrouped', 'classic')
 PLOT_SUBDIRS = ('closure_in_DR', 'FF_distribution_AR', 'FF_distribution_DR', 'closure_plots')
 for subdir in PLOT_SUBDIRS:
     for grouping in PLOT_GROUPINGS:
@@ -116,7 +116,10 @@ def get_bins_and_label(variable, channel='et'):
 
 def main():
     df = load_data(DATA_PATH, MASKS_PATH)
-    print(df.columns)
+    #print(df.columns)
+    df_classic = load_data(DATA_CLASSIC_PATH, MASKS_PATH)
+    #print(df_classic.columns)
+    #exit()
 
 
     # ----- Closure plots in DR -----
@@ -142,7 +145,6 @@ def main():
     # ----- Fake-factor distributions -----
     if args.FF_dist:
         if args.dnn_grouped:
-
             # ----- clipped FF -----
             for grouping in PLOT_GROUPINGS:
                 fig_ar, ax_ar = plot_fake_factors_grouped(
@@ -190,6 +192,7 @@ def main():
                 logger.info(f'Saved FF distributions in AR for {grouping}')
         
         else:
+            # ----- DNN FF -----
             fig_ar, ax_ar = plot_fake_factors(df=df)
             plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_splitTaus.png', dpi=150, bbox_inches='tight')
             plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_splitTaus.pdf', dpi=150, bbox_inches='tight')
@@ -201,6 +204,13 @@ def main():
             plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_unclipped_splitTaus.pdf', dpi=150, bbox_inches='tight')
             plt.close(fig_ar)
             logger.info(f'Saved unclipped FF distributions in AR for ungrouped DNN')
+
+        # ----- classic FF -----
+        fig_ar, ax_ar = plot_classic_fake_factors(df=df_classic)
+        plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'classic' / f'plot_ff_splitTaus.png', dpi=150, bbox_inches='tight')
+        plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'classic' / f'plot_ff_splitTaus.pdf', dpi=150, bbox_inches='tight')
+        plt.close(fig_ar)
+        logger.info(f'Saved FF distributions in AR for classic')
 
 
     if args.closure_AR:
