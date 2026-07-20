@@ -25,7 +25,7 @@ random.seed(SEED)
 t.set_num_threads(8)
 
 class Args(Tap):
-    taus = [1, 2] #[1, 2, 12] # list of tau fakes
+    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables_61"
     dnn_grouped: bool = False
@@ -36,6 +36,7 @@ cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
 
 DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'
 MASKS_PATH = cfg_path["masks"]
+MASKS_PATH_INCL = cfg_path["masks_incl"]
 TRAINING_VAR_PATH = cfg_path["train_var"]
 NN_CONFIG_PATH = cfg_path["DNN"]
 CHECKPOINT_DIR = cfg_path["traininfg_results"]
@@ -130,8 +131,12 @@ def main():
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
 
     cfg = load_config(NN_CONFIG_PATH, Config)
-
-    df = load_data(DATA_PATH, MASKS_PATH)    
+    if args.taus == 'split':
+        df = load_data(DATA_PATH, MASKS_PATH)
+    elif args.taus == 'incl':
+        df = load_data(DATA_PATH, MASKS_PATH_INCL)
+    else:
+        logger.error(f'Value Error: args.taus = {args.taus}, but ony allows split or incl.')
 
     training_var = load_variables(TRAINING_VAR_PATH, args.var)
 
@@ -245,20 +250,83 @@ def main():
                 if group_label == 'tau_decaymode':
                     i += 1
     else:
-        logger.info('Training uses the ungrouped DNN.')
-        for process in ['tau1', 'tau2']:
+        if args.taus == 'split':
+            logger.info('Training uses the ungrouped DNN.')
+            for process in ['tau1', 'tau2']:
+                logger.info(f'Training process: {process}')
+                
+                if process == 'tau1':
+                    df_sig = df.data.SR_like
+                    df_bkg = df.data.AR_like_tau1
+                    weight_column = 'weight_qcd'
 
-            logger.info(f'Training process: {process}')
+                elif process == 'tau2':
+                    df_sig = df.data.SR_like
+                    df_bkg = df.data.AR_like_tau2
+                    weight_column = 'weight_qcd'
+
+                df_sig_plain = df_sig.events
+                df_bkg_plain = df_bkg.events
+                df_sig_even = df_sig_plain[df_sig_plain['event']%2 == 0]
+                df_sig_odd  = df_sig_plain[df_sig_plain['event']%2 == 1]
+                df_bkg_even = df_bkg_plain[df_bkg_plain['event']%2 == 0]
+                df_bkg_odd  = df_bkg_plain[df_bkg_plain['event']%2 == 1]
+
+                logger.info(
+                    "%s fold sizes: even=%d (sig=%d, bkg=%d), odd=%d (sig=%d, bkg=%d)",
+                    process,
+                    len(df_sig_even) + len(df_bkg_even),
+                    len(df_sig_even),
+                    len(df_bkg_even),
+                    len(df_sig_odd) + len(df_bkg_odd),
+                    len(df_sig_odd),
+                    len(df_bkg_odd),
+                )
+
+                # even_model: trained on odd events, applied to even events
+                even_model = _train_fold_model(
+                    cfg=cfg,
+                    grouping=None,
+                    training_var=training_var,
+                    df_sig=df_sig_odd,
+                    df_bkg=df_bkg_odd,
+                    weight_column=weight_column,
+                    device=device,
+                    checkpoint_dir=CHECKPOINT_DIR,
+                    fold_label='fold_odd',
+                )
+
+                # odd_model: trained on even events, applied to odd events
+                odd_model = _train_fold_model(
+                    cfg=cfg,
+                    grouping=None,
+                    training_var=training_var,
+                    df_sig=df_sig_even,
+                    df_bkg=df_bkg_even,
+                    weight_column=weight_column,
+                    device=device,
+                    checkpoint_dir=CHECKPOINT_DIR,
+                    fold_label='fold_even',
+                )
+
+                model = FoldCombinedDNN(
+                    even_model=even_model,
+                    odd_model=odd_model,
+                    fold_id_name='event',
+                )
+
+                base_path = Path(CHECKPOINT_DIR) / 'ungrouped' / process
+                save_model(even_model, base_path / 'fold_even')
+                save_model(odd_model, base_path / 'fold_odd')
+                save_model(model, base_path)
+
+        elif args.taus == 'incl':
+            logger.info('Training uses the ungrouped DNN tau inclusive.')
+                
             
-            if process == 'tau1':
-                df_sig = df.data.SR_like
-                df_bkg = df.data.AR_like_tau1
-                weight_column = 'weight_qcd'
-
-            elif process == 'tau2':
-                df_sig = df.data.SR_like
-                df_bkg = df.data.AR_like_tau2
-                weight_column = 'weight_qcd'
+            df_sig = df.data.SR_like
+            df_bkg = df.data.AR_like
+            weight_column = 'weight_qcd'
 
             df_sig_plain = df_sig.events
             df_bkg_plain = df_bkg.events
@@ -268,8 +336,7 @@ def main():
             df_bkg_odd  = df_bkg_plain[df_bkg_plain['event']%2 == 1]
 
             logger.info(
-                "%s fold sizes: even=%d (sig=%d, bkg=%d), odd=%d (sig=%d, bkg=%d)",
-                process,
+                "Tau inclusive fold sizes: even=%d (sig=%d, bkg=%d), odd=%d (sig=%d, bkg=%d)",
                 len(df_sig_even) + len(df_bkg_even),
                 len(df_sig_even),
                 len(df_bkg_even),
@@ -310,10 +377,12 @@ def main():
                 fold_id_name='event',
             )
 
-            base_path = Path(CHECKPOINT_DIR) / 'ungrouped' / process
+            base_path = Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau_incl'
             save_model(even_model, base_path / 'fold_even')
             save_model(odd_model, base_path / 'fold_odd')
             save_model(model, base_path)
-
+        
+        else:
+            logger.error(f'Value Error: args.taus = {args.taus}, but ony allows split or incl.')
 if __name__ == '__main__':
     main()

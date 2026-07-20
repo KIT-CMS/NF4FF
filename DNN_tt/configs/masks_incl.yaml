@@ -1,0 +1,166 @@
+masks:
+
+  preselection:
+    - eta_1 <= 2.3
+    - eta_2 <= 2.3
+    - pt_1 >= 40
+    - pt_2 >= 40
+    - (tau_decaymode_2 == 0) | (tau_decaymode_2 == 1) | (tau_decaymode_2 == 10) | (tau_decaymode_2 == 11)
+
+  SR:
+    - id_tau_vsJet_Tight_1 > 0.5
+    - id_tau_vsJet_Tight_2 > 0.5
+    - (q_1*q_2) < 0
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+
+  AR:
+    - id_tau_vsJet_VLoose_1 > 0.5
+    - id_tau_vsJet_VLoose_2 > 0.5
+    - id_tau_vsJet_Tight_1 < 0.5
+    - id_tau_vsJet_Tight_2 < 0.5
+    - (q_1*q_2) < 0
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+
+
+  DR_qcd:
+    - q_1 * q_2 > 0
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+    - id_tau_vsJet_VLoose_1 > 0.5
+    - id_tau_vsJet_VLoose_2 > 0.5
+
+  DR_qcd_no_signs:
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+    - id_tau_vsJet_VLoose_1 > 0.5
+    - id_tau_vsJet_VLoose_2 > 0.5
+  
+  AR_like:  
+    - id_tau_vsJet_VLoose_1 > 0.5
+    - id_tau_vsJet_VLoose_2 > 0.5
+    - id_tau_vsJet_Tight_1 < 0.5
+    - id_tau_vsJet_Tight_2 > 0.5
+
+  SR_like:
+    - id_tau_vsJet_Tight_1 > 0.5
+    - id_tau_vsJet_Tight_2 > 0.5
+
+regions:
+
+  SR:
+    - preselection
+    - SR
+
+  AR_tau1:
+    - preselection
+    - AR
+
+  SR_like:
+    - preselection
+    - DR_qcd
+    - SR_like
+  
+  AR_like:
+    - preselection
+    - DR_qcd
+    - AR_like
+  
+  DR_qcd:
+    - DR_qcd
+    - preselection
+
+  DR_qcd_without_signs:
+    - DR_qcd_no_signs
+    - preselection
+
+#identical to data_process_mapping_embedding.yaml in classifier_tt/configs
+processes:
+  full: process >= 0
+  data: process == 0
+  diboson: process.isin([1, 2])
+  DYjets: process.isin([3, 4])
+  embedding: process == 5
+  ST: process.isin([6, 7])
+  ttbar: process.isin([8, 9])
+  wjets: process == 10
+
+  diboson_J: process == 1
+  diboson_L: process == 2
+  DY_jets_J: process == 3
+  DY_jets_L: process == 4
+  ST_J: process == 6
+  ST_L: process == 7
+  ttbar_J: process == 8
+  ttbar_L: process == 9
+
+features:
+  ff_dnn: 
+    path: "/work/mmoser/NF4FF/data/features/fake_factors.feather"
+    columns:
+      - ff_dnn_wjets
+      - ff_dnn_qcd
+      - ff_dnn_ttbar
+      - ff_classic
+      - ff_dnn
+  fake_factor_unc: 
+    path: "/work/mmoser/NF4FF/data/features/fake_factor_unc.feather"
+    columns:
+      - ff_wjets_mean
+      - ff_wjets_std
+      - ff_qcd_mean
+      - ff_qcd_std
+      - ff_ttbar_mean
+      - ff_ttbar_std
+      - ff_wjets_mean_dmv
+      - ff_wjets_std_dmv
+      - ff_qcd_mean_dmv
+      - ff_qcd_std_dmv
+      - ff_ttbar_mean_dmv
+      - ff_ttbar_std_dmv
+  fake_factor_unc_diff_train_size:
+    path: "../../data/features/fake_factor_unc_diff_train_size.feather"
+    columns:
+
+      - ff_wjets_mean
+      - ff_wjets_std
+      - ff_wjets_mean_half
+      - ff_wjets_std_half
+      - ff_wjets_mean_quarter
+      - ff_wjets_std_quarter
+  ff_dnn_clipping:
+    path: "../../data/features/fake_factors_clipping.feather"
+    columns:
+      - ff_dnn_wjets_c
+      - ff_dnn_qcd_c
+      - ff_dnn_ttbar_c
+      - ff_dnn_c
+  ff_dnn_clipping_0:
+    path: "/work/mmoser/NF4FF/data/features/fake_factors_0.feather"
+    columns:
+      - ff_dnn_wjets_0
+      - ff_dnn_qcd_0
+      - ff_dnn_ttbar_0
+      - ff_dnn_0
+  ff_dnn_clipping_90:
+    path: "/work/mmoser/NF4FF/data/features/fake_factors_90.feather"
+    columns:
+      - ff_dnn_wjets_90
+      - ff_dnn_qcd_90
+      - ff_dnn_ttbar_90
+      - ff_dnn_90
+  ff_dnn_clipping_95:
+    path: "/work/mmoser/NF4FF/data/features/fake_factors_95.feather"
+    columns:
+      - ff_dnn_wjets_95
+      - ff_dnn_qcd_95
+      - ff_dnn_ttbar_95
+      - ff_dnn_95
+  ff_dnn_clipping_99:
+    path: "/work/mmoser/NF4FF/data/features/fake_factors_99.feather"
+    columns:
+      - ff_dnn_wjets_99
+      - ff_dnn_qcd_99
+      - ff_dnn_ttbar_99
+      - ff_dnn_99
