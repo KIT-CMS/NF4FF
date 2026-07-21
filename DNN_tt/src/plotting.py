@@ -19,7 +19,7 @@ from classes import calculate_fake_factors, calculate_fake_factor_dnn, calculate
 from classes import plot_fake_factors_in_DR, plot_fake_factors
 from classes import CMS_CHANNEL_TITLE, CMS_CATEGORY_TITLE, CMS_LUMI_TITLE, CMS_LABEL, adjust_ylim_for_legend, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
 from classes.Loading import load_config, load_variables, load_labels
-from classes.Plotting import FF_closure_in_DR_tau1, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors
+from classes.Plotting import FF_closure_in_DR_tau1, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl
 
 
 
@@ -33,10 +33,11 @@ random.seed(SEED)
 t.set_num_threads(8)
 
 class Args(Tap):
-    taus = [1, 2] #[1, 2, 12] # list of tau fakes
+    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables_61"
     dnn_grouped: bool = False
+    classic: bool = True
 
     closure_DR: bool = False
     FF_dist: bool = True
@@ -49,6 +50,7 @@ cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
 DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'
 DATA_CLASSIC_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_jvoss.feather"
 MASKS_PATH = cfg_path["masks"]
+MASKS_PATH_INCL = cfg_path["masks_incl"]
 TRAINING_VAR_PATH = cfg_path["train_var"]
 NN_CONFIG_PATH = cfg_path["DNN"]
 CHECKPOINT_DIR = cfg_path["traininfg_results"]
@@ -116,9 +118,9 @@ def get_bins_and_label(variable, channel='et'):
 
 def main():
     df = load_data(DATA_PATH, MASKS_PATH)
-    #print(df.columns)
+    df_incl = load_data(DATA_PATH, MASKS_PATH_INCL)
     df_classic = load_data(DATA_CLASSIC_PATH, MASKS_PATH)
-    #print(df_classic.columns)
+    #print(df_incl.columns)
     #exit()
 
 
@@ -144,7 +146,7 @@ def main():
 
     # ----- Fake-factor distributions -----
     if args.FF_dist:
-        if args.dnn_grouped:
+        if args.dnn_grouped and args.taus=='split':
             # ----- clipped FF -----
             for grouping in PLOT_GROUPINGS:
                 fig_ar, ax_ar = plot_fake_factors_grouped(
@@ -190,8 +192,11 @@ def main():
                 plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / grouping / f'plot_ff_unclipped_splitTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig_ar)
                 logger.info(f'Saved FF distributions in AR for {grouping}')
-        
-        else:
+
+        elif args.dnn_grouped and args.taus=='incl':
+            logger.warning('Tau inclusive grouped DNN is not yet implemented.')
+
+        elif not args.dnn_grouped and args.taus=='split':
             # ----- DNN FF -----
             fig_ar, ax_ar = plot_fake_factors(df=df)
             plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_splitTaus.png', dpi=150, bbox_inches='tight')
@@ -204,13 +209,29 @@ def main():
             plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_unclipped_splitTaus.pdf', dpi=150, bbox_inches='tight')
             plt.close(fig_ar)
             logger.info(f'Saved unclipped FF distributions in AR for ungrouped DNN')
+        
+        elif not args.dnn_grouped and args.taus=='incl':
+            # ----- DNN FF -----
+            fig_ar, ax_ar = plot_fake_factors_incl(df=df_incl)
+            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_incl.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_incl.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar)
+            logger.info(f'Saved inclusive FF distributions in AR for ungrouped DNN')
 
-        # ----- classic FF -----
-        fig_ar, ax_ar = plot_classic_fake_factors(df=df_classic)
-        plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'classic' / f'plot_ff_splitTaus.png', dpi=150, bbox_inches='tight')
-        plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'classic' / f'plot_ff_splitTaus.pdf', dpi=150, bbox_inches='tight')
-        plt.close(fig_ar)
-        logger.info(f'Saved FF distributions in AR for classic')
+            fig_ar, ax_ar = plot_fake_factors_incl(df=df_incl, clipped=False)
+            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_unclipped_incl.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_unclipped_incl.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar)
+            logger.info(f'Saved inclusive unclipped FF distributions in AR for ungrouped DNN')
+
+        if args.classic:
+            # ----- classic FF -----
+            fig_ar, ax_ar = plot_classic_fake_factors(df=df_classic)
+            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'classic' / f'plot_ff_splitTaus.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'classic' / f'plot_ff_splitTaus.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar)
+            logger.info(f'Saved FF distributions in AR for classic')
+
 
 
     if args.closure_AR:
@@ -219,8 +240,7 @@ def main():
         bkgs = [it for it in x.keys() if "#q_1;" in it and "Nominal" in it and any(subit in it for subit in ["TT-TTL", "DY-ZL", "jetFakes#", "VV-VVL", "EMB#"])]
         corr_emb_ff = sum([x[it].to_numpy()[0] for it in bkgs]) / [x[next(it for it in x.keys() if "data" in it and "Nominal" in it and "#q_1" in it)].to_numpy()[0]]
 
-        if args.dnn_grouped:
-
+        if args.dnn_grouped and args.taus=='split':
             for var in VARIABLES_SMALL:
                 bins, label = get_bins_and_label(var)
                 fig, ax, _ = plot_closure(
@@ -256,7 +276,10 @@ def main():
 
             logger.info('Saved all closure plots in njets')
 
-        else:
+        elif args.dnn_grouped and args.taus=='incl':
+            logger.warning('Tau inclusive grouped DNN is not yet implemented.')
+
+        elif not args.dnn_grouped and args.taus=='split':
             for var in VARIABLES_SMALL:
                 bins, label = get_bins_and_label(var)
                 fig, ax, _ = plot_closure(
@@ -270,6 +293,26 @@ def main():
                 
                 plt.savefig(PLOTS_DIR / 'closure_plots' / 'ungrouped' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
                 plt.savefig(PLOTS_DIR / 'closure_plots' / 'ungrouped' / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig)
+
+            logger.info('Saved all closure plots for ungrouped DNN')
+
+        elif not args.dnn_grouped and args.taus=='incl':
+            for var in VARIABLES_SMALL:
+                bins, label = get_bins_and_label(var)
+                fig, ax, _ = plot_closure_incl(
+                        df = df,
+                        var = var,
+                        bins = bins,
+                        label = label,
+                        grouping = None,
+                        corr_emb_ff = corr_emb_ff,
+                    )
+                
+                incl_plot_dir = PLOTS_DIR / 'closure_plots' / 'ungrouped' / 'tau_incl'
+                incl_plot_dir.mkdir(parents=True, exist_ok=True)
+                plt.savefig(incl_plot_dir / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(incl_plot_dir / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig)
 
             logger.info('Saved all closure plots for ungrouped DNN')

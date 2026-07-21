@@ -461,6 +461,331 @@ def plot_closure(
     return fig, ax, histograms
 
 
+def plot_closure_incl(
+    df,
+    var: str,
+    bins: np.ndarray,
+    label: str,
+    grouping = None,
+    corr_emb_ff = 1.0,
+    plot_classic_ff_comp = False,
+    plot_corr_hline = False,
+):
+    hep.style.use(hep.style.CMS)
+
+    if grouping == 'tau_decaymode':
+        ff_dnn_tau1 = 'ff_dnn_tau1_tau_dm'
+        ff_dnn_tau2 = 'ff_dnn_tau2_tau_dm'
+    elif grouping == 'njets':
+        ff_dnn_tau1 = 'ff_dnn_tau1_njets'
+        ff_dnn_tau2 = 'ff_dnn_tau2_njets'
+    else:
+        ff_dnn_tau1 = 'ff_dnn_tau1'
+        ff_dnn_tau2 = 'ff_dnn_tau2'
+
+    histograms = {}
+
+    list_processes = [
+        'data',
+        'diboson',
+        'DYjets',
+        'ST',
+        'ttbar',
+        'embedding',
+        'wjets',
+    ]
+
+
+    for proc in list_processes:
+
+        proc_counts, proc_variance, bin_edges = weighted_histogram(
+            values=df[proc].SR[var],
+            weights=df[proc].SR.weight,
+            bins=bins,
+        )
+
+        histograms[proc] = {
+            'counts': proc_counts,
+            'variance': proc_variance,
+        }
+
+
+    #jet_fakes_classic, var_jet_fakes_classic = estimate_jet_fakes(
+    #    df,
+    #    bins,
+    #    var,
+    #    'ff_classic',
+    #)
+
+    jet_fakes_dnn, var_jet_fakes_dnn = estimate_jet_fakes(
+        df,
+        bins,
+        var,
+        ff_dnn_tau1,
+        ff_dnn_tau2,
+    )
+
+    #histograms['jet_fakes_classic'] = {
+    #    'counts': jet_fakes_classic,
+    #    'variance': var_jet_fakes_classic,
+    #}
+
+    histograms['jet_fakes_dnn'] = {
+        'counts': jet_fakes_dnn,
+        'variance': var_jet_fakes_dnn,
+    }
+
+    background_dnn = (
+        histograms['diboson']['counts']
+        + histograms['DYjets']['counts']
+        + histograms['ST']['counts']
+        + histograms['ttbar']['counts']
+        + histograms['embedding']['counts']
+        + histograms['wjets']['counts']
+        + histograms['jet_fakes_dnn']['counts']
+    )
+
+    #background_classic = (
+    #    histograms['diboson']['counts']
+    #    + histograms['DYjets']['counts']
+    #    + histograms['ST']['counts']
+    #    + histograms['ttbar_L']['counts']
+    #    + histograms['embedding']['counts']
+    #    + histograms['jet_fakes_classic']['counts']
+    #)
+
+    variance_background_dnn = (
+        histograms['diboson']['variance']
+        + histograms['DYjets']['variance']
+        + histograms['ST']['variance']
+        + histograms['ttbar']['variance']
+        + histograms['embedding']['variance']
+        + histograms['wjets']['variance']
+        + histograms['jet_fakes_dnn']['variance']
+    )
+
+    #variance_background_classic = (
+    #    histograms['diboson']['variance']
+    #    + histograms['DYjets']['variance']
+    #    + histograms['ST']['variance']
+    #    + histograms['ttbar_L']['variance']
+    #    + histograms['embedding']['variance']
+    #    + histograms['jet_fakes_classic']['variance']
+    #)
+
+    histograms['background_dnn'] = {
+        'counts': background_dnn,
+        'variance': variance_background_dnn,
+    }
+
+    #histograms['background_classic'] = {
+    #    'counts': background_classic,
+    #    'variance': variance_background_classic,
+    #}
+
+
+    bin_widths = np.diff(bin_edges)
+    bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+    err_bin = 0.5 * bin_widths
+
+
+    err_data = np.sqrt(histograms['data']['variance'])
+
+
+    err_stat_dnn = np.sqrt(
+        histograms['background_dnn']['variance']
+    )
+
+    #err_stat_classic = np.sqrt(
+    #    histograms['background_classic']['variance']
+    #)
+
+
+    err_stat_rel_dnn = np.divide(
+        err_stat_dnn,
+        histograms['background_dnn']['counts'],
+        out=np.zeros_like(err_stat_dnn),
+        where=histograms['background_dnn']['counts'] > 0,
+    )
+
+    #err_stat_rel_classic = np.divide(
+    #    err_stat_classic,
+    #    histograms['background_classic']['counts'],
+    #    out=np.zeros_like(err_stat_classic),
+    #    where=histograms['background_classic']['counts'] > 0,
+    #)
+    #if plot_classic_ff_comp == True:
+    #    fig, ax = plt.subplots(
+    #        4,
+    #        1,
+    #        figsize=(9, 9),
+    #        sharex=True,
+    #        gridspec_kw={
+    #            'height_ratios': [4, 1, 0.2, 1],
+    #            'hspace': 0.05,
+    #        },
+    #        constrained_layout=True,
+    #    )
+    #else:
+    fig, ax = plt.subplots(
+        2,
+        1,
+        figsize=(11.7, 9.1),
+        sharex=True,
+        gridspec_kw={
+            'height_ratios': [3, 1],
+            'hspace': 0.05,
+        },
+        constrained_layout=True,
+    )    
+
+    stack_components = [
+        (histograms['diboson']['counts'], "#94a4a2", 'Diboson'),
+        (histograms['ttbar']['counts'], '#832db6', r'$t\bar{t} \to \tau$'),
+        (histograms['ST']['counts'], "#717581", r"Single t"),
+        (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
+        (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
+        (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
+        (histograms['wjets']['counts'], '#e76300', r"W+jets"),
+    ]
+    #print(histograms['wjets']['counts'])
+    counts_stack_total = draw_stacked_stepfill(
+        ax[0],
+        bin_edges,
+        stack_components,
+    )
+
+
+    ax[0].stairs(
+        counts_stack_total,
+        bin_edges,
+        color='black',
+        linewidth=0.7,
+    )
+
+    ax[0].errorbar(
+        bin_centers,
+        histograms['data']['counts'],
+        yerr=err_data,
+        xerr=err_bin,
+        fmt='o',
+        color='black',
+        label='Data',
+        markersize=6,
+        elinewidth=1.2,
+        capsize=0,
+    )
+
+    ax[0].set_ylabel("Events")
+    handles, labels = ax[0].get_legend_handles_labels()
+    handles = handles[::-1]
+    labels = labels[::-1]
+    handles, labels = reorder_for_rowwise_legend(handles, labels, ncol=4)
+    ax[0].legend(handles, labels, title=' ', title_fontsize=20, loc='upper left', ncol=4, frameon=False)
+    adjust_ylim_for_legend(ax[0])
+    ax[0].tick_params(direction='in', top=True, right=True)
+
+    CMS_LABEL(ax)
+    #CMS_CATEGORY_TITLE(ax)
+    CMS_LUMI_TITLE(ax)
+    CMS_CHANNEL_TITLE(ax)
+
+    ratio_dnn = np.divide(
+        histograms['data']['counts'],
+        histograms['background_dnn']['counts'],
+        out=np.zeros_like(histograms['data']['counts'], dtype=float),
+        where=histograms['background_dnn']['counts'] > 0,
+    )
+
+    ratio_err_dnn = np.divide(
+        err_data,
+        histograms['background_dnn']['counts'],
+        out=np.zeros_like(err_data),
+        where=histograms['background_dnn']['counts'] > 0,
+    )
+
+    ax[1].errorbar(
+        bin_centers,
+        ratio_dnn,
+        xerr=err_bin,
+        yerr=ratio_err_dnn,
+        fmt='o',
+        color='black',
+        markersize=6,
+        label=r'DNN $F_\mathrm{F}$',
+    )
+
+    ax[1].fill_between(
+        bin_centers,
+        1 - err_stat_rel_dnn,
+        1 + err_stat_rel_dnn,
+        color='gray',
+        alpha=0.3,
+        step='mid',
+        label='Stat. Unc.',
+    )
+    if plot_corr_hline:
+        ax[1].axhline(1/corr_emb_ff, color='blue', linestyle='--', linewidth=1.5)
+    ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
+    
+    ax[1].set_ylabel("Data / Model", loc='center')
+    ax[1].set_ylim([0.75, 1.25])
+    ax[1].grid(True, linestyle=':', alpha=0.7)
+    ax[1].tick_params(direction='in', top=True, right=True)
+    ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
+
+    if plot_classic_ff_comp:
+
+        ratio_classic = np.divide(
+            histograms['data']['counts'],
+            histograms['background_classic']['counts'],
+            out=np.zeros_like(histograms['data']['counts'], dtype=float),
+            where=histograms['background_classic']['counts'] > 0,
+        )
+
+        ratio_err_classic = np.divide(
+            err_data,
+            histograms['background_classic']['counts'],
+            out=np.zeros_like(err_data),
+            where=histograms['background_classic']['counts'] > 0,
+        )
+
+        ax[2].axis('off')
+
+        ax[3].errorbar(
+            bin_centers,
+            ratio_classic,
+            xerr=err_bin,
+            yerr=ratio_err_classic,
+            fmt='o',
+            color='black',
+            markersize=6,
+            label=r'Classic $F_\mathrm{F}$',
+        )
+
+        ax[3].fill_between(
+            bin_centers,
+            1 - err_stat_rel_classic,
+            1 + err_stat_rel_classic,
+            color='gray',
+            alpha=0.3,
+            step='mid',
+            label='Stat. Unc.',
+        )
+        ax[3].axhline(1/corr_emb_ff, color='blue', linestyle='--', linewidth=1.5)
+        ax[3].axhline(1, color='red', linestyle='--', linewidth=1.5)
+        ax[3].set_ylabel("Data / Model")
+        ax[3].set_ylim([0.75, 1.25])
+        ax[3].grid(True, linestyle=':', alpha=0.7)
+        ax[3].tick_params(direction='in', top=True, right=True)
+        ax[3].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
+        ax[3].set_xlabel(label)
+    else:
+        ax[1].set_xlabel(label)
+
+    return fig, ax, histograms
+
+
 def plot_closure_c(
     df,
     var: str,
@@ -822,6 +1147,38 @@ def plot_fake_factors(
     return fig, ax
 
 
+def plot_fake_factors_incl(
+        df,
+        category_title = None,
+        clipped = True
+) -> None:
+    hep.style.use(hep.style.CMS)
+	
+    if clipped:
+        ff_dnn = 'ff_dnn_incl'
+    
+        bins = np.linspace(0, 1, 50)
+    else:
+        ff_dnn = 'ff_unclipped_dnn_incl'
+    
+        bins = np.linspace(0, 10, 50)
+    
+
+    fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+    
+    CMS_CHANNEL_TITLE([ax])
+    CMS_LUMI_TITLE([ax])
+    CMS_LABEL([ax])
+    CMS_CATEGORY_TITLE([ax], title = category_title)
+
+    ax.hist(df.data.AR[ff_dnn], bins=bins, histtype = 'step', linewidth = 2, label='Tau incl.')
+    ax.set_ylabel('Events')
+    ax.set_xlabel("fake_factor")
+    ax.legend()
+
+    return fig, ax
+
+
 def plot_classic_fake_factors(
         df,
         category_title = None,
@@ -833,8 +1190,8 @@ def plot_classic_fake_factors(
         ff_tau1 = 'ff_classic_tau1'
         ff_tau2 = 'ff_classic_tau2'
     
-        bins_tau1 = np.linspace(0, 0.5, 50)
-        bins_tau2 = np.linspace(0, 0.5, 50)
+        bins_tau1 = np.linspace(0.1, 0.2, 70)
+        bins_tau2 = np.linspace(0.1, 0.2, 70)
     else:
         ff_tau1 = 'ff_unclipped_classic_tau1'
         ff_tau2 = 'ff_unclipped_classic_tau2'
