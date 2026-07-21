@@ -9,11 +9,10 @@ import numpy as np
 from tap import Tap
 import torch as t
 
-from classes import load_variables, load_data, load_fold_combined_model, test_data
-from classes import calculate_fake_factors, calculate_fake_factor_dnn, calculate_fake_factor_classic, calculate_fake_factors_in_DR_qcd
-from classes import FoldCombinedDNN, load_fold_combined_model
-from classes.Loading import load_config, load_variables, load_labels
-from classes.FF_calculation import calculate_fake_factors_incl
+from classes.NeuralNetworks import load_fold_combined_model, FoldCombinedDNN
+from classes.DataHandling import test_data
+from classes.Loading import load_config, load_variables, load_labels, load_data
+from classes.FF_calculation import calculate_fake_factors_incl, calculate_fake_factors, calculate_fake_factor_dnn, calculate_fake_factor_classic, calculate_fake_factors_in_DR_qcd
 
 
 SEED = 42
@@ -29,8 +28,6 @@ class Args(Tap):
     taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
-    ff: bool = True
-    ff_unc: bool = False
     dnn_grouped: bool = True
 
 args = Args().parse_args()
@@ -197,20 +194,6 @@ def build_normalization_vector_in_DR(
         grouping_definition,
     )
 
-
-def build_normalization_vector_in_DR_wjets(
-    df,
-    grouping_variable,
-    grouping_definition,
-):
-    """Build per-event normalization factors for df.AR_like_wjets."""
-    return _build_normalization_vector_for_views(
-        df.AR_like_wjets,
-        df.data.SR_like_wjets,
-        df.data.AR_like_wjets,
-        grouping_variable,
-        grouping_definition,
-    )
 
 def build_normalization_vector_in_DR_qcd(
     df,
@@ -556,120 +539,6 @@ def calculate_fake_factor_mean_std_in_DR(
     target_view[output_std] = std_result
     return df
 
-
-'''
-def calculate_fake_factor_mean_std_batched_in_DR_wjets(
-    df,
-    models,
-    training_variables,
-    grouping_variable,
-    grouping_definition,
-    process='wjets',
-    output_mean='fake_factor_mean',
-    output_std='fake_factor_std',
-    device: t.device | None = None,
-):
-    if process != 'wjets':
-        raise ValueError("calculate_fake_factor_mean_std_batched_in_DR_wjets only supports process='wjets'.")
-
-    if device is None:
-        device = t.device('cuda' if t.cuda.is_available() else 'cpu')
-
-    print('[INFO] Computing normalization...')
-    normalization = build_normalization_vector_in_DR_wjets(
-        df,
-        grouping_variable,
-        grouping_definition,
-    )
-
-    mean_result, std_result = _calculate_fake_factor_mean_std_for_view_per_model(
-        df.AR_like_wjets,
-        models,
-        training_variables,
-        normalization,
-        device=device,
-    )
-
-    df.AR_like_wjets[output_mean] = mean_result
-    df.AR_like_wjets[output_std] = std_result
-    return df
-
-
-def calculate_fake_factor_mean_std_batched_in_DR_qcd(
-    df,
-    models,
-    training_variables,
-    grouping_variable,
-    grouping_definition,
-    process='qcd',
-    output_mean='fake_factor_mean',
-    output_std='fake_factor_std',
-    device: t.device | None = None,
-):
-    if process != 'qcd':
-        raise ValueError("calculate_fake_factor_mean_std_batched_in_DR_wjets only supports process='qcd'.")
-
-    if device is None:
-        device = t.device('cuda' if t.cuda.is_available() else 'cpu')
-
-    print('[INFO] Computing normalization...')
-    normalization = build_normalization_vector_in_DR_wjets(
-        df,
-        grouping_variable,
-        grouping_definition,
-    )
-
-    mean_result, std_result = _calculate_fake_factor_mean_std_for_view_per_model(
-        df.AR_like_qcd,
-        models,
-        training_variables,
-        normalization,
-        device=device,
-    )
-
-    df.AR_like_qcd[output_mean] = mean_result
-    df.AR_like_qcd[output_std] = std_result
-    return df
-'''
-'''
-def calculate_fake_factor_mean_std_batched_in_DR_ttbar(
-    df,
-    models,
-    training_variables,
-    grouping_variable,
-    grouping_definition,
-    process='ttbar',
-    output_mean='fake_factor_mean',
-    output_std='fake_factor_std',
-    device: t.device | None = None,
-):
-    if process != 'ttbar':
-        raise ValueError("calculate_fake_factor_mean_std_batched_in_DR_wjets only supports process='ttbar'.")
-
-    if device is None:
-        device = t.device('cuda' if t.cuda.is_available() else 'cpu')
-
-    print('[INFO] Computing normalization...')
-    normalization = build_normalization_vector_in_DR_wjets(
-        df,
-        grouping_variable,
-        grouping_definition,
-    )
-
-    mean_result, std_result = _calculate_fake_factor_mean_std_for_view_per_model(
-        df.AR_like_qcd,
-        models,
-        training_variables,
-        normalization,
-        device=device,
-    )
-
-    df.AR_like_qcd[output_mean] = mean_result
-    df.AR_like_qcd[output_std] = std_result
-    return df
-
-
-'''
 	
 def calculate_fake_factor_mean_std_in_DR_dropout_mask_variation(
     df,
@@ -1064,30 +933,6 @@ def main():
         )
 
 
-
-
-    if args.ff_unc:
-        # ----- load models from training_uncertainty_models.py -----
-        logger.info("Loading models from training_uncertainty_models.py for uncertainty calculations...")
-
-        models_wjets = load_models(
-            checkpoint_dir='../Training_results_uncertainties',
-            seeds = range(100, 200),
-        )
-
-        models_qcd = load_models(
-            checkpoint_dir='../Training_results_uncertainties',
-            seeds = range(100, 200),
-            process = 'qcd',
-        )
-
-        models_ttbar = load_models(
-            checkpoint_dir='../Training_results_uncertainties',
-            seeds = range(100, 200),
-            process = 'ttbar',
-        )
-
-
     # ----- grouping definitions -----
 
     grouping_njets = (
@@ -1114,222 +959,94 @@ def main():
 
     training_variables = load_variables(TRAINING_VAR_PATH, args.var)
 
-    if args.ff:
+   
 
-        # ----- calculate fake factors -----
-        # classic: at the moment from jvoss smhtt ul v12
-        calculate_fake_factor_classic(df_classic_jv, 'jv')
-        calculate_fake_factor_classic(df_classic_sg, 'sg')
-
-
-        if args.dnn_grouped:
-            # tau decay mode
-            logger.info("Calculating fake factors for tau decay mode...")
-            calculate_fake_factors(
-                df=df,
-                model_tau1=model_tau1_tdm,
-                model_tau2=model_tau2_tdm,
-                training_variables=training_variables,
-                grouping_variable = ['tau_decaymode_1', 'tau_decaymode_2'],
-                grouping_definition = grouping_tdm,
-                output_suffix = 'tau_dm',
-            )
-
-            # njets
-            logger.info("Calculating fake factors for njets...")
-            calculate_fake_factors(
-                df=df,
-                model_tau1=model_tau1_njets,
-                model_tau2=model_tau2_njets,
-                training_variables=training_variables,
-                grouping_variable = 'njets',
-                grouping_definition = grouping_njets,
-                output_suffix = 'njets',
-            )
+    # ----- calculate fake factors -----
+    # classic: at the moment from jvoss smhtt ul v12
+    calculate_fake_factor_classic(df_classic_jv, 'jv')
+    calculate_fake_factor_classic(df_classic_sg, 'sg')
 
 
-            logger.info("Saving fake factors to df in ff_dnn_tau_dm and ff_dnn_njets columns...")
-            calculate_fake_factor_dnn(
-                df1 = df.AR_tau1,
-                df2 = df.AR_tau2,
-                grouping = 'tau_decaymode',
-            )
-
-            calculate_fake_factor_dnn(
-                df1 = df.AR_tau1,
-                df2 = df.AR_tau2,
-                grouping = 'njets',
-            )
-
-            #the equivalent would be saving the tau1 and tau2 FF seperately
-            
-            # ----- calculate fake factors in DR -----
-            logger.info("Calculating fake factors in DR...")
-            calculate_fake_factors_in_DR_qcd(
-                df=df,
-                model_tau1=model_tau1_tdm,
-                model_tau2=model_tau2_tdm,
-                training_variables=training_variables,
-                grouping_variable = ['tau_decaymode_1', 'tau_decaymode_2'],
-                grouping_definition = grouping_tdm,
-                output_suffix = 'tau_dm',
-            )
-
-            calculate_fake_factors_in_DR_qcd(
-                df=df,
-                model_tau1=model_tau1_njets,
-                model_tau2=model_tau2_njets,
-                training_variables=training_variables,
-                grouping_variable = 'njets',
-                grouping_definition = grouping_njets,
-                output_suffix = 'njets',
-            )
-
-        else:
-            if args.taus == 'split':
-                logger.info("Calculating fake factors...")
-                calculate_fake_factors(
-                    df=df,
-                    model_tau1=model_tau1,
-                    model_tau2=model_tau2,
-                    training_variables=training_variables,
-                )
-            elif args.taus == 'incl':
-                logger.info("Calculating fake factors inclusive...")
-                calculate_fake_factors_incl(
-                    df=df_incl,
-                    model=model_incl,
-                    training_variables=training_variables,
-                )
-
-            #calculate_fake_factor_classic(df = df.AR)
-
-            #logger.info("Saving fake factors to df in ff_dnn_tau_dm and ff_dnn_njets columns...")
-            #calculate_fake_factor_dnn(
-            #    df1 = df.AR_tau1,
-            #    df2 = df.AR_tau2,
-            #)
-            
-            # ----- calculate fake factors in DR -----
-            #logger.info("Calculating fake factors in DR...")
-            #calculate_fake_factors_in_DR_qcd(
-            #    df=df,
-            #    model_tau1=model_tau1_tdm,
-            #    model_tau2=model_tau2_tdm,
-            #    training_variables=training_variables,
-            #)
-
-
-
-
-    if args.ff_unc:
-
-        calculate_fake_factor_mean_std(
-            'njets',
-            grouping_njets,
-            'njets',
-        )
-
-
-        calculate_fake_factor_mean_std(
-            df= df,
-            models= models_wjets,
-            training_variables=training_variables,
-            grouping_variable='njets',
-            grouping_definition=grouping_njets,
-            process = 'wjets',
-            output_mean='ff_wjets_mean',
-            output_std='ff_wjets_std',
-        )
-
-
-
-        calculate_fake_factor_mean_std_in_DR(
-            df= df,
-            models= models_qcd,
-            training_variables=training_variables,
-            grouping_variable='njets',
-            grouping_definition=grouping_njets,
-            process = 'qcd',
-            output_mean='ff_qcd_mean',
-            output_std='ff_qcd_std',
-        )
-
-        calculate_fake_factor_mean_std_in_DR(
-            df= df,
-            models= models_ttbar,
-            training_variables=training_variables,
-            grouping_variable='njets',
-            grouping_definition=grouping_njets,
-            process = 'ttbar',
-            output_mean='ff_ttbar_mean',
-            output_std='ff_ttbar_std',
-        )
-
-
-        calculate_fake_factor_mean_std_dropout_mask_variation(
-            df= df,
-            model= model_wjets_tdm,
-            training_variables=training_variables,
-            grouping_variable='njets',
-            grouping_definition=grouping_njets,
-            process = 'wjets',
-            output_mean='ff_wjets_mean_pmask',
-            output_std='ff_wjets_std_pmask',
-        )
-
-
-        calculate_fake_factor_mean_std_in_DR_dropout_mask_variation(
-            df = df,
-            model = model_wjets_tdm,
-            training_variables = training_variables,
-            grouping_variable = 'njets',
-            grouping_definition = grouping_njets,
-            process='wjets',
-            output_mean='ff_wjets_mean_pmask',
-            output_std='ff_wjets_std_pmask',
-        )
-
-        calculate_fake_factor_mean_std_in_DR_dropout_mask_variation(
-            df = df,
-            model = model_qcd_tdm,
-            training_variables = training_variables,
-            grouping_variable = 'njets',
-            grouping_definition = grouping_njets,
-            process='qcd',
-            output_mean='ff_qcd_mean_pmask',
-            output_std='ff_qcd_std_pmask',
-        )
-
-        calculate_fake_factor_mean_std_in_DR_dropout_mask_variation(
-            df = df,
-            model = model_ttbar_tdm,
-            training_variables = training_variables,
-            grouping_variable = 'njets',
-            grouping_definition = grouping_njets,
-            process='ttbar',
-            output_mean='ff_ttbar_mean_pmask',
-            output_std='ff_ttbar_std_pmask',
-        )
-
-
-        '''
-        grouping_njets = (
-            (0,),
-            (1,),
-            (2, 1000),
-        )
-
-
-        calculate_fake_factors_ensemble_2sigma(
+    if args.dnn_grouped:
+        # tau decay mode
+        logger.info("Calculating fake factors for tau decay mode...")
+        calculate_fake_factors(
             df=df,
-            model_wjets=model_wjets_tdm,
+            model_tau1=model_tau1_tdm,
+            model_tau2=model_tau2_tdm,
             training_variables=training_variables,
-            grouping_variable='njets',
-            grouping_definition=grouping_njets,
+            grouping_variable = ['tau_decaymode_1', 'tau_decaymode_2'],
+            grouping_definition = grouping_tdm,
+            output_suffix = 'tau_dm',
         )
 
-        '''
+        # njets
+        logger.info("Calculating fake factors for njets...")
+        calculate_fake_factors(
+            df=df,
+            model_tau1=model_tau1_njets,
+            model_tau2=model_tau2_njets,
+            training_variables=training_variables,
+            grouping_variable = 'njets',
+            grouping_definition = grouping_njets,
+            output_suffix = 'njets',
+        )
+
+
+        logger.info("Saving fake factors to df in ff_dnn_tau_dm and ff_dnn_njets columns...")
+        calculate_fake_factor_dnn(
+            df1 = df.AR_tau1,
+            df2 = df.AR_tau2,
+            grouping = 'tau_decaymode',
+        )
+
+        calculate_fake_factor_dnn(
+            df1 = df.AR_tau1,
+            df2 = df.AR_tau2,
+            grouping = 'njets',
+        )
+
+        #the equivalent would be saving the tau1 and tau2 FF seperately
+        
+        # ----- calculate fake factors in DR -----
+        logger.info("Calculating fake factors in DR...")
+        calculate_fake_factors_in_DR_qcd(
+            df=df,
+            model_tau1=model_tau1_tdm,
+            model_tau2=model_tau2_tdm,
+            training_variables=training_variables,
+            grouping_variable = ['tau_decaymode_1', 'tau_decaymode_2'],
+            grouping_definition = grouping_tdm,
+            output_suffix = 'tau_dm',
+        )
+
+        calculate_fake_factors_in_DR_qcd(
+            df=df,
+            model_tau1=model_tau1_njets,
+            model_tau2=model_tau2_njets,
+            training_variables=training_variables,
+            grouping_variable = 'njets',
+            grouping_definition = grouping_njets,
+            output_suffix = 'njets',
+        )
+
+    else:
+        if args.taus == 'split':
+            logger.info("Calculating fake factors...")
+            calculate_fake_factors(
+                df=df,
+                model_tau1=model_tau1,
+                model_tau2=model_tau2,
+                training_variables=training_variables,
+            )
+        elif args.taus == 'incl':
+            logger.info("Calculating fake factors inclusive...")
+            calculate_fake_factors_incl(
+                df=df_incl,
+                model=model_incl,
+                training_variables=training_variables,
+            )    
+    
 
     #print(list(df.columns))
     logger.info(f"Saving main dataframe to feather file: {DATA_PATH}")

@@ -520,7 +520,7 @@ def save_model(item: t.nn.Module, path: Path) -> None:
         f.write(f"from {item.__class__.__module__} import {item.__class__.__name__}\n{str(item.__recreate__())}")
         logger.info(f"Model {item.__class__.__name__} recreation snippet saved to {model_recreation_path}")
 
-
+#used
 def load_model(
     path: Path,
     device: str = "cpu",
@@ -589,7 +589,7 @@ def load_model(
         log_nested_scaler_shifts(__model, device)
         return __model.to(device)
 
-
+#used
 def load_fold_combined_model(
     even_model_path: Path,  # usually fold0
     odd_model_path: Path,   # usually fold1

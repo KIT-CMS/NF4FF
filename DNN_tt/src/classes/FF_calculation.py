@@ -51,7 +51,7 @@ def _build_group_masks(values, grouping_definition):
 
 
 # ------------- dnn fake factor determinaiton -------------
-
+#used
 def calculate_fake_factors(
     df,
     model_tau1: t.nn.Module = None,
@@ -245,7 +245,7 @@ def calculate_fake_factors(
         print("FF for tau 2 is None")
 
 
-
+#used
 def calculate_fake_factors_incl(
     df,
     model: t.nn.Module = None,
@@ -483,7 +483,7 @@ def calculate_fake_factors_in_DR_wjets(
 
     df.AR_like_wjets[f"ff_dnn_wjets{suffix}"] = fake_factor_wjets
 
-
+#used
 def calculate_fake_factors_in_DR_qcd(
     df,
     model_tau1: t.nn.Module,
@@ -735,7 +735,7 @@ def evaluate_compound_ff_correction(correction_set, compound_name: str, df: pd.D
     ordered_inputs = [input_values[name] for name in expected_inputs]
     return compound_correction.evaluate(*ordered_inputs)
 
-
+#used
 def calculate_fake_factor_dnn(
         df1,
         df2,
@@ -759,7 +759,7 @@ def calculate_fake_factor_dnn(
 
 # -------------- classic fake factor determination -------------
 
-
+#used
 def calculate_fake_factor_classic(
         df,
         short,

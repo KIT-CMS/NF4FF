@@ -9,7 +9,7 @@ from .DataHandling import (
     create_training_dataset
     )
 
-
+#Stand traing.py: kann weg
 from .NeuralNetworks import (
     DNN,
     GroupedDNN,
