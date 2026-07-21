@@ -94,7 +94,8 @@ def main():
 
     for i in range(len(datasets)):
         if args.classic:
-            file = cfg['input_dir_classic'] + dataset_names[i]
+            #input_dir_classic_sgiappic or ..._jvoss --> also change save file name!!!
+            file = cfg['input_dir_classic_sgiappic'] + dataset_names[i]
         else:
             file = cfg['input_dir'][args.embedding][args.loc] + dataset_names[i]
         
@@ -140,7 +141,7 @@ def main():
     if args.classic:
         out_classic = Path(cfg['output_dir'][args.loc] + "classic")
         out_classic.mkdir(parents=True, exist_ok=True)
-        combined_data.to_feather(out_classic / "combined_data_jvoss.feather")
+        combined_data.to_feather(out_classic / "combined_data_sgiappic.feather")
     else:
         combined_data.to_feather(cfg['output_dir'][args.loc] + args.embedding + "/combined_data.feather")
 

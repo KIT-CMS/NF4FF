@@ -28,7 +28,7 @@ class Args(Tap):
     taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
 
 args = Args().parse_args()
 

@@ -761,13 +761,24 @@ def calculate_fake_factor_dnn(
 
 
 def calculate_fake_factor_classic(
-        df
+        df,
+        short,
         ):
-    _df1 = df.AR_tau1_jvoss.copy()
-    _df2 = df.AR_tau2_jvoss.copy()
+    
+    if short=='jv':
+        _df1 = df.AR_tau1_jvoss.copy()
+        _df2 = df.AR_tau2_jvoss.copy()
 
-    ff = cr.CorrectionSet.from_file('/work/jvoss/KingMaker_sda/CROWN/analysis_configurations/tau/payloads/fake_factors/sm/2018_v3/fake_factors_tt.json.gz')
+        ff = cr.CorrectionSet.from_file('/work/jvoss/KingMaker_sda/CROWN/analysis_configurations/tau/payloads/fake_factors/sm/2018_v3/fake_factors_tt.json.gz')
+        corr = cr.CorrectionSet.from_file('/work/jvoss/KingMaker_sda/CROWN/analysis_configurations/tau/payloads/fake_factors/sm/2018_v3/FF_corrections_tt.json.gz')
+    elif short=='sg':
+        _df1 = df.AR_tau1_sgiappic.copy()
+        _df2 = df.AR_tau2_sgiappic.copy()
 
+        ff = cr.CorrectionSet.from_file('/work/sgiappic/KingMaker/CROWN/analysis_configurations/tau/payloads/fake_factors/sm/2024/fake_factors_tt.json.gz')
+    else:
+        print(f'short = {short} is not implmented. Use either jv or sg')
+    
     frac1 = ff['process_fractions']
     frac2 = ff['process_fractions_subleading']
 
@@ -775,7 +786,6 @@ def calculate_fake_factor_classic(
     ff_tau1 = ff['QCD_fake_factors']
     ff_tau2 = ff['QCD_subleading_fake_factors']
 
-    corr = cr.CorrectionSet.from_file('/work/jvoss/KingMaker_sda/CROWN/analysis_configurations/tau/payloads/fake_factors/sm/2018_v3/FF_corrections_tt.json.gz')
 
 
     _df1["tau1_classic_ff"] = ff_tau1.evaluate(
@@ -783,7 +793,6 @@ def calculate_fake_factor_classic(
         _df1.njets.values,
         "nominal",
     )
-
 
 
     _df2['tau2_classic_ff'] = ff_tau2.evaluate(
@@ -838,8 +847,14 @@ def calculate_fake_factor_classic(
     _df1['classic_ff_tau1'] = _df1['process_fraction_tau1'] * _df1['tau1_classic_ff']
     _df2['classic_ff_tau2'] = _df2['process_fraction_tau2'] * _df2['tau2_classic_ff']
 
-    df.AR_tau1_jvoss['ff_classic_tau1'] = _df1['classic_ff_tau1']
-    df.AR_tau2_jvoss['ff_classic_tau2'] = _df2['classic_ff_tau2']
+    if short=='jv':
+        df.AR_tau1_jvoss['ff_classic_tau1'] = _df1['classic_ff_tau1']
+        df.AR_tau2_jvoss['ff_classic_tau2'] = _df2['classic_ff_tau2']
+    elif short=='sg':
+        df.AR_tau1_sgiappic['ff_classic_tau1'] = _df1['classic_ff_tau1']
+        df.AR_tau2_sgiappic['ff_classic_tau2'] = _df2['classic_ff_tau2']
+    else:
+        print(f'short = {short} is not implmented. Use either jv or sg')
 
     #df['ff_classic'] = _df['corrected_ff']
 

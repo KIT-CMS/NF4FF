@@ -31,14 +31,15 @@ class Args(Tap):
     var = "variables"
     ff: bool = True
     ff_unc: bool = False
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
 
 args = Args().parse_args()
 
 cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
 
 DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'
-DATA_CLASSIC_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_jvoss.feather"
+DATA_CLASSIC_JV_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_jvoss.feather"
+DATA_CLASSIC_SG_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_sgiappic.feather"
 MASKS_PATH = cfg_path["masks"]
 MASKS_PATH_INCL = cfg_path["masks_incl"]
 TRAINING_VAR_PATH = cfg_path["train_var"]
@@ -1106,8 +1107,9 @@ def main():
     logger.info("Loading data...")
     df = load_data(DATA_PATH, MASKS_PATH)
     df_incl = load_data(DATA_PATH, MASKS_PATH_INCL)
-    df_classic = load_data(DATA_CLASSIC_PATH, MASKS_PATH)
-    #print(df_incl.columns)
+    df_classic_jv = load_data(DATA_CLASSIC_JV_PATH, MASKS_PATH)
+    df_classic_sg = load_data(DATA_CLASSIC_SG_PATH, MASKS_PATH)
+    #print(df_classic.columns)
     #exit()
 
     training_variables = load_variables(TRAINING_VAR_PATH, args.var)
@@ -1116,7 +1118,8 @@ def main():
 
         # ----- calculate fake factors -----
         # classic: at the moment from jvoss smhtt ul v12
-        calculate_fake_factor_classic(df_classic)
+        calculate_fake_factor_classic(df_classic_jv, 'jv')
+        calculate_fake_factor_classic(df_classic_sg, 'sg')
 
 
         if args.dnn_grouped:
@@ -1335,8 +1338,9 @@ def main():
     logger.info(f"Saving tau inclusive dataframe to feather file: {DATA_PATH}")
     df_incl.to_feather(DATA_PATH)
 
-    logger.info(f"Saving classic dataframe with fake-factor columns to feather file: {DATA_CLASSIC_PATH}")
-    df_classic.to_feather(DATA_CLASSIC_PATH)
+    logger.info(f"Saving classic dataframe with fake-factor columns to feather file: {DATA_CLASSIC_JV_PATH} and {DATA_CLASSIC_SG_PATH}")
+    df_classic_jv.to_feather(DATA_CLASSIC_JV_PATH)
+    df_classic_sg.to_feather(DATA_CLASSIC_SG_PATH)
 
 
 if __name__ == '__main__':

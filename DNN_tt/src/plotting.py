@@ -36,7 +36,7 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     dnn_grouped: bool = False
     classic: bool = False
 
@@ -49,7 +49,8 @@ args = Args().parse_args()
 cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
 
 DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'
-DATA_CLASSIC_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_jvoss.feather"
+DATA_CLASSIC_JV_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_jvoss.feather"
+DATA_CLASSIC_SG_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_sgiappic.feather"
 MASKS_PATH = cfg_path["masks"]
 MASKS_PATH_INCL = cfg_path["masks_incl"]
 TRAINING_VAR_PATH = cfg_path["train_var"]
@@ -120,14 +121,39 @@ def get_bins_and_label(variable, channel='et'):
 def main():
     df = load_data(DATA_PATH, MASKS_PATH)
     df_incl = load_data(DATA_PATH, MASKS_PATH_INCL)
-    df_classic = load_data(DATA_CLASSIC_PATH, MASKS_PATH)
+    df_classic_jv = load_data(DATA_CLASSIC_JV_PATH, MASKS_PATH)
+    df_classic_sg = load_data(DATA_CLASSIC_SG_PATH, MASKS_PATH)
     #print(df_incl.columns)
     #exit()
 
 
     # ----- Closure plots in DR -----
     if args.closure_DR:
-        for grouping in PLOT_GROUPINGS:
+        if args.dnn_grouped and args.taus=='split':
+            for grouping in PLOT_GROUPINGS:
+                for var in VARIABLES_SMALL:
+                    bins, label = get_bins_and_label(var)
+
+                    fig_q, _ = FF_closure_in_DR_tau1(
+                        df=df,
+                        var=var,
+                        bins=bins,
+                        label=label,
+                        grouping=grouping,
+                    )
+                    plt.savefig(PLOTS_DIR / 'closure_in_DR' / grouping / f'FF_closure_DR_tau1_{var}.png', dpi=150, bbox_inches='tight')
+                    plt.savefig(PLOTS_DIR / 'closure_in_DR' / grouping / f'FF_closure_DR_tau1_{var}.pdf', dpi=150, bbox_inches='tight')
+                    plt.close(fig_q)
+
+                logger.info(f'Saved closure plots in DR for {grouping}')
+
+        elif args.dnn_grouped and args.taus=='incl':
+            logger.warning('Tau inclusive grouped DNN is not yet implemented.')
+        
+        elif not args.dnn_grouped and args.taus=='split':
+            logger.warning('Not yet implemented.')
+
+        elif not args.dnn_grouped and args.taus=='incl':
             for var in VARIABLES_SMALL:
                 bins, label = get_bins_and_label(var)
 
@@ -138,12 +164,9 @@ def main():
                     label=label,
                     grouping=grouping,
                 )
-                plt.savefig(PLOTS_DIR / 'closure_in_DR' / grouping / f'FF_closure_DR_tau1_{var}.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'closure_in_DR' / grouping / f'FF_closure_DR_tau1_{var}.pdf', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'closure_in_DR' / 'ungrouped' / f'FF_closure_DR_tau1_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'closure_in_DR' / 'ungrouped' / f'FF_closure_DR_tau1_{var}.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig_q)
-
-            logger.info(f'Saved closure plots in DR for {grouping}')
-
 
     # ----- Fake-factor distributions -----
     if args.FF_dist:
@@ -227,9 +250,14 @@ def main():
 
         if args.classic:
             # ----- classic FF -----
-            fig_ar, ax_ar = plot_classic_fake_factors(df=df_classic)
-            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'classic' / f'plot_ff_splitTaus.png', dpi=150, bbox_inches='tight')
-            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'classic' / f'plot_ff_splitTaus.pdf', dpi=150, bbox_inches='tight')
+            fig_ar, ax_ar = plot_classic_fake_factors(df=df_classic_jv, short='jv')
+            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'classic' / f'plot_jv_ff_splitTaus.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'classic' / f'plot_jv_ff_splitTaus.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar)
+
+            fig_ar, ax_ar = plot_classic_fake_factors(df=df_classic_sg, short='sg')
+            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'classic' / f'plot_sg_ff_splitTaus.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'FF_distribution_AR' / 'classic' / f'plot_sg_ff_splitTaus.pdf', dpi=150, bbox_inches='tight')
             plt.close(fig_ar)
             logger.info(f'Saved FF distributions in AR for classic')
 
