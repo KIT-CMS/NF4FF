@@ -18,6 +18,7 @@ import onnx
 
 logger = log.setup_logging(logger=logging.getLogger(__name__))
 
+#used
 class DNN(t.nn.Module):
     def __init__(
         self,
@@ -324,6 +325,7 @@ class InputSlicer(t.nn.Module):
             return getattr(self.wrapped_model, name)
 
 
+#used
 class GroupedDNN(GroupedLayerABC):
     def __init__(
         self,
@@ -420,7 +422,7 @@ class GroupedDNN(GroupedLayerABC):
             ")"
         )
 
-
+#used
 class FoldCombinedDNN(t.nn.Module):
     def __init__(
         self,
@@ -488,6 +490,7 @@ class FoldCombinedDNN(t.nn.Module):
         return f"{self._imports}__model = {self.model_name}\n\n"
 
 
+#used
 def save_model(item: t.nn.Module, path: Path) -> None:
     path = Path(path)
     assert not path.suffix, "Provide a directory, not a file name"

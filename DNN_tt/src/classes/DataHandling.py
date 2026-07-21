@@ -335,22 +335,6 @@ class AnalysisDataFrame:
             self.load_feature_file(path)
 
 
-def load_variables(yaml_path):
-    with open(yaml_path, "r") as f:
-        config = yaml.safe_load(f)
-    yaml_vars = config.get("variables", [])
-    return yaml_vars
-
-
-def load_data(feather_file, config_file):
-
-    df = pd.read_feather(feather_file)
-    #print('len df process == 0', len(df[df.process == 0]))
-
-    manager = SelectionManager(config_file)
-
-    return AnalysisDataFrame(df, manager)
-
 
 def write_features(
     base_df,
@@ -549,6 +533,7 @@ def test_data(
     return _component_collection(X = _df)
 
 
+#used
 def create_training_dataset(
     df_sig,
     df_bkg,

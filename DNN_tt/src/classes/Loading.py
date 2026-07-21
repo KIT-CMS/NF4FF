@@ -1,6 +1,20 @@
 from dataclasses import is_dataclass, fields
 from typing import Tuple
+
+import pandas as pd
 import yaml
+
+from classes.DataHandling import SelectionManager, AnalysisDataFrame
+
+
+def load_data(feather_file, config_file):
+
+    df = pd.read_feather(feather_file)
+    #print('len df process == 0', len(df[df.process == 0]))
+
+    manager = SelectionManager(config_file)
+
+    return AnalysisDataFrame(df, manager)
 
 def load_variables(yaml_path, vars: str):
     with open(yaml_path, "r") as f:

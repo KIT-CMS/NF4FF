@@ -1,18 +1,18 @@
-import torch as t
+from dataclasses import dataclass
+import logging
+from pathlib import Path
+from typing import Union, Tuple, Literal
+
 import numpy as np
 import random
-import logging
-import yaml
 from tap import Tap
-from typing import List, Optional, Union, Tuple, Dict, Any, Literal
+import torch as t
 
-from pathlib import Path
+from classes.DataHandling import create_training_dataset
+from classes.NeuralNetworks import DNN, GroupedDNN, FoldCombinedDNN, save_model
+from classes.Training import train_dnn
+from classes.Loading import load_config, load_variables, load_data
 
-from classes import load_variables, load_data, create_training_dataset
-from classes import DNN, GroupedDNN, FoldCombinedDNN
-from classes import train_dnn, save_model
-from classes.Loading import load_config, load_variables
-from dataclasses import dataclass
 
 
 SEED = 42
@@ -143,6 +143,7 @@ def main():
     taudm1_idx = training_var.index('tau_decaymode_1')
     taudm2_idx = training_var.index('tau_decaymode_2')
     njets_idx = training_var.index('njets')
+
 
     grouping_taudm1 = {
         taudm1_idx: (
