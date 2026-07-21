@@ -1194,7 +1194,7 @@ def main():
             elif args.taus == 'incl':
                 logger.info("Calculating fake factors inclusive...")
                 calculate_fake_factors_incl(
-                    df=df,
+                    df=df_incl,
                     model=model_incl,
                     training_variables=training_variables,
                 )
@@ -1331,6 +1331,9 @@ def main():
     #print(list(df.columns))
     logger.info(f"Saving main dataframe to feather file: {DATA_PATH}")
     df.to_feather(DATA_PATH)
+
+    logger.info(f"Saving tau inclusive dataframe to feather file: {DATA_PATH}")
+    df_incl.to_feather(DATA_PATH)
 
     logger.info(f"Saving classic dataframe with fake-factor columns to feather file: {DATA_CLASSIC_PATH}")
     df_classic.to_feather(DATA_CLASSIC_PATH)

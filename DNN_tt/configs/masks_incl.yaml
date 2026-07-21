@@ -53,7 +53,7 @@ regions:
     - preselection
     - SR
 
-  AR_tau1:
+  AR:
     - preselection
     - AR
 
