@@ -26,9 +26,9 @@ random.seed(SEED)
 t.set_num_threads(8)
 
 class Args(Tap):
-    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     embedding: Literal["embedding", "no_embedding"] = "embedding"
-    var = "variables_61"
+    var = "variables"
     ff: bool = True
     ff_unc: bool = False
     dnn_grouped: bool = False

@@ -33,15 +33,16 @@ random.seed(SEED)
 t.set_num_threads(8)
 
 class Args(Tap):
-    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     embedding: Literal["embedding", "no_embedding"] = "embedding"
-    var = "variables_61"
+    var = "variables"
+
+    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     dnn_grouped: bool = False
-    classic: bool = True
+    classic: bool = False
 
     closure_DR: bool = False
     FF_dist: bool = True
-    closure_AR: bool = False
+    closure_AR: bool = True
 
 args = Args().parse_args()
 
@@ -301,7 +302,7 @@ def main():
             for var in VARIABLES_SMALL:
                 bins, label = get_bins_and_label(var)
                 fig, ax, _ = plot_closure_incl(
-                        df = df,
+                        df = df_incl,
                         var = var,
                         bins = bins,
                         label = label,
@@ -315,7 +316,7 @@ def main():
                 plt.savefig(incl_plot_dir / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig)
 
-            logger.info('Saved all closure plots for ungrouped DNN')
+            logger.info('Saved all closure plots for tau inclusive ungrouped DNN')
 
 
 # -------------------------------------------

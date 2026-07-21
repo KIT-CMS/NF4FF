@@ -468,8 +468,6 @@ def plot_closure_incl(
     label: str,
     grouping = None,
     corr_emb_ff = 1.0,
-    plot_classic_ff_comp = False,
-    plot_corr_hline = False,
 ):
     hep.style.use(hep.style.CMS)
 
@@ -480,8 +478,7 @@ def plot_closure_incl(
         ff_dnn_tau1 = 'ff_dnn_tau1_njets'
         ff_dnn_tau2 = 'ff_dnn_tau2_njets'
     else:
-        ff_dnn_tau1 = 'ff_dnn_tau1'
-        ff_dnn_tau2 = 'ff_dnn_tau2'
+        ff_dnn = 'ff_dnn_incl'
 
     histograms = {}
 
@@ -509,26 +506,14 @@ def plot_closure_incl(
             'variance': proc_variance,
         }
 
-
-    #jet_fakes_classic, var_jet_fakes_classic = estimate_jet_fakes(
-    #    df,
-    #    bins,
-    #    var,
-    #    'ff_classic',
-    #)
-
-    jet_fakes_dnn, var_jet_fakes_dnn = estimate_jet_fakes(
+    #todo
+    jet_fakes_dnn, var_jet_fakes_dnn = estimate_jet_fakes_incl(
         df,
         bins,
         var,
-        ff_dnn_tau1,
-        ff_dnn_tau2,
+        ff_dnn
     )
 
-    #histograms['jet_fakes_classic'] = {
-    #    'counts': jet_fakes_classic,
-    #    'variance': var_jet_fakes_classic,
-    #}
 
     histograms['jet_fakes_dnn'] = {
         'counts': jet_fakes_dnn,
@@ -545,14 +530,7 @@ def plot_closure_incl(
         + histograms['jet_fakes_dnn']['counts']
     )
 
-    #background_classic = (
-    #    histograms['diboson']['counts']
-    #    + histograms['DYjets']['counts']
-    #    + histograms['ST']['counts']
-    #    + histograms['ttbar_L']['counts']
-    #    + histograms['embedding']['counts']
-    #    + histograms['jet_fakes_classic']['counts']
-    #)
+
 
     variance_background_dnn = (
         histograms['diboson']['variance']
@@ -564,24 +542,11 @@ def plot_closure_incl(
         + histograms['jet_fakes_dnn']['variance']
     )
 
-    #variance_background_classic = (
-    #    histograms['diboson']['variance']
-    #    + histograms['DYjets']['variance']
-    #    + histograms['ST']['variance']
-    #    + histograms['ttbar_L']['variance']
-    #    + histograms['embedding']['variance']
-    #    + histograms['jet_fakes_classic']['variance']
-    #)
 
     histograms['background_dnn'] = {
         'counts': background_dnn,
         'variance': variance_background_dnn,
     }
-
-    #histograms['background_classic'] = {
-    #    'counts': background_classic,
-    #    'variance': variance_background_classic,
-    #}
 
 
     bin_widths = np.diff(bin_edges)
@@ -596,11 +561,6 @@ def plot_closure_incl(
         histograms['background_dnn']['variance']
     )
 
-    #err_stat_classic = np.sqrt(
-    #    histograms['background_classic']['variance']
-    #)
-
-
     err_stat_rel_dnn = np.divide(
         err_stat_dnn,
         histograms['background_dnn']['counts'],
@@ -608,25 +568,7 @@ def plot_closure_incl(
         where=histograms['background_dnn']['counts'] > 0,
     )
 
-    #err_stat_rel_classic = np.divide(
-    #    err_stat_classic,
-    #    histograms['background_classic']['counts'],
-    #    out=np.zeros_like(err_stat_classic),
-    #    where=histograms['background_classic']['counts'] > 0,
-    #)
-    #if plot_classic_ff_comp == True:
-    #    fig, ax = plt.subplots(
-    #        4,
-    #        1,
-    #        figsize=(9, 9),
-    #        sharex=True,
-    #        gridspec_kw={
-    #            'height_ratios': [4, 1, 0.2, 1],
-    #            'hspace': 0.05,
-    #        },
-    #        constrained_layout=True,
-    #    )
-    #else:
+
     fig, ax = plt.subplots(
         2,
         1,
@@ -648,7 +590,7 @@ def plot_closure_incl(
         (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
         (histograms['wjets']['counts'], '#e76300', r"W+jets"),
     ]
-    #print(histograms['wjets']['counts'])
+
     counts_stack_total = draw_stacked_stepfill(
         ax[0],
         bin_edges,
@@ -724,8 +666,7 @@ def plot_closure_incl(
         step='mid',
         label='Stat. Unc.',
     )
-    if plot_corr_hline:
-        ax[1].axhline(1/corr_emb_ff, color='blue', linestyle='--', linewidth=1.5)
+    
     ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
     
     ax[1].set_ylabel("Data / Model", loc='center')
@@ -734,54 +675,7 @@ def plot_closure_incl(
     ax[1].tick_params(direction='in', top=True, right=True)
     ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
 
-    if plot_classic_ff_comp:
-
-        ratio_classic = np.divide(
-            histograms['data']['counts'],
-            histograms['background_classic']['counts'],
-            out=np.zeros_like(histograms['data']['counts'], dtype=float),
-            where=histograms['background_classic']['counts'] > 0,
-        )
-
-        ratio_err_classic = np.divide(
-            err_data,
-            histograms['background_classic']['counts'],
-            out=np.zeros_like(err_data),
-            where=histograms['background_classic']['counts'] > 0,
-        )
-
-        ax[2].axis('off')
-
-        ax[3].errorbar(
-            bin_centers,
-            ratio_classic,
-            xerr=err_bin,
-            yerr=ratio_err_classic,
-            fmt='o',
-            color='black',
-            markersize=6,
-            label=r'Classic $F_\mathrm{F}$',
-        )
-
-        ax[3].fill_between(
-            bin_centers,
-            1 - err_stat_rel_classic,
-            1 + err_stat_rel_classic,
-            color='gray',
-            alpha=0.3,
-            step='mid',
-            label='Stat. Unc.',
-        )
-        ax[3].axhline(1/corr_emb_ff, color='blue', linestyle='--', linewidth=1.5)
-        ax[3].axhline(1, color='red', linestyle='--', linewidth=1.5)
-        ax[3].set_ylabel("Data / Model")
-        ax[3].set_ylim([0.75, 1.25])
-        ax[3].grid(True, linestyle=':', alpha=0.7)
-        ax[3].tick_params(direction='in', top=True, right=True)
-        ax[3].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
-        ax[3].set_xlabel(label)
-    else:
-        ax[1].set_xlabel(label)
+    ax[1].set_xlabel(label)
 
     return fig, ax, histograms
 
@@ -2841,5 +2735,28 @@ def estimate_jet_fakes(
 
     jet_fakes = 0.5 * (jet_fakes_tau1 + jet_fakes_tau2)
     var_jet_fakes  = var_jet_fakes_tau1 + var_jet_fakes_tau2
+
+    return jet_fakes, var_jet_fakes
+
+
+def estimate_jet_fakes_incl(
+	df,
+	bins,
+	var,
+	ff_var
+):
+    counts = {}
+    variance = {}
+
+    list_processes = ['data', 'diboson', 'DYjets', 'ST', 'embedding', 'ttbar', 'wjets']
+    for proc in list_processes:
+        counts[proc], _ = np.histogram(df[proc].AR[var], weights = df[proc].AR.weight * df[proc].AR[ff_var], bins = bins)
+        variance[proc], _ = np.histogram(df[proc].AR[var], weights = (df[proc].AR.weight * df[proc].AR[ff_var])**2, bins = bins)
+
+    jet_fakes = counts['data'] - counts['diboson'] - counts['DYjets'] - counts['ST'] - counts['embedding'] - counts['ttbar'] - counts['wjets']
+    var_jet_fakes = variance['data'] + variance['diboson'] + variance['DYjets'] + variance['ST'] + variance['embedding'] + variance['ttbar'] + variance['wjets']
+
+    #jet_fakes = 0.5 * (jet_fakes_tau1 + jet_fakes_tau2)
+    #var_jet_fakes  = var_jet_fakes_tau1 + var_jet_fakes_tau2
 
     return jet_fakes, var_jet_fakes
