@@ -1,16 +1,13 @@
-from abc import ABC, abstractmethod
 from functools import partial
-from itertools import product
-from typing import Any, Callable, Dict, List, Literal, Tuple, Union
+from typing import Any, Callable, Union
 
 import opt_einsum as oe
 import torch as t
 import torch.nn.functional as F
 from torch.nn.modules.loss import _Loss
 import torch.nn as nn
+
 import classes.helper as helper
-#from CODE.LOSS.LikelihoodsAndUncertainties import (Likelihood, UncertaintyObjects)
-#from CODE.TAYLORANALYSIS import TCExtraction
 
 # ---------------------
 
@@ -174,7 +171,7 @@ class PretrainingLoss(_Loss):
             ),
         )
 
-
+#used
 class PretrainingBCELossWeightNormalized(nn.Module):
     def __init__(self, eps: float = 1e-6):
         super().__init__()
@@ -213,6 +210,7 @@ class PretrainingBCELossWeightNormalized(nn.Module):
 
         return self.track(loss)
 
+#used
 class PretrainingSqueezedLossWeightNormalized(PretrainingLoss):
     def __init__(
         self,

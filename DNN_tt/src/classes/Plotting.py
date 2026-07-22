@@ -2,7 +2,6 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 import mplhep as hep
-import pandas as pd
 from collections.abc import Iterable
 
 def CMS_CHANNEL_TITLE(ax, *args, **kwargs):

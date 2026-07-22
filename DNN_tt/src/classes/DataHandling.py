@@ -1,14 +1,15 @@
 from pathlib import Path
-import yaml
-import pandas as pd
-import operator
-from functools import reduce
-from classes.helper import _component_collection, _same_sign_opposite_sign_split
-import numpy as np
-import torch as t
-from sklearn.model_selection import train_test_split
 from typing import Union
 
+import numpy as np
+import pandas as pd
+import torch as t
+from sklearn.model_selection import train_test_split
+import yaml
+
+from classes.helper import _component_collection
+
+#used
 class SelectionManager:
 
     def __init__(self, yaml_path):
@@ -180,6 +181,7 @@ class ProcessView:
         return self._df.loc[self._process_mask, key]
 
 
+#used
 class AnalysisDataFrame:
 
     def __init__(self, df, manager):

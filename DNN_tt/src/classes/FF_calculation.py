@@ -1,9 +1,11 @@
+import time
+
 import torch as t
 import correctionlib as cr
 import numpy as np
 import pandas as pd
-import time
-from .NeuralNetworks import load_model, FoldCombinedDNN
+
+from .NeuralNetworks import FoldCombinedDNN
 from .DataHandling import test_data
 
 
