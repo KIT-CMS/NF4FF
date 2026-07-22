@@ -3,22 +3,16 @@ import logging
 import random
 
 import numpy as np
-import matplotlib.pyplot as plt
-import torch as t
-import pandas as pd
-import correctionlib as cr
-from pathlib import Path
 import matplotlib
-import yaml
-import uproot
-from typing import Literal
-from tap import Tap
+import matplotlib.pyplot as plt
 
-from classes import load_variables, load_data, load_model, load_fold_combined_model, test_data
-from classes import calculate_fake_factors, calculate_fake_factor_dnn, calculate_fake_factor_classic, calculate_fake_factors_in_DR_wjets, calculate_fake_factors_in_DR_qcd
-from classes import plot_fake_factors_in_DR, plot_fake_factors
-from classes import CMS_CHANNEL_TITLE, CMS_CATEGORY_TITLE, CMS_LUMI_TITLE, CMS_LABEL, adjust_ylim_for_legend, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
-from classes.Loading import load_config, load_variables, load_labels
+from tap import Tap
+import torch as t
+from typing import Literal
+import uproot
+
+from classes.Plotting import plot_fake_factors, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
+from classes.Loading import load_config, load_labels, load_data
 from classes.Plotting import FF_closure_in_DR_tau1, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl
 
 

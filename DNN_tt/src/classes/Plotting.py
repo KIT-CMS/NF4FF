@@ -136,6 +136,7 @@ def draw_stacked_stepfill(ax, bin_edges, components: list[tuple[np.ndarray, str,
 
     return final_top
 
+#used
 def plot_closure(
     df,
     var: str,
@@ -460,7 +461,7 @@ def plot_closure(
 
     return fig, ax, histograms
 
-
+#used
 def plot_closure_incl(
     df,
     var: str,
@@ -990,7 +991,7 @@ def plot_closure_c(
 
     return fig, ax, histograms
 
-
+#used
 def plot_fake_factors(
         df,
         category_title = None,
@@ -1039,7 +1040,7 @@ def plot_fake_factors(
     ax[1].legend()
     return fig, ax
 
-
+#used
 def plot_fake_factors_incl(
         df,
         category_title = None,
@@ -1070,7 +1071,7 @@ def plot_fake_factors_incl(
 
     return fig, ax
 
-
+#used
 def plot_classic_fake_factors(
         df,
         short,
@@ -1631,6 +1632,7 @@ def FF_closure_in_DR_wjets_with_stat_unc(
 
     return fig, ax
 
+#used
 def FF_closure_in_DR_tau1(
     df,
 	var,
@@ -2449,7 +2451,7 @@ def plot_fake_factors_grouped_c(df, category_title, grouping='tau_decaymode', sq
 
     return fig, ax
 
-
+#used
 def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode', clipped = True):
     hep.style.use(hep.style.CMS)
 
@@ -2520,7 +2522,7 @@ def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode', clip
 
     return fig, ax
 
-
+#used
 def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymode'):
     hep.style.use(hep.style.CMS)
 
@@ -2583,7 +2585,7 @@ def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymo
 
     return fig, ax
 
-
+#used
 def plot_fake_factors_in_dr_grouped(df, category_title, grouping='tau_decaymode'):
     hep.style.use(hep.style.CMS)
 
