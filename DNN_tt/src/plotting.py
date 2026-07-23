@@ -30,11 +30,11 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
-    dnn_grouped: bool = False
+    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    dnn_grouped: bool = True
     classic: bool = False
 
-    closure_DR: bool = False
+    closure_DR: bool = True
     FF_dist: bool = True
     closure_AR: bool = True
 
@@ -114,10 +114,10 @@ def get_bins_and_label(variable, channel='et'):
 
 def main():
     df = load_data(DATA_PATH, MASKS_PATH)
-    df_incl = load_data(DATA_PATH, MASKS_PATH_INCL)
-    df_classic_jv = load_data(DATA_CLASSIC_JV_PATH, MASKS_PATH)
-    df_classic_sg = load_data(DATA_CLASSIC_SG_PATH, MASKS_PATH)
-    #print(df_incl.columns)
+    #df_incl = load_data(DATA_PATH, MASKS_PATH_INCL)
+    #df_classic_jv = load_data(DATA_CLASSIC_JV_PATH, MASKS_PATH)
+    #df_classic_sg = load_data(DATA_CLASSIC_SG_PATH, MASKS_PATH)
+    #print(df.columns)
     #exit()
 
 

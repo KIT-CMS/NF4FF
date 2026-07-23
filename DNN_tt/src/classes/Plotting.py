@@ -1642,9 +1642,9 @@ def FF_closure_in_DR_tau1(
     hep.style.use(hep.style.CMS)
 
     if grouping == 'tau_decaymode':
-        ff_dnn_tau1 = 'ff_dnn_tau1_tau_dm'
+        ff_dnn_tau1 = 'ff_DR_dnn_tau1_tau_dm'
     elif grouping == 'njets':
-        ff_dnn_tau1 = 'ff_dnn_tau1_njets'
+        ff_dnn_tau1 = 'ff_DR_dnn_tau1_njets'
 
     counts_SR_like, bin_edges = np.histogram(df.data.SR_like[var], weights = df.data.SR_like.weight_qcd, bins = bins)
     counts_FF_AR_like, _ = np.histogram(df.data.AR_like_tau1[var], weights = df.data.AR_like_tau1.weight_qcd * df.data.AR_like_tau1[ff_dnn_tau1], bins = bins)
@@ -2526,10 +2526,12 @@ def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymo
     hep.style.use(hep.style.CMS)
 
     if grouping == 'tau_decaymode':
-        ff = 'ff_dnn_tau_dm'
+        ff1 = 'ff_dnn_tau1_tau_dm'
+        ff2 = 'ff_dnn_tau2_tau_dm'
         grouping = ['tau_decaymode_1', 'tau_decaymode_2']
     elif grouping == 'njets':
-        ff = 'ff_dnn_njets'
+        ff1 = 'ff_dnn_tau1_njets'
+        ff2 = 'ff_dnn_tau2_njets'
     else:
         raise ValueError(f'Unsupported grouping: {grouping}')
 
@@ -2546,8 +2548,8 @@ def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymo
         group_mask_tau1 = _grouping_masks(frame_tau1, grouping)
         group_mask_tau2 = _grouping_masks(frame_tau2, grouping)
 
-    n1, binedges = np.histogram(frame_tau1[ff], bins=bins_tau1)
-    n2, _ = np.histogram(frame_tau2[ff], bins=bins_tau2)
+    n1, binedges = np.histogram(frame_tau1[ff1], bins=bins_tau1)
+    n2, _ = np.histogram(frame_tau2[ff2], bins=bins_tau2)
 
     n = n1 + n2
 
@@ -2555,11 +2557,11 @@ def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymo
     n2_split = []
 
     for mask, mask_label in group_mask_tau1:
-        h,_ = np.histogram(frame_tau1[ff][mask], bins=bins_tau1)
+        h,_ = np.histogram(frame_tau1[ff1][mask], bins=bins_tau1)
         n1_split.append(h)
 
     for mask, mask_label in group_mask_tau2:
-        h,_ = np.histogram(frame_tau2[ff][mask], bins=bins_tau2)
+        h,_ = np.histogram(frame_tau2[ff2][mask], bins=bins_tau2)
         n2_split.append(h)
 
     n_split = []

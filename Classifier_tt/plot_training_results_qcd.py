@@ -711,6 +711,7 @@ def main() -> None:
         data_DR["weight_qcd"] = np.nan
         data_DR.loc[indices_qcd_DR, "weight_qcd"] = QCD_weights
 
+        '''
         print(data_DR["weight_qcd"].value_counts())
         print(np.isfinite(data_DR["weight_qcd"]).all())
         h = 0
@@ -729,7 +730,7 @@ def main() -> None:
         print(len(data_DR["weight_qcd"]))
         print(len(probs_data))
         exit()
-
+        '''
 
         if args.write_back:
             # Insert qcd_weights into the FULL data_complete

@@ -29,6 +29,7 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
     dnn_grouped: bool = True
+    classic: bool = False
 
 args = Args().parse_args()
 
@@ -156,9 +157,8 @@ def main():
     logger.info("Loading data...")
     df = load_data(DATA_PATH, MASKS_PATH)
     df_incl = load_data(DATA_PATH, MASKS_PATH_INCL)
-    df_classic_jv = load_data(DATA_CLASSIC_JV_PATH, MASKS_PATH)
-    df_classic_sg = load_data(DATA_CLASSIC_SG_PATH, MASKS_PATH)
-    #print(df_classic.columns)
+    
+    #print(df.columns)
     #exit()
 
     training_variables = load_variables(TRAINING_VAR_PATH, args.var)
@@ -167,8 +167,18 @@ def main():
 
     # ----- calculate fake factors -----
     # classic: at the moment from jvoss smhtt ul v12
-    calculate_fake_factor_classic(df_classic_jv, 'jv')
-    calculate_fake_factor_classic(df_classic_sg, 'sg')
+
+    if args.classic:
+        df_classic_jv = load_data(DATA_CLASSIC_JV_PATH, MASKS_PATH)
+        df_classic_sg = load_data(DATA_CLASSIC_SG_PATH, MASKS_PATH)
+        calculate_fake_factor_classic(df_classic_jv, 'jv')
+        calculate_fake_factor_classic(df_classic_sg, 'sg')
+
+        logger.info(f"Saving classic dataframe with fake-factor columns to feather file: {DATA_CLASSIC_JV_PATH} and {DATA_CLASSIC_SG_PATH}")
+        df_classic_jv.to_feather(DATA_CLASSIC_JV_PATH)
+        df_classic_sg.to_feather(DATA_CLASSIC_SG_PATH)
+
+        return None
 
 
     if args.dnn_grouped:
@@ -197,18 +207,9 @@ def main():
         )
 
 
-        logger.info("Saving fake factors to df in ff_dnn_tau_dm and ff_dnn_njets columns...")
-        calculate_fake_factor_dnn(
-            df1 = df.AR_tau1,
-            df2 = df.AR_tau2,
-            grouping = 'tau_decaymode',
-        )
-
-        calculate_fake_factor_dnn(
-            df1 = df.AR_tau1,
-            df2 = df.AR_tau2,
-            grouping = 'njets',
-        )
+        #logger.info("Saving fake factors to df in ff_dnn_tau_dm and ff_dnn_njets columns...")
+        #calculate_fake_factor_dnn(df1 = df.AR_tau1, df2 = df.AR_tau2, grouping = 'tau_decaymode')
+        #calculate_fake_factor_dnn(df1 = df.AR_tau1, df2 = df.AR_tau2, grouping = 'njets')
 
         #the equivalent would be saving the tau1 and tau2 FF seperately
         
@@ -253,15 +254,15 @@ def main():
     
 
     #print(list(df.columns))
-    logger.info(f"Saving main dataframe to feather file: {DATA_PATH}")
-    df.to_feather(DATA_PATH)
 
-    logger.info(f"Saving tau inclusive dataframe to feather file: {DATA_PATH}")
-    df_incl.to_feather(DATA_PATH)
-
-    logger.info(f"Saving classic dataframe with fake-factor columns to feather file: {DATA_CLASSIC_JV_PATH} and {DATA_CLASSIC_SG_PATH}")
-    df_classic_jv.to_feather(DATA_CLASSIC_JV_PATH)
-    df_classic_sg.to_feather(DATA_CLASSIC_SG_PATH)
+    if args.taus == 'split':
+        logger.info(f"Saving main dataframe to feather file: {DATA_PATH}")
+        df.to_feather(DATA_PATH)
+    elif args.taus == 'incl':
+        logger.info(f"Saving tau inclusive dataframe to feather file: {DATA_PATH}")
+        df_incl.to_feather(DATA_PATH)
+    else:
+        logger.warning(f'df could not be saved. taus = {args.taus}, but accepts only "split" and "incl"')
 
 
 if __name__ == '__main__':

@@ -393,7 +393,7 @@ def calculate_fake_factors_incl(
         fake_factor = np.clip(fake_factor, 0, 1)
         df.AR[f"ff_dnn_incl{suffix}"] = fake_factor           
     else:
-        print("FF for tau 1 is None")
+        print("FF is None")
 
 
 
@@ -610,8 +610,8 @@ def calculate_fake_factors_in_DR_qcd(
 
     suffix = f"_{output_suffix}" if output_suffix else ""
 
-    df.AR_like_tau1[f"ff_dnn_tau1{suffix}"] = fake_factor_tau1
-    df.AR_like_tau2[f"ff_dnn_tau2{suffix}"] = fake_factor_tau2
+    df.AR_like_tau1[f"ff_DR_dnn_tau1{suffix}"] = fake_factor_tau1
+    df.AR_like_tau2[f"ff_DR_dnn_tau2{suffix}"] = fake_factor_tau2
 
 
 def calculate_fake_factors_in_DR_ttbar(
