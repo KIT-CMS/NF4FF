@@ -2535,8 +2535,8 @@ def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymo
     else:
         raise ValueError(f'Unsupported grouping: {grouping}')
 
-    bins_tau1 = np.linspace(0, 0.5, 50)
-    bins_tau2 = np.linspace(0, 0.5, 50)
+    bins_tau1 = np.linspace(0, 1.0, 50)
+    bins_tau2 = np.linspace(0, 1.0, 50)
 
     frame_tau1 = df.data.AR_tau1
     frame_tau2 = df.data.AR_tau2
