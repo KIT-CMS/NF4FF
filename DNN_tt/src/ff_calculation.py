@@ -25,10 +25,11 @@ random.seed(SEED)
 t.set_num_threads(8)
 
 class Args(Tap):
-    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    incl: Literal['and', 'or'] = 'and' # Combine tau1 and tau2 AR with and or or
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
-    dnn_grouped: bool = True
+    dnn_grouped: bool = False
     classic: bool = False
 
 args = Args().parse_args()
@@ -38,63 +39,13 @@ cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
 DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'
 DATA_CLASSIC_JV_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_jvoss.feather"
 DATA_CLASSIC_SG_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_sgiappic.feather"
+
 MASKS_PATH = cfg_path["masks"]
-MASKS_PATH_INCL = cfg_path["masks_incl"]
+MASKS_PATH_INCL = [cfg_path["masks_incl_and"], cfg_path["masks_incl_or"]]
+
 TRAINING_VAR_PATH = cfg_path["train_var"]
-NN_CONFIG_PATH = cfg_path["DNN"]
 CHECKPOINT_DIR = cfg_path["traininfg_results"]
 
-PLOTTING_CONFIG_PATH = cfg_path["cfg_plotting"]
-LABELS_CONFIG_PATH = cfg_path["labels"]
-
-#PLOTS_DIR = Path('../plots/layers_3/ReLU')
-PLOTS_DIR = Path(cfg_path["plots"])
-PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-
-PLOT_GROUPINGS = ('tau_decaymode', 'njets')
-PLOT_SUBDIRS = ('closure_in_DR', 'FF_distribution_AR', 'FF_distribution_DR', 'closure_plots')
-for subdir in PLOT_SUBDIRS:
-    for grouping in PLOT_GROUPINGS:
-        (PLOTS_DIR / subdir / grouping).mkdir(parents=True, exist_ok=True)
-
-
-
-
-
-
-PLOTTING_CFG = load_config(PLOTTING_CONFIG_PATH) 
-LABELS_CFG = load_labels(LABELS_CONFIG_PATH)
-
-VARIABLES_SMALL = PLOTTING_CFG.get('variables_set_small', [])
-VARIABLES_LARGE = PLOTTING_CFG.get('variables_set_large', [])
-
-
-def get_bins(variable):
-    bin_spec = PLOTTING_CFG.get('bins_by_variable', {}).get(variable)
-    if bin_spec is None:
-        raise KeyError(f'No bin specification found for variable: {variable}')
-
-    if isinstance(bin_spec, (list, tuple)) and len(bin_spec) == 3:
-        start, stop, num = bin_spec
-        return np.linspace(float(start), float(stop), int(num))
-
-    return np.asarray(bin_spec, dtype=float)
-
-
-def get_label(variable, channel='et'):
-    labels_by_channel = LABELS_CFG.get(channel, {}) if isinstance(LABELS_CFG, dict) else {}
-    return labels_by_channel.get(variable, variable)
-
-
-def get_bins_and_label(variable, channel='et'):
-    return get_bins(variable), get_label(variable, channel)
-
-
-
-
-###################
-# ----- main -----#
-###################
 
 def main():
 
@@ -155,8 +106,19 @@ def main():
 
     # ----- execution -----
     logger.info("Loading data...")
-    df = load_data(DATA_PATH, MASKS_PATH)
-    df_incl = load_data(DATA_PATH, MASKS_PATH_INCL)
+
+    if args.taus=='split':
+        df = load_data(DATA_PATH, MASKS_PATH)
+
+    elif args.taus == 'incl':
+        if args.incl=='and': incl = 0
+        elif args.incl=='or': incl = 1
+        else:
+            logger.error(f'Value Error: args.incl = {args.incl}, but only accepts "and or "or".')
+            exit()
+        df = load_data(DATA_PATH, MASKS_PATH_INCL[incl])
+    else:
+        logger.error(f'Value Error: args.taus = {args.taus}, but ony allows split or incl.')
     
     #print(df.columns)
     #exit()
@@ -247,7 +209,8 @@ def main():
         elif args.taus == 'incl':
             logger.info("Calculating fake factors inclusive...")
             calculate_fake_factors_incl(
-                df=df_incl,
+                df=df,
+                incl = args.incl,
                 model=model_incl,
                 training_variables=training_variables,
             )    
@@ -260,7 +223,7 @@ def main():
         df.to_feather(DATA_PATH)
     elif args.taus == 'incl':
         logger.info(f"Saving tau inclusive dataframe to feather file: {DATA_PATH}")
-        df_incl.to_feather(DATA_PATH)
+        df.to_feather(DATA_PATH)
     else:
         logger.warning(f'df could not be saved. taus = {args.taus}, but accepts only "split" and "incl"')
 

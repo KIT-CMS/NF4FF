@@ -250,6 +250,7 @@ def calculate_fake_factors(
 #used
 def calculate_fake_factors_incl(
     df,
+    incl,
     model: t.nn.Module = None,
     training_variables=None,
     grouping_variable=None,
@@ -389,9 +390,9 @@ def calculate_fake_factors_incl(
     # Optional clipping + output assignment
     # ------------------------------------------------------------------
     if fake_factor is not None:
-        df.AR[f"ff_unclipped_dnn_incl{suffix}"] = fake_factor
+        df.AR[f"ff_unclipped_dnn_incl_{incl}{suffix}"] = fake_factor
         fake_factor = np.clip(fake_factor, 0, 1)
-        df.AR[f"ff_dnn_incl{suffix}"] = fake_factor           
+        df.AR[f"ff_dnn_incl_{incl}{suffix}"] = fake_factor           
     else:
         print("FF is None")
 

@@ -463,6 +463,7 @@ def plot_closure(
 #used
 def plot_closure_incl(
     df,
+    incl,
     var: str,
     bins: np.ndarray,
     label: str,
@@ -478,7 +479,7 @@ def plot_closure_incl(
         ff_dnn_tau1 = 'ff_dnn_tau1_njets'
         ff_dnn_tau2 = 'ff_dnn_tau2_njets'
     else:
-        ff_dnn = 'ff_dnn_incl'
+        ff_dnn = f'ff_dnn_incl_{incl}'
 
     histograms = {}
 
@@ -1042,16 +1043,17 @@ def plot_fake_factors(
 #used
 def plot_fake_factors_incl(
         df,
+        incl,
         category_title = None,
         clipped = True
 ) -> None:
     hep.style.use(hep.style.CMS)
 	
     if clipped:
-        ff_dnn = 'ff_dnn_incl'    
+        ff_dnn = f'ff_dnn_incl_{incl}'    
         bins = np.linspace(0, 1, 50)
     else:
-        ff_dnn = 'ff_unclipped_dnn_incl'    
+        ff_dnn = f'ff_unclipped_dnn_incl_{incl}'    
         bins = np.linspace(0, 2., 50)
     
 

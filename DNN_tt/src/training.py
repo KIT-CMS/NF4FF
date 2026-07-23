@@ -25,10 +25,11 @@ random.seed(SEED)
 t.set_num_threads(8)
 
 class Args(Tap):
-    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    incl: Literal['and', 'or'] = 'and' # Combine tau1 and tau2 AR with and or or
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
-    dnn_grouped: bool = True
+    dnn_grouped: bool = False
 
 args = Args().parse_args()
 
@@ -36,7 +37,7 @@ cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
 
 DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'
 MASKS_PATH = cfg_path["masks"]
-MASKS_PATH_INCL = cfg_path["masks_incl"]
+MASKS_PATH_INCL = [cfg_path["masks_incl_and"], cfg_path["masks_incl_or"]]
 TRAINING_VAR_PATH = cfg_path["train_var"]
 NN_CONFIG_PATH = cfg_path["DNN"]
 CHECKPOINT_DIR = cfg_path["traininfg_results"]
@@ -134,7 +135,12 @@ def main():
     if args.taus == 'split':
         df = load_data(DATA_PATH, MASKS_PATH)
     elif args.taus == 'incl':
-        df = load_data(DATA_PATH, MASKS_PATH_INCL)
+        if args.incl=='and': incl = 0
+        elif args.incl=='or': incl = 1
+        else:
+            logger.error(f'Value Error: args.incl = {args.incl}, but only accepts "and or "or".')
+            exit()
+        df = load_data(DATA_PATH, MASKS_PATH_INCL[incl])
     else:
         logger.error(f'Value Error: args.taus = {args.taus}, but ony allows split or incl.')
 
@@ -385,5 +391,6 @@ def main():
         
         else:
             logger.error(f'Value Error: args.taus = {args.taus}, but ony allows split or incl.')
+
 if __name__ == '__main__':
     main()
