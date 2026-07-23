@@ -13,7 +13,7 @@ import uproot
 
 from classes.Plotting import plot_fake_factors, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
 from classes.Loading import load_config, load_labels, load_data
-from classes.Plotting import FF_closure_in_DR_tau1, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl
+from classes.Plotting import FF_closure_in_DR_tau1, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl, plot_fake_factors_combTaus
 
 
 
@@ -30,7 +30,7 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
     dnn_grouped: bool = False
     classic: bool = False
@@ -264,10 +264,12 @@ def main():
         logger.info('Initiaize plotting for tau split FF calculated through single DNN...')
 
         df = load_data(DATA_PATH, MASKS_PATH)
+        print(len(df.data.AR_tau1))
+        print(len(df.data.AR_tau2))
 
         # ----- Closure plots in DR -----
         if args.closure_DR:
-            logger.warning('Not yet implemented.')
+            logger.warning('Closure in DR is not yet implemented.')
 
 
         # ----- Fake-factor distributions -----
@@ -284,6 +286,13 @@ def main():
             plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_unclipped_splitTaus.pdf', dpi=150, bbox_inches='tight')
             plt.close(fig_ar)
             logger.info(f'Saved unclipped FF distributions in AR for ungrouped DNN')
+
+            # ----- clipped combined FF -----
+            fig_ar_ct, ax_ar_ct = plot_fake_factors_combTaus(df=df)
+            plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_combTaus.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_combTaus.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar_ct)
+            logger.info(f'Saved FF distributions in AR for combined Taus for ungrouped')
 
         # ----- FF closure in AR -----
         if args.closure_AR:
@@ -343,8 +352,9 @@ def main():
         else:
             logger.error(f'Value Error: args.incl = {args.incl}, but only accepts "and or "or".')
             exit()
+
         df = load_data(DATA_PATH, MASKS_PATH_INCL[incl])
-        print(df.columns)
+        print(len(df.data.AR))
 
         # ----- Closure plots in DR -----
         if args.closure_DR:

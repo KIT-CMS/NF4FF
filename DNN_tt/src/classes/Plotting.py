@@ -1016,13 +1016,8 @@ def plot_fake_factors(
     fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
 
     ax[0].hist(df.data.AR_tau1[ff_dnn_tau1], bins=bins_tau1, histtype = 'step', linewidth = 2, label='Tau 1')
-    #ax[0].hist(df.data.AR[ff_dnn_tau1][df.data.AR.tau_decaymode_2 == 1], bins=bins_tau1, histtype = 'step', ls = '--', label='Wjets: t_dm = 0')
-    #ax[0].hist(df.data.AR[ff_dnn_tau1][df.data.AR.tau_decaymode_2 == 0], bins=bins_tau1, histtype = 'step', ls = '--', label='Wjets: t_dm = 1')
-    #ax[0].hist(df.data.AR[ff_dnn_tau1][df.data.AR.tau_decaymode_2 == 10], bins=bins_tau1, histtype = 'step', ls = '--', label='Wjets: t_dm = 10')
-    #ax[0].hist(df.data.AR[ff_dnn_tau1][df.data.AR.tau_decaymode_2 == 11], bins=bins_tau1, histtype = 'step', ls = '--', label='Wjets: t_dm = 11')
     ax[0].set_ylabel("Events")
     ax[0].legend()
-    #ax[0].set_ylim(0, 33000)
 
     CMS_CHANNEL_TITLE([ax[0]])
     CMS_LUMI_TITLE([ax[0]])
@@ -1031,13 +1026,52 @@ def plot_fake_factors(
 
     ax[1].set_ylabel('Events')
     ax[1].hist(df.data.AR_tau2[ff_dnn_tau2], bins=bins_tau2, histtype = 'step', linewidth = 2, label="Tau 2")
-    #ax[1].hist(df.data.AR[ff_dnn_tau2][df.data.AR.tau_decaymode_2 == 0], bins=bins_tau2, histtype = 'step', ls = '--', label = "QCD: t_dm = 0")
-    #ax[1].hist(df.data.AR[ff_dnn_tau2][df.data.AR.tau_decaymode_2 == 1], bins=bins_tau2, histtype = 'step', ls = '--', label = "QCD: t_dm = 1")
-    #ax[1].hist(df.data.AR[ff_dnn_tau2][df.data.AR.tau_decaymode_2 == 10], bins=bins_tau2, histtype = 'step', ls = '--', label = "QCD : t_dm = 10")
-    #ax[1].hist(df.data.AR[ff_dnn_tau2][df.data.AR.tau_decaymode_2 == 11], bins=bins_tau2, histtype = 'step', ls = '--', label = "QCD : t_dm = 11")
-
     ax[1].set_xlabel("fake_factor")
     ax[1].legend()
+    return fig, ax
+
+
+#used
+def plot_fake_factors_combTaus(
+        df,
+        clipped = True
+) -> None:
+    hep.style.use(hep.style.CMS)
+	
+    if clipped:
+        ff_dnn_tau1 = 'ff_dnn_tau1'
+        ff_dnn_tau2 = 'ff_dnn_tau2'
+    
+        bins_tau1 = np.linspace(0, 1, 50)
+        bins_tau2 = np.linspace(0, 1., 50)
+    else:
+        ff_dnn_tau1 = 'ff_unclipped_dnn_tau1'
+        ff_dnn_tau2 = 'ff_unclipped_dnn_tau2'
+    
+        bins_tau1 = np.linspace(0, 2., 50)
+        bins_tau2 = np.linspace(0, 2., 50)
+    
+
+    fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
+
+
+    n1, binedges = np.histogram(df.data.AR_tau1[ff_dnn_tau1], bins=bins_tau1)
+    n2, _ = np.histogram(df.data.AR_tau2[ff_dnn_tau2], bins=bins_tau2)
+
+    n = n1 + n2
+        
+    fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+
+    CMS_CHANNEL_TITLE(ax)
+    CMS_LUMI_TITLE(ax)
+    CMS_LABEL(ax)
+    #CMS_CATEGORY_TITLE(ax, title=category_title)
+
+    ax.stairs(n, binedges, linewidth=2, label=r'Combined $\tau_h$: incl')
+
+    ax.set_ylabel('Events')
+    ax.set_xlabel("fake_factor")
+    ax.legend()
     return fig, ax
 
 #used
