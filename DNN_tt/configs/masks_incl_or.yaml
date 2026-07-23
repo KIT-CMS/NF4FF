@@ -8,18 +8,6 @@ masks:
     - (tau_decaymode_1 == 0) | (tau_decaymode_1 == 1) | (tau_decaymode_1 == 10) | (tau_decaymode_1 == 11)
     - (tau_decaymode_2 == 0) | (tau_decaymode_2 == 1) | (tau_decaymode_2 == 10) | (tau_decaymode_2 == 11)
 
-  preselection_jvoss:
-    - pt_1 >= 40
-    - pt_2 >= 40
-    - (tau_decaymode_2 == 0) | (tau_decaymode_2 == 1) | (tau_decaymode_2 == 10) | (tau_decaymode_2 == 11)
-
-  preselection_sgiappic:
-    - eta_2 <= 2.3
-    - pt_1 >= 40
-    - pt_2 >= 40
-    - (tau_decaymode_2 == 0) | (tau_decaymode_2 == 1) | (tau_decaymode_2 == 10) | (tau_decaymode_2 == 11)
-
-
   SR:
     - id_tau_vsJet_Tight_1 > 0.5
     - id_tau_vsJet_Tight_2 > 0.5
@@ -27,86 +15,24 @@ masks:
     - extramuon_veto < 0.5
     - extraelec_veto < 0.5
 
-  AR_tau1:
-    - id_tau_vsJet_VLoose_1 > 0.5
-    - id_tau_vsJet_Tight_1 < 0.5
-    - id_tau_vsJet_Tight_2 > 0.5
+  AR:
+    - (id_tau_vsJet_VLoose_1 > 0.5) | (id_tau_vsJet_VLoose_2 > 0.5) 
+    - (id_tau_vsJet_Tight_1 < 0.5) | (id_tau_vsJet_Tight_2 < 0.5)
     - (q_1*q_2) < 0
     - extramuon_veto < 0.5
     - extraelec_veto < 0.5
-  
-  AR_tau2:
-    - id_tau_vsJet_VLoose_2 > 0.5
-    - id_tau_vsJet_Tight_2 < 0.5
-    - id_tau_vsJet_Tight_1 > 0.5
-    - (q_1*q_2) < 0
-    - extramuon_veto < 0.5
-    - extraelec_veto < 0.5
-
-  
-  AR_tau1_jvoss:
-    - id_tau_vsJet_VVVLoose_1 > 0.5
-    - id_tau_vsJet_Medium_1 < 0.5
-    - id_tau_vsJet_Medium_2 > 0.5
-    - (q_1*q_2) < 0
-    - extramuon_veto < 0.5
-    - extraelec_veto < 0.5
-  
-  AR_tau2_jvoss:
-    - id_tau_vsJet_VVVLoose_2 > 0.5
-    - id_tau_vsJet_Medium_2 < 0.5
-    - id_tau_vsJet_Medium_1 > 0.5
-    - (q_1*q_2) < 0
-    - extramuon_veto < 0.5
-    - extraelec_veto < 0.5
-
-
-  AR_tau1_sgiappic:
-    - id_tau_vsJet_VVVLoose_1 > 0.5
-    - id_tau_vsJet_Medium_1 < 0.5
-    - id_tau_vsJet_Medium_2 > 0.5
-    - (q_1*q_2) < 0
-    - extramuon_veto < 0.5
-    - extraelec_veto < 0.5
-    - dilepton_veto < 0.5
-  
-  AR_tau2_sgiappic:
-    - id_tau_vsJet_VVVLoose_2 > 0.5
-    - id_tau_vsJet_Medium_2 < 0.5
-    - id_tau_vsJet_Medium_1 > 0.5
-    - (q_1*q_2) < 0
-    - extramuon_veto < 0.5
-    - extraelec_veto < 0.5
-    - dilepton_veto < 0.5
-
-  #AR_SS was here once -> makes no sense for me
 
 
   DR_qcd:
     - q_1 * q_2 > 0
     - extramuon_veto < 0.5
     - extraelec_veto < 0.5
-    - id_tau_vsJet_VLoose_1 > 0.5
-    - id_tau_vsJet_VLoose_2 > 0.5
+    - (id_tau_vsJet_VLoose_1 > 0.5) | (id_tau_vsJet_VLoose_2 > 0.5)
 
-  DR_qcd_no_signs:
-    - extramuon_veto < 0.5
-    - extraelec_veto < 0.5
-    - id_tau_vsJet_VLoose_1 > 0.5
-    - id_tau_vsJet_VLoose_2 > 0.5
-
-  #DR_qcd_fractions: no clue what this is for
-  #DR_qcd_fractions_no_signs: same
   
-  AR_like_tau1:  
-    - id_tau_vsJet_VLoose_1 > 0.5
-    - id_tau_vsJet_Tight_1 < 0.5
-    - id_tau_vsJet_Tight_2 > 0.5
-
-  AR_like_tau2:
-    - id_tau_vsJet_VLoose_2 > 0.5
-    - id_tau_vsJet_Tight_2 < 0.5
-    - id_tau_vsJet_Tight_1 > 0.5
+  AR_like:  
+    - (id_tau_vsJet_VLoose_1 > 0.5) | (id_tau_vsJet_VLoose_2 > 0.5)
+    - (id_tau_vsJet_Tight_1 < 0.5) | (id_tau_vsJet_Tight_2 > 0.5) 
 
   SR_like:
     - id_tau_vsJet_Tight_1 > 0.5
@@ -118,52 +44,24 @@ regions:
     - preselection
     - SR
 
-  AR_tau1:
+  AR:
     - preselection
-    - AR_tau1
-
-  AR_tau2:
-    - preselection
-    - AR_tau2
-
-  AR_tau1_jvoss:
-    - preselection_jvoss
-    - AR_tau1_jvoss
-
-  AR_tau2_jvoss:
-    - preselection_jvoss
-    - AR_tau2_jvoss
-
-  AR_tau1_sgiappic:
-    - preselection_sgiappic
-    - AR_tau1_sgiappic
-
-  AR_tau2_sgiappic:
-    - preselection_sgiappic
-    - AR_tau2_sgiappic
+    - AR
 
   SR_like:
     - preselection
     - DR_qcd
     - SR_like
   
-  AR_like_tau1:
+  AR_like:
     - preselection
     - DR_qcd
-    - AR_like_tau1
-
-  AR_like_tau2:
-    - preselection
-    - DR_qcd
-    - AR_like_tau2
+    - AR_like
   
   DR_qcd:
     - DR_qcd
     - preselection
 
-  DR_qcd_without_signs:
-    - DR_qcd_no_signs
-    - preselection
 
 #identical to data_process_mapping_embedding.yaml in classifier_tt/configs
 processes:
