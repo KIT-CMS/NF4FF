@@ -670,7 +670,7 @@ def plot_closure_incl(
     ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
     
     ax[1].set_ylabel("Data / Model", loc='center')
-    ax[1].set_ylim([0.5, 1.5])
+    ax[1].set_ylim([0.75, 1.25])
     ax[1].grid(True, linestyle=':', alpha=0.7)
     ax[1].tick_params(direction='in', top=True, right=True)
     ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)

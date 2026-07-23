@@ -26,7 +26,7 @@ t.set_num_threads(8)
 
 class Args(Tap):
     taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
-    incl: Literal['and', 'or'] = 'and' # Combine tau1 and tau2 AR with and or or
+    incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
     dnn_grouped: bool = False

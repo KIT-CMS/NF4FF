@@ -31,7 +31,7 @@ class Args(Tap):
     var = "variables"
 
     taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
-    incl: Literal['and', 'or'] = 'and' # Combine tau1 and tau2 AR with and or or
+    incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
     dnn_grouped: bool = False
     classic: bool = False
 
@@ -344,6 +344,7 @@ def main():
             logger.error(f'Value Error: args.incl = {args.incl}, but only accepts "and or "or".')
             exit()
         df = load_data(DATA_PATH, MASKS_PATH_INCL[incl])
+        print(df.columns)
 
         # ----- Closure plots in DR -----
         if args.closure_DR:
