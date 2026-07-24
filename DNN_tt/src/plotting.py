@@ -145,8 +145,6 @@ def main():
     if args.taus=='split' and args.dnn_grouped:
         logger.info('Initiaize plotting for tau split FF calculated through grouped DNN...')
 
-        df = load_data(DATA_PATH, MASKS_PATH)
-
         # ----- Closure plots in DR -----
         if args.closure_DR:
             for grouping in PLOT_GROUPINGS:
