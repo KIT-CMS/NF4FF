@@ -32,11 +32,11 @@ class Args(Tap):
 
     taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
-    dnn_grouped: bool = False
-    classic: bool = False
+    dnn_grouped: bool = True
+    classic: bool = True
 
-    closure_DR: bool = True
-    FF_dist: bool = True
+    closure_DR: bool = False
+    FF_dist: bool = False
     closure_AR: bool = True
 
 args = Args().parse_args()
@@ -145,6 +145,8 @@ def main():
     if args.taus=='split' and args.dnn_grouped:
         logger.info('Initiaize plotting for tau split FF calculated through grouped DNN...')
 
+        df = load_data(DATA_PATH, MASKS_PATH)
+
         # ----- Closure plots in DR -----
         if args.closure_DR:
             for grouping in PLOT_GROUPINGS:
@@ -163,7 +165,6 @@ def main():
                     plt.close(fig_q)
 
                 logger.info(f'Saved closure plots in DR for {grouping}')
-
 
         # ----- Fake-factor distributions -----
         if args.FF_dist:
@@ -214,7 +215,6 @@ def main():
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'plot_ff_unclipped_splitTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig_ar)
                 logger.info(f'Saved FF distributions in AR for {grouping}')
-
 
         # ----- FF closure in AR -----
         if args.closure_AR:
@@ -268,7 +268,6 @@ def main():
         # ----- Closure plots in DR -----
         if args.closure_DR:
             logger.warning('Closure in DR is not yet implemented.')
-
 
         # ----- Fake-factor distributions -----
         if args.FF_dist:          
@@ -358,7 +357,6 @@ def main():
         if args.closure_DR:
             logger.warning('Not yet implemented.')
 
-
         # ----- Fake-factor distributions -----
         if args.FF_dist:
             # ----- DNN FF -----
@@ -373,8 +371,6 @@ def main():
             plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_unclipped_incl_{args.incl}.pdf', dpi=150, bbox_inches='tight')
             plt.close(fig_ar)
             logger.info(f'Saved inclusive unclipped FF distributions in AR for ungrouped DNN')
-
-
 
         # ----- FF closure in AR -----
         if args.closure_AR:

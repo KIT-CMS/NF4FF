@@ -11,6 +11,7 @@ import torch as t
 from typing import Literal
 
 from classes.Loading import load_config, load_labels, load_data
+from classes.Plotting import plot_fake_factors_ungrouped_splitAndincl
 
 
 
@@ -119,6 +120,19 @@ def main():
         logger.error(f'Value Error: args.incl = {args.incl}, but only accepts "and or "or".')
         exit()
     df_incl = load_data(DATA_PATH, MASKS_PATH_INCL[incl])
+
+
+    fig_ar, ax_ar = plot_fake_factors_ungrouped_splitAndincl(df, df_incl, 'or')
+    plt.savefig(PLOTS_DIR / 'combinations' / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_splitAndincl.png', dpi=150, bbox_inches='tight')
+    plt.savefig(PLOTS_DIR / 'combinations' / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_splitAndincl.pdf', dpi=150, bbox_inches='tight')
+    plt.close(fig_ar)
+    logger.info(f'Saved combined FF distributions for tau incl and split in AR for ungrouped DNN')
+
+    fig_ar, ax_ar = plot_fake_factors_ungrouped_splitAndincl(df, df_incl, 'or', norm = True)
+    plt.savefig(PLOTS_DIR / 'combinations' / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_splitAndincl_normed.png', dpi=150, bbox_inches='tight')
+    plt.savefig(PLOTS_DIR / 'combinations' / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_splitAndincl_normed.pdf', dpi=150, bbox_inches='tight')
+    plt.close(fig_ar)
+    logger.info(f'Saved combined normed FF distributions for tau incl and split in AR for ungrouped DNN')
     
 
 # -------------------------------------------

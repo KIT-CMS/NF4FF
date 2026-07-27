@@ -48,6 +48,57 @@ def CMS_LABEL(ax, *args, **kwargs):
         transform=ax.transAxes
     )
 
+def estimate_jet_fakes(
+	df,
+	bins,
+	var,
+	ff_var_tau1,
+    ff_var_tau2
+):
+    counts_tau1 = {}
+    counts_tau2 = {}
+    variance_tau1 = {}
+    variance_tau2 = {}
+
+    list_processes = ['data', 'diboson', 'DYjets', 'ST', 'embedding', 'ttbar', 'wjets']
+    for proc in list_processes:
+        counts_tau1[proc], _ = np.histogram(df[proc].AR_tau1[var], weights = df[proc].AR_tau1.weight * df[proc].AR_tau1[ff_var_tau1], bins = bins)
+        variance_tau1[proc], _ = np.histogram(df[proc].AR_tau1[var], weights = (df[proc].AR_tau1.weight * df[proc].AR_tau1[ff_var_tau1])**2, bins = bins)
+        
+        counts_tau2[proc], _ = np.histogram(df[proc].AR_tau2[var], weights = df[proc].AR_tau2.weight * df[proc].AR_tau2[ff_var_tau2], bins = bins)
+        variance_tau2[proc], _ = np.histogram(df[proc].AR_tau2[var], weights = (df[proc].AR_tau2.weight * df[proc].AR_tau2[ff_var_tau2])**2, bins = bins)
+
+    jet_fakes_tau1 = counts_tau1['data'] - counts_tau1['diboson'] - counts_tau1['DYjets'] - counts_tau1['ST'] - counts_tau1['embedding'] - counts_tau1['ttbar'] - counts_tau1['wjets']
+    var_jet_fakes_tau1 = variance_tau1['data'] + variance_tau1['diboson'] + variance_tau1['DYjets'] + variance_tau1['ST'] + variance_tau1['embedding'] + variance_tau1['ttbar'] + variance_tau1['wjets']
+
+    jet_fakes_tau2 = counts_tau2['data'] - counts_tau2['diboson'] - counts_tau2['DYjets'] - counts_tau2['ST'] - counts_tau2['embedding'] - counts_tau2['ttbar'] - counts_tau2['wjets']
+    var_jet_fakes_tau2 = variance_tau2['data'] + variance_tau2['diboson'] + variance_tau2['DYjets'] + variance_tau2['ST'] + variance_tau2['embedding'] + variance_tau2['ttbar'] + variance_tau2['wjets']
+
+    jet_fakes = 0.5 * (jet_fakes_tau1 + jet_fakes_tau2)
+    var_jet_fakes  = var_jet_fakes_tau1 + var_jet_fakes_tau2
+
+    return jet_fakes, var_jet_fakes
+
+
+def estimate_jet_fakes_incl(
+	df,
+	bins,
+	var,
+	ff_var
+):
+    counts = {}
+    variance = {}
+
+    list_processes = ['data', 'diboson', 'DYjets', 'ST', 'embedding', 'ttbar', 'wjets']
+    for proc in list_processes:
+        counts[proc], _ = np.histogram(df[proc].AR[var], weights = df[proc].AR.weight * df[proc].AR[ff_var], bins = bins)
+        variance[proc], _ = np.histogram(df[proc].AR[var], weights = (df[proc].AR.weight * df[proc].AR[ff_var])**2, bins = bins)
+
+    jet_fakes = counts['data'] - counts['diboson'] - counts['DYjets'] - counts['ST'] - counts['embedding'] - counts['ttbar'] - counts['wjets']
+    var_jet_fakes = variance['data'] + variance['diboson'] + variance['DYjets'] + variance['ST'] + variance['embedding'] + variance['ttbar'] + variance['wjets']
+
+    return jet_fakes, var_jet_fakes
+
 def _reorder_for_rowwise_legend(handles, labels, ncol, reverse=False):
     if reverse:
         handles = handles[::-1]
@@ -147,12 +198,15 @@ def plot_closure(
     if grouping == 'tau_decaymode':
         ff_dnn_tau1 = 'ff_dnn_tau1_tau_dm'
         ff_dnn_tau2 = 'ff_dnn_tau2_tau_dm'
+        cat_title = r'$\tau$ DM: inclusive'
     elif grouping == 'njets':
         ff_dnn_tau1 = 'ff_dnn_tau1_njets'
         ff_dnn_tau2 = 'ff_dnn_tau2_njets'
+        cat_title = r'$N_{jets}$: inclusive'
     else:
         ff_dnn_tau1 = 'ff_dnn_tau1'
         ff_dnn_tau2 = 'ff_dnn_tau2'
+        cat_title = 'inclusive'
 
     histograms = {}
 
@@ -256,9 +310,9 @@ def plot_closure(
         (histograms['ttbar']['counts'], '#832db6', r'$t\bar{t} \to \tau$'),
         (histograms['ST']['counts'], "#717581", r"Single t"),
         (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
-        (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
-        (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
         (histograms['wjets']['counts'], '#e76300', r"W+jets"),
+        (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
+        (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
     ]
 
     counts_stack_total = draw_stacked_stepfill(
@@ -298,7 +352,7 @@ def plot_closure(
     ax[0].tick_params(direction='in', top=True, right=True)
 
     CMS_LABEL(ax)
-    #CMS_CATEGORY_TITLE(ax)
+    CMS_CATEGORY_TITLE(ax, title=cat_title)
     CMS_LUMI_TITLE(ax)
     CMS_CHANNEL_TITLE(ax)
 
@@ -364,11 +418,14 @@ def plot_closure_incl(
     if grouping == 'tau_decaymode':
         ff_dnn_tau1 = 'ff_dnn_tau1_tau_dm'
         ff_dnn_tau2 = 'ff_dnn_tau2_tau_dm'
+        cat_title = r'$\tau$ DM: inclusive'
     elif grouping == 'njets':
         ff_dnn_tau1 = 'ff_dnn_tau1_njets'
         ff_dnn_tau2 = 'ff_dnn_tau2_njets'
+        cat_title = r'$N_{jets}$: inclusive'
     else:
         ff_dnn = f'ff_dnn_incl_{incl}'
+        cat_title = 'inclusive'
 
     histograms = {}
 
@@ -475,9 +532,9 @@ def plot_closure_incl(
         (histograms['ttbar']['counts'], '#832db6', r'$t\bar{t} \to \tau$'),
         (histograms['ST']['counts'], "#717581", r"Single t"),
         (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
-        (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
-        (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
         (histograms['wjets']['counts'], '#e76300', r"W+jets"),
+        (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
+        (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
     ]
 
     counts_stack_total = draw_stacked_stepfill(
@@ -517,7 +574,7 @@ def plot_closure_incl(
     ax[0].tick_params(direction='in', top=True, right=True)
 
     CMS_LABEL(ax)
-    #CMS_CATEGORY_TITLE(ax)
+    CMS_CATEGORY_TITLE(ax, title=cat_title)
     CMS_LUMI_TITLE(ax)
     CMS_CHANNEL_TITLE(ax)
 
@@ -579,14 +636,14 @@ def plot_fake_factors(
         ff_dnn_tau1 = 'ff_dnn_tau1'
         ff_dnn_tau2 = 'ff_dnn_tau2'
     
-        bins_tau1 = np.linspace(0, 1, 50)
-        bins_tau2 = np.linspace(0, 1., 50)
+        bins_tau1 = np.linspace(0, 1, 51)
+        bins_tau2 = np.linspace(0, 1., 51)
     else:
         ff_dnn_tau1 = 'ff_unclipped_dnn_tau1'
         ff_dnn_tau2 = 'ff_unclipped_dnn_tau2'
     
-        bins_tau1 = np.linspace(0, 2., 50)
-        bins_tau2 = np.linspace(0, 2., 50)
+        bins_tau1 = np.linspace(0, 2., 51)
+        bins_tau2 = np.linspace(0, 2., 51)
     
 
     fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
@@ -617,14 +674,14 @@ def plot_fake_factors_combTaus(
         ff_dnn_tau1 = 'ff_dnn_tau1'
         ff_dnn_tau2 = 'ff_dnn_tau2'
     
-        bins_tau1 = np.linspace(0, 1, 50)
-        bins_tau2 = np.linspace(0, 1., 50)
+        bins_tau1 = np.linspace(0, 1, 51)
+        bins_tau2 = np.linspace(0, 1., 51)
     else:
         ff_dnn_tau1 = 'ff_unclipped_dnn_tau1'
         ff_dnn_tau2 = 'ff_unclipped_dnn_tau2'
     
-        bins_tau1 = np.linspace(0, 2., 50)
-        bins_tau2 = np.linspace(0, 2., 50)
+        bins_tau1 = np.linspace(0, 2., 51)
+        bins_tau2 = np.linspace(0, 2., 51)
     
 
     fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
@@ -659,10 +716,10 @@ def plot_fake_factors_incl(
 	
     if clipped:
         ff_dnn = f'ff_dnn_incl_{incl}'    
-        bins = np.linspace(0, 1, 50)
+        bins = np.linspace(0, 1, 51)
     else:
         ff_dnn = f'ff_unclipped_dnn_incl_{incl}'    
-        bins = np.linspace(0, 2., 50)
+        bins = np.linspace(0, 2., 51)
     
 
     fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
@@ -694,15 +751,15 @@ def plot_classic_fake_factors(
     fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
 
     if short=='jv':
-        bins_tau1 = np.linspace(0, 0.5, 70)
-        bins_tau2 = np.linspace(0, 0.5, 70)
+        bins_tau1 = np.linspace(0, 0.5, 71)
+        bins_tau2 = np.linspace(0, 0.5, 71)
 
         n = ax[0].hist(df.data.AR_tau1_jvoss[ff_tau1], bins=bins_tau1, histtype = 'step', linewidth = 2, label='Tau 1')
         ax[1].hist(df.data.AR_tau2_jvoss[ff_tau2], bins=bins_tau2, histtype = 'step', linewidth = 2, label="Tau 2")
 
     elif short=='sg':
-        bins_tau1 = np.linspace(0, 0.5, 50)
-        bins_tau2 = np.linspace(0, 0.5, 50)
+        bins_tau1 = np.linspace(0, 0.5, 51)
+        bins_tau2 = np.linspace(0, 0.5, 51)
         n = ax[0].hist(df.data.AR_tau1_sgiappic[ff_tau1], bins=bins_tau1, histtype = 'step', linewidth = 2, label='Tau 1')
         ax[1].hist(df.data.AR_tau2_sgiappic[ff_tau2], bins=bins_tau2, histtype = 'step', linewidth = 2, label="Tau 2")
 
@@ -729,8 +786,8 @@ def plot_fake_factors_in_DR(
         category_title,
 ) -> None:
 
-	bins_wjets = np.linspace(0, 1, 50)
-	bins_qcd = np.linspace(0, 0.5, 50)
+	bins_wjets = np.linspace(0, 1, 51)
+	bins_qcd = np.linspace(0, 0.5, 51)
 
 	fig, ax = plt.subplots(2, 1, figsize=(10, 7))
 	ax[0].hist(df.data.AR_like_wjets.ff_dnn_wjets, bins=bins_wjets, histtype = 'step', linewidth = 2, label='Wjets: t_dm incl')
@@ -879,8 +936,8 @@ def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode', clip
     hep.style.use(hep.style.CMS)
 
     if clipped:
-        bins_tau1 = np.linspace(0, 1.0, 50)
-        bins_tau2 = np.linspace(0, 1.0, 50)
+        bins_tau1 = np.linspace(0, 1.0, 51)
+        bins_tau2 = np.linspace(0, 1.0, 51)
 
         if grouping == 'tau_decaymode':
             ff_tau1 = 'ff_dnn_tau1_tau_dm'
@@ -892,8 +949,8 @@ def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode', clip
         else:
             raise ValueError(f'Unsupported grouping: {grouping}')
     else:
-        bins_tau1 = np.linspace(0, 2., 50)
-        bins_tau2 = np.linspace(0, 2., 50)
+        bins_tau1 = np.linspace(0, 2., 51)
+        bins_tau2 = np.linspace(0, 2., 51)
 
         if grouping == 'tau_decaymode':
             ff_tau1 = 'ff_unclipped_dnn_tau1_tau_dm'
@@ -958,8 +1015,8 @@ def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymo
     else:
         raise ValueError(f'Unsupported grouping: {grouping}')
 
-    bins_tau1 = np.linspace(0, 1.0, 50)
-    bins_tau2 = np.linspace(0, 1.0, 50)
+    bins_tau1 = np.linspace(0, 1.0, 51)
+    bins_tau2 = np.linspace(0, 1.0, 51)
 
     frame_tau1 = df.data.AR_tau1
     frame_tau2 = df.data.AR_tau2
@@ -1022,8 +1079,8 @@ def plot_fake_factors_in_dr_grouped(df, category_title, grouping='tau_decaymode'
     else:
         raise ValueError(f'Unsupported grouping: {grouping}')
 
-    bins_tau1 = np.linspace(0, 1.0, 50)
-    bins_tau2 = np.linspace(0, 1.0, 50)
+    bins_tau1 = np.linspace(0, 1.0, 51)
+    bins_tau2 = np.linspace(0, 1.0, 51)
 
     frame_tau1 = df.data.AR_like_tau1
     frame_tau2 = df.data.AR_like_tau2
@@ -1063,7 +1120,7 @@ def plot_NN_output_FF(
         process = 'Wjets',
         ):
 
-    bins = np.linspace(0, 1, 50)
+    bins = np.linspace(0, 1, 51)
 
     fig, ax = plt.subplots(2, 1, figsize=(10, 7))
     ax[0].hist(NN_output_SR_like, bins=bins, histtype='step', linewidth=2, label='SR-like')
@@ -1085,54 +1142,75 @@ def plot_NN_output_FF(
     return fig, ax
 
 
+# combinations
+def plot_fake_factors_ungrouped_splitAndincl(
+        df_split,
+        df_incl,
+        incl = 'or',
+        norm = False
+) -> None:
+    hep.style.use(hep.style.CMS)
+	
 
-def estimate_jet_fakes(
-	df,
-	bins,
-	var,
-	ff_var_tau1,
-    ff_var_tau2
-):
-    counts_tau1 = {}
-    counts_tau2 = {}
-    variance_tau1 = {}
-    variance_tau2 = {}
+    ff_dnn_tau1 = 'ff_dnn_tau1'
+    ff_dnn_tau2 = 'ff_dnn_tau2'
+    ff_dnn_incl = f'ff_dnn_incl_{incl}'
 
-    list_processes = ['data', 'diboson', 'DYjets', 'ST', 'embedding', 'ttbar', 'wjets']
-    for proc in list_processes:
-        counts_tau1[proc], _ = np.histogram(df[proc].AR_tau1[var], weights = df[proc].AR_tau1.weight * df[proc].AR_tau1[ff_var_tau1], bins = bins)
-        variance_tau1[proc], _ = np.histogram(df[proc].AR_tau1[var], weights = (df[proc].AR_tau1.weight * df[proc].AR_tau1[ff_var_tau1])**2, bins = bins)
-        
-        counts_tau2[proc], _ = np.histogram(df[proc].AR_tau2[var], weights = df[proc].AR_tau2.weight * df[proc].AR_tau2[ff_var_tau2], bins = bins)
-        variance_tau2[proc], _ = np.histogram(df[proc].AR_tau2[var], weights = (df[proc].AR_tau2.weight * df[proc].AR_tau2[ff_var_tau2])**2, bins = bins)
+    bins_tau1 = np.linspace(0, 1., 51)
+    bins_tau2 = np.linspace(0, 1., 51)
+    bins = np.linspace(0, 1., 51)
+    print(bins)
+    
 
-    jet_fakes_tau1 = counts_tau1['data'] - counts_tau1['diboson'] - counts_tau1['DYjets'] - counts_tau1['ST'] - counts_tau1['embedding'] - counts_tau1['ttbar'] - counts_tau1['wjets']
-    var_jet_fakes_tau1 = variance_tau1['data'] + variance_tau1['diboson'] + variance_tau1['DYjets'] + variance_tau1['ST'] + variance_tau1['embedding'] + variance_tau1['ttbar'] + variance_tau1['wjets']
-
-    jet_fakes_tau2 = counts_tau2['data'] - counts_tau2['diboson'] - counts_tau2['DYjets'] - counts_tau2['ST'] - counts_tau2['embedding'] - counts_tau2['ttbar'] - counts_tau2['wjets']
-    var_jet_fakes_tau2 = variance_tau2['data'] + variance_tau2['diboson'] + variance_tau2['DYjets'] + variance_tau2['ST'] + variance_tau2['embedding'] + variance_tau2['ttbar'] + variance_tau2['wjets']
-
-    jet_fakes = 0.5 * (jet_fakes_tau1 + jet_fakes_tau2)
-    var_jet_fakes  = var_jet_fakes_tau1 + var_jet_fakes_tau2
-
-    return jet_fakes, var_jet_fakes
+    fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
 
 
-def estimate_jet_fakes_incl(
-	df,
-	bins,
-	var,
-	ff_var
-):
-    counts = {}
-    variance = {}
+    
 
-    list_processes = ['data', 'diboson', 'DYjets', 'ST', 'embedding', 'ttbar', 'wjets']
-    for proc in list_processes:
-        counts[proc], _ = np.histogram(df[proc].AR[var], weights = df[proc].AR.weight * df[proc].AR[ff_var], bins = bins)
-        variance[proc], _ = np.histogram(df[proc].AR[var], weights = (df[proc].AR.weight * df[proc].AR[ff_var])**2, bins = bins)
+    lenff_split = len(df_split.data.AR_tau1[ff_dnn_tau1]) + len(df_split.data.AR_tau2[ff_dnn_tau2])
+    lenar_split = len(df_split.data.AR_tau1) + len(df_split.data.AR_tau2)
+    lenw_split = np.sum(df_split.data.AR_tau1['weight']) + np.sum(df_split.data.AR_tau2['weight'])
+    lenff_incl = len(df_incl.data.AR[ff_dnn_incl])
+    lenar_incl = len(df_incl.data.AR)
+    lenw_incl = np.sum(df_incl.data.AR['weight'])
 
-    jet_fakes = counts['data'] - counts['diboson'] - counts['DYjets'] - counts['ST'] - counts['embedding'] - counts['ttbar'] - counts['wjets']
-    var_jet_fakes = variance['data'] + variance['diboson'] + variance['DYjets'] + variance['ST'] + variance['embedding'] + variance['ttbar'] + variance['wjets']
+    """
+    print("tau split:")
+    print(lenff_split)
+    print(lenar_split)
+    print(lenw_split)
 
-    return jet_fakes, var_jet_fakes
+    print("tau incl:")
+    print(lenff_incl)
+    print(lenar_incl)
+    print(lenw_incl)
+    """
+
+    fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+
+    CMS_CHANNEL_TITLE(ax)
+    CMS_LUMI_TITLE(ax)
+    CMS_LABEL(ax)
+    CMS_CATEGORY_TITLE(ax, title='inclusive')
+
+    if norm:
+        n1, binedges = np.histogram(df_split.data.AR_tau1[ff_dnn_tau1]*0.5, bins=bins_tau1, density=True)
+        n2, _ = np.histogram(df_split.data.AR_tau2[ff_dnn_tau2]*0.5, bins=bins_tau2, density=True)
+        n = n1 + n2
+        ax.stairs(n/2, binedges, linewidth=2, label=r'$\tau_h$ split')
+        m = ax.hist(df_incl.data.AR[ff_dnn_incl], bins=bins, density=True, histtype = 'step', linewidth = 2, label=r'$\tau_h$ inclusive')
+        print(np.sum(n/2) *0.02)
+        print(np.sum(m[0]))
+    else:
+        n1, binedges = np.histogram(df_split.data.AR_tau1[ff_dnn_tau1]*0.5, bins=bins_tau1)
+        n2, _ = np.histogram(df_split.data.AR_tau2[ff_dnn_tau2]*0.5, bins=bins_tau2)
+        n = n1 + n2
+        ax.stairs(n, binedges, linewidth=2, label=r'$\tau_h$ split')
+        m = ax.hist(df_incl.data.AR[ff_dnn_incl], bins=bins, histtype = 'step', linewidth = 2, label=r'$\tau_h$ inclusive')
+
+    ax.set_ylabel('Events')
+    ax.set_xlabel("fake_factor")
+    ax.set_ylim(top=1.2*np.max([np.max(n), np.max(m[0])]))
+    ax.legend()
+    return fig, ax
+
