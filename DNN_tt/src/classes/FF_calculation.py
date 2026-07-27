@@ -706,30 +706,53 @@ def calculate_fake_factors_in_DR_ttbar(
     df.AR_like_ttbar[f"ff_dnn_ttbar{suffix}"] = fake_factor_ttbar
 
 
-def evaluate_compound_ff_correction(correction_set, compound_name: str, df: pd.DataFrame) -> np.ndarray:
+def evaluate_compound_ff_correction(correction_set, compound_name: str, df: pd.DataFrame, short) -> np.ndarray:
     compound_correction = correction_set.compound[compound_name]
     expected_inputs = [input_spec.name for input_spec in compound_correction.inputs]
 
-    input_values = {
-        'tau_decaymode_2': df.tau_decaymode_2,
-        'eta_1': df.eta_1,
-        'eta_2': df.eta_2,
-        'jeta_1': df.jeta_1,
-        'jeta_2': df.jeta_2,
-        'jpt_1': df.jpt_1,
-        'jpt_2': df.jpt_2,
-        'met': df.met,
-        'deltaR_ditaupair': df.deltaR_ditaupair,
-        'deltaR_1j1': df.deltaR_1j1,
-        'deltaR_12j1': df.deltaR_12j1,
-        'pt_ttjj': df.pt_ttjj,
-        'mass_2': df.mass_2,
-        'mt_tot': df.mt_tot,
-        'm_vis': df.m_vis,
-        'iso_1': df.iso_1,
-        'njets': df.njets,
-        'syst': 'nominal',
-    }
+    if short == 'sg':
+        input_values = {
+            'tau_decaymode_1': df.tau_decaymode_1,
+            'tau_decaymode_2': df.tau_decaymode_2,
+            'eta_1': df.eta_1,
+            'eta_2': df.eta_2,
+            'jeta_1': df.jeta_1,
+            'jeta_2': df.jeta_2,
+            'jpt_1': df.jpt_1,
+            'jpt_2': df.jpt_2,
+            'deltaR_ditaupair': df.deltaR_ditaupair,
+            'deltaR_1j1': df.deltaR_1j1,
+            'deltaR_12j1': df.deltaR_12j1,
+            'pt_ttjj': df.pt_ttjj,
+            'mass_1': df.mass_1,
+            'mass_2': df.mass_2,
+            'mt_tot': df.mt_tot,
+            'm_vis': df.m_vis,
+            'iso_1': df.iso_1,
+            'njets': df.njets,
+            'syst': 'nominal',
+        }
+    elif short == 'jv':
+        input_values = {
+            'tau_decaymode_1': df.tau_decaymode_1,
+            'tau_decaymode_2': df.tau_decaymode_2,
+            'jeta_1': df.jeta_1,
+            'jeta_2': df.jeta_2,
+            'jpt_1': df.jpt_1,
+            'jpt_2': df.jpt_2,
+            'met': df.met,
+            'deltaR_ditaupair': df.deltaR_ditaupair,
+            'mass_1': df.mass_1,
+            'mass_2': df.mass_2,
+            'mt_tot': df.mt_tot,
+            'm_vis': df.m_vis,
+            'iso_1': df.iso_1,
+            'njets': df.njets,
+            'pt_1': df.pt_1,
+            'pt_2': df.pt_2,
+            'pt_vis': df.pt_vis,
+            'syst': 'nominal',
+        }
 
     missing_inputs = [name for name in expected_inputs if name not in input_values]
     if missing_inputs:
@@ -779,6 +802,7 @@ def calculate_fake_factor_classic(
         _df2 = df.AR_tau2_sgiappic.copy()
 
         ff = cr.CorrectionSet.from_file('/work/sgiappic/KingMaker/CROWN/analysis_configurations/tau/payloads/fake_factors/sm/2024/fake_factors_tt.json.gz')
+        corr = cr.CorrectionSet.from_file('/work/sgiappic/KingMaker/CROWN/analysis_configurations/tau/payloads/fake_factors/sm/2024/FF_corrections_tt.json.gz')
     else:
         print(f'short = {short} is not implmented. Use either jv or sg')
     
@@ -804,33 +828,50 @@ def calculate_fake_factor_classic(
         "nominal",
     )
 
-    """
-    _df1["tau1_corrected_classic_ff"] = _df1["tau1_classic_ff"] * evaluate_compound_ff_correction(
-        corr,
-        "Wjets_compound_correction",
-        _df,
-    ) * corr["Wjets_DR_SR_correction"].evaluate(
-        _df.pt_tt,
-        _df.njets,
-        "nominal",
-    )
+    if short=='sg':
+        _df1["tau1_corrected_classic_ff"] = _df1["tau1_classic_ff"] * evaluate_compound_ff_correction(
+            corr,
+            "QCD_compound_correction",
+            _df1,
+            short=short,
+        ) * corr["QCD_DR_SR_correction"].evaluate(
+            _df1.pt_tt,
+            _df1.njets,
+            "nominal",
+        )
 
-    _df["qcd_corrected_classic_ff"] = _df["qcd_classic_ff"] * evaluate_compound_ff_correction(
-        corr,
-        "QCD_compound_correction",
-        _df,
-    ) * corr["QCD_DR_SR_correction"].evaluate(
-        _df.pt_tt,
-        _df.njets,
-        "nominal",
-    )
+        _df2["tau2_corrected_classic_ff"] = _df2["tau2_classic_ff"] * evaluate_compound_ff_correction(
+            corr,
+            "QCD_subleading_compound_correction",
+            _df2,
+            short=short,
+        ) * corr["QCD_subleading_DR_SR_correction"].evaluate(
+            _df2.pt_tt,
+            _df2.njets,
+            "nominal",
+        )
+    elif short=='jv':
+        _df1["tau1_corrected_classic_ff"] = _df1["tau1_classic_ff"] * evaluate_compound_ff_correction(
+            corr,
+            "QCD_compound_correction",
+            _df1,
+            short=short,
+        ) * corr["QCD_DR_SR_correction"].evaluate(
+            _df1.pt_tautau,
+            _df1.njets,
+            "nominal",
+        )
 
-    _df["ttbar_corrected_classic_ff"] = _df["ttbar_classic_ff"] * evaluate_compound_ff_correction(
-        corr,
-        "ttbar_compound_correction",
-        _df,
-    )
-    """
+        _df2["tau2_corrected_classic_ff"] = _df2["tau2_classic_ff"] * evaluate_compound_ff_correction(
+            corr,
+            "QCD_subleading_compound_correction",
+            _df2,
+            short=short,
+        ) * corr["QCD_subleading_DR_SR_correction"].evaluate(
+            _df2.pt_tautau,
+            _df2.njets,
+            "nominal",
+        )
 
     _df1['process_fraction_tau1'] = frac1.evaluate(
         'QCD',
@@ -850,12 +891,21 @@ def calculate_fake_factor_classic(
     _df1['classic_ff_tau1'] = _df1['process_fraction_tau1'] * _df1['tau1_classic_ff']
     _df2['classic_ff_tau2'] = _df2['process_fraction_tau2'] * _df2['tau2_classic_ff']
 
+    _df1['corrected_classic_ff_tau1'] = _df1['process_fraction_tau1'] * _df1['tau1_corrected_classic_ff']
+    _df2['corrected_classic_ff_tau2'] = _df2['process_fraction_tau2'] * _df2['tau2_corrected_classic_ff']
+
     if short=='jv':
-        df.AR_tau1_jvoss['ff_classic_tau1'] = _df1['classic_ff_tau1']
-        df.AR_tau2_jvoss['ff_classic_tau2'] = _df2['classic_ff_tau2']
+        df.AR_tau1_jvoss[f'ff_classic_tau1_{short}'] = _df1['classic_ff_tau1']
+        df.AR_tau2_jvoss[f'ff_classic_tau2_{short}'] = _df2['classic_ff_tau2']
+
+        df.AR_tau1_jvoss[f'ff_corr_classic_tau1_{short}'] = _df1['corrected_classic_ff_tau1']
+        df.AR_tau2_jvoss[f'ff_corr_classic_tau2_{short}'] = _df2['corrected_classic_ff_tau2']
     elif short=='sg':
-        df.AR_tau1_sgiappic['ff_classic_tau1'] = _df1['classic_ff_tau1']
-        df.AR_tau2_sgiappic['ff_classic_tau2'] = _df2['classic_ff_tau2']
+        df.AR_tau1_sgiappic[f'ff_classic_tau1_{short}'] = _df1['classic_ff_tau1']
+        df.AR_tau2_sgiappic[f'ff_classic_tau2_{short}'] = _df2['classic_ff_tau2']
+
+        df.AR_tau1_sgiappic[f'ff_corr_classic_tau1_{short}'] = _df1['corrected_classic_ff_tau1']
+        df.AR_tau2_sgiappic[f'ff_corr_classic_tau2_{short}'] = _df2['corrected_classic_ff_tau2']
     else:
         print(f'short = {short} is not implmented. Use either jv or sg')
 

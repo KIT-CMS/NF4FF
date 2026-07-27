@@ -740,12 +740,17 @@ def plot_fake_factors_incl(
 def plot_classic_fake_factors(
         df,
         short,
+        corr: bool,
         category_title = None,
 ) -> None:
     hep.style.use(hep.style.CMS)
-	
-    ff_tau1 = 'ff_classic_tau1'
-    ff_tau2 = 'ff_classic_tau2'
+
+    if corr:
+        ff_tau1 = f'ff_corr_classic_tau1_{short}'
+        ff_tau2 = f'ff_corr_classic_tau2_{short}'
+    else:
+        ff_tau1 = f'ff_classic_tau1_{short}'
+        ff_tau2 = f'ff_classic_tau2_{short}'
     
 
     fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))

@@ -30,7 +30,7 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
     dnn_grouped: bool = False
-    classic: bool = False
+    classic: bool = True
 
 args = Args().parse_args()
 
@@ -133,7 +133,13 @@ def main():
     if args.classic:
         df_classic_jv = load_data(DATA_CLASSIC_JV_PATH, MASKS_PATH)
         df_classic_sg = load_data(DATA_CLASSIC_SG_PATH, MASKS_PATH)
+
+        #print(df_classic_jv.columns)
+        #print(df_classic_sg.columns)
+        #exit()
+        logger.info('Calculating classic FF from jvoss...')
         calculate_fake_factor_classic(df_classic_jv, 'jv')
+        logger.info('Calculating classic FF from sgiappic...')
         calculate_fake_factor_classic(df_classic_sg, 'sg')
 
         logger.info(f"Saving classic dataframe with fake-factor columns to feather file: {DATA_CLASSIC_JV_PATH} and {DATA_CLASSIC_SG_PATH}")

@@ -123,14 +123,24 @@ def main():
         df_classic_sg = load_data(DATA_CLASSIC_SG_PATH, MASKS_PATH)
 
         # ----- classic FF -----
-        fig_ar, ax_ar = plot_classic_fake_factors(df=df_classic_jv, short='jv')
+        fig_ar, ax_ar = plot_classic_fake_factors(df=df_classic_jv, short='jv', corr=False)
         plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / 'classic' / f'plot_jv_ff_splitTaus.png', dpi=150, bbox_inches='tight')
         plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / 'classic' / f'plot_jv_ff_splitTaus.pdf', dpi=150, bbox_inches='tight')
         plt.close(fig_ar)
 
-        fig_ar, ax_ar = plot_classic_fake_factors(df=df_classic_sg, short='sg')
+        fig_ar, ax_ar = plot_classic_fake_factors(df=df_classic_jv, short='jv', corr=True)
+        plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / 'classic' / f'plot_jv_corr_ff_splitTaus.png', dpi=150, bbox_inches='tight')
+        plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / 'classic' / f'plot_jv_corr_ff_splitTaus.pdf', dpi=150, bbox_inches='tight')
+        plt.close(fig_ar)
+
+        fig_ar, ax_ar = plot_classic_fake_factors(df=df_classic_sg, short='sg', corr=False)
         plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / 'classic' / f'plot_sg_ff_splitTaus.png', dpi=150, bbox_inches='tight')
         plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / 'classic' / f'plot_sg_ff_splitTaus.pdf', dpi=150, bbox_inches='tight')
+        plt.close(fig_ar)
+
+        fig_ar, ax_ar = plot_classic_fake_factors(df=df_classic_sg, short='sg', corr=True)
+        plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / 'classic' / f'plot_sg_corr_ff_splitTaus.png', dpi=150, bbox_inches='tight')
+        plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / 'classic' / f'plot_sg_corr_ff_splitTaus.pdf', dpi=150, bbox_inches='tight')
         plt.close(fig_ar)
         logger.info(f'Saved FF distributions in AR for classic')
 
