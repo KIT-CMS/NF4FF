@@ -9,10 +9,9 @@ import numpy as np
 from tap import Tap
 import torch as t
 
-from classes.NeuralNetworks import load_fold_combined_model, FoldCombinedDNN
-from classes.DataHandling import test_data
-from classes.Loading import load_config, load_variables, load_labels, load_data
-from classes.FF_calculation import calculate_fake_factors_incl, calculate_fake_factors, calculate_fake_factor_dnn, calculate_fake_factor_classic, calculate_fake_factors_in_DR_qcd
+from classes.NeuralNetworks import load_fold_combined_model
+from classes.Loading import load_config, load_variables, load_data
+from classes.FF_calculation import calculate_fake_factors_incl, calculate_fake_factors, calculate_fake_factor_classic, calculate_fake_factors_in_DR, calculate_fake_factors_in_DR_incl
 
 
 SEED = 42
@@ -25,12 +24,12 @@ random.seed(SEED)
 t.set_num_threads(8)
 
 class Args(Tap):
-    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
     dnn_grouped: bool = False
-    classic: bool = True
+    classic: bool = False
 
 args = Args().parse_args()
 
@@ -149,7 +148,7 @@ def main():
         return None
 
 
-    if args.dnn_grouped:
+    if args.taus=='split' and args.dnn_grouped:
         # tau decay mode
         logger.info("Calculating fake factors for tau decay mode...")
         calculate_fake_factors(
@@ -183,7 +182,7 @@ def main():
         
         # ----- calculate fake factors in DR -----
         logger.info("Calculating fake factors in DR...")
-        calculate_fake_factors_in_DR_qcd(
+        calculate_fake_factors_in_DR(
             df=df,
             model_tau1=model_tau1_tdm,
             model_tau2=model_tau2_tdm,
@@ -193,7 +192,7 @@ def main():
             output_suffix = 'tau_dm',
         )
 
-        calculate_fake_factors_in_DR_qcd(
+        calculate_fake_factors_in_DR(
             df=df,
             model_tau1=model_tau1_njets,
             model_tau2=model_tau2_njets,
@@ -203,23 +202,43 @@ def main():
             output_suffix = 'njets',
         )
 
-    else:
-        if args.taus == 'split':
-            logger.info("Calculating fake factors...")
-            calculate_fake_factors(
-                df=df,
-                model_tau1=model_tau1,
-                model_tau2=model_tau2,
-                training_variables=training_variables,
-            )
-        elif args.taus == 'incl':
-            logger.info("Calculating fake factors inclusive...")
-            calculate_fake_factors_incl(
-                df=df,
-                incl = args.incl,
-                model=model_incl,
-                training_variables=training_variables,
-            )    
+    elif args.taus == 'split' and not args.dnn_grouped:
+        
+        logger.info("Calculating fake factors...")
+        calculate_fake_factors(
+            df=df,
+            model_tau1=model_tau1,
+            model_tau2=model_tau2,
+            training_variables=training_variables,
+        )
+
+        calculate_fake_factors_in_DR(
+                    df=df,
+                    model_tau1=model_tau1,
+                    model_tau2=model_tau2,
+                    training_variables=training_variables
+                )
+
+    elif args.taus == 'incl' and args.dnn_grouped:
+        logger.warning('Not implemented.')
+
+    elif args.taus == 'incl' and not args.dnn_grouped:
+        logger.info("Calculating fake factors inclusive...")
+        calculate_fake_factors_incl(
+            df=df,
+            incl = args.incl,
+            model=model_incl,
+            training_variables=training_variables,
+        )
+
+        # ----- calculate fake factors in DR -----
+        logger.info("Calculating incusive fake factors in DR...")
+        calculate_fake_factors_in_DR_incl(
+            df=df,
+            incl=args.incl,
+            model=model_incl,
+            training_variables=training_variables
+        )
     
 
     #print(list(df.columns))

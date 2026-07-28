@@ -13,7 +13,7 @@ import uproot
 
 from classes.Plotting import plot_fake_factors, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
 from classes.Loading import load_config, load_labels, load_data
-from classes.Plotting import FF_closure_in_DR_tau1, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl, plot_fake_factors_combTaus
+from classes.Plotting import FF_closure_in_DR_tau1, FF_closure_in_DR_tau2, FF_closure_in_DR_incl, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl, plot_fake_factors_combTaus
 
 
 
@@ -32,11 +32,11 @@ class Args(Tap):
 
     taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
-    dnn_grouped: bool = True
-    classic: bool = True
+    dnn_grouped: bool = False
+    classic: bool = False
 
-    closure_DR: bool = False
-    FF_dist: bool = False
+    closure_DR: bool = True
+    FF_dist: bool = True
     closure_AR: bool = True
 
 args = Args().parse_args()
@@ -55,7 +55,6 @@ CHECKPOINT_DIR = cfg_path["traininfg_results"]
 PLOTTING_CONFIG_PATH = cfg_path["cfg_plotting"]
 LABELS_CONFIG_PATH = cfg_path["labels"]
 
-#PLOTS_DIR = Path('../plots/layers_3/ReLU')
 PLOTS_DIR = Path(cfg_path["plots"])
 PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -148,8 +147,6 @@ def main():
 
     
 
-
-
     # ----- tau split FF -----
         
     if args.taus=='split' and args.dnn_grouped:
@@ -164,6 +161,17 @@ def main():
                     bins, label = get_bins_and_label(var)
 
                     fig_q, _ = FF_closure_in_DR_tau1(
+                        df=df,
+                        var=var,
+                        bins=bins,
+                        label=label,
+                        grouping=grouping,
+                    )
+                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'FF_closure_DR_tau1_{var}.png', dpi=150, bbox_inches='tight')
+                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'FF_closure_DR_tau1_{var}.pdf', dpi=150, bbox_inches='tight')
+                    plt.close(fig_q)
+
+                    fig_q, _ = FF_closure_in_DR_tau2(
                         df=df,
                         var=var,
                         bins=bins,
@@ -277,7 +285,32 @@ def main():
 
         # ----- Closure plots in DR -----
         if args.closure_DR:
-            logger.warning('Closure in DR is not yet implemented.')
+            for var in VARIABLES_SMALL:
+                bins, label = get_bins_and_label(var)
+
+                fig_q, _ = FF_closure_in_DR_tau1(
+                    df=df,
+                    var=var,
+                    bins=bins,
+                    label=label,
+                    grouping=None,
+                )
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / 'ungrouped' / f'FF_closure_DR_tau1_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / 'ungrouped' / f'FF_closure_DR_tau1_{var}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig_q)
+
+                fig_q, _ = FF_closure_in_DR_tau2(
+                    df=df,
+                    var=var,
+                    bins=bins,
+                    label=label,
+                    grouping=None,
+                )
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / 'ungrouped' / f'FF_closure_DR_tau1_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / 'ungrouped' / f'FF_closure_DR_tau1_{var}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig_q)
+
+            logger.info(f'Saved closure plots in DR for ungrouped')
 
         # ----- Fake-factor distributions -----
         if args.FF_dist:          
@@ -365,7 +398,22 @@ def main():
 
         # ----- Closure plots in DR -----
         if args.closure_DR:
-            logger.warning('Not yet implemented.')
+            for var in VARIABLES_SMALL:
+                bins, label = get_bins_and_label(var)
+
+                fig_q, _ = FF_closure_in_DR_incl(
+                    df=df,
+                    incl=args.incl,
+                    var=var,
+                    bins=bins,
+                    label=label,
+                    grouping=None,
+                )
+                plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'closure_in_DR' / 'ungrouped' / f'FF_closure_DR_incl_{args.incl}_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'closure_in_DR' / 'ungrouped' / f'FF_closure_DR_incl_{args.incl}_{var}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig_q)
+
+            logger.info(f'Saved closure plots for tau inclusive in DR for ungrouped DNN.')
 
         # ----- Fake-factor distributions -----
         if args.FF_dist:

@@ -1,5 +1,5 @@
 model:
-  hidden_nodes: [100, 100, 100]
+  hidden_nodes: [100, 100, 100, 100] 
   output_nodes: 1
   activation: ReLU
   output_activation: Sigmoid

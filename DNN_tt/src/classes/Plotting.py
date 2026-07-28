@@ -820,19 +820,25 @@ def plot_fake_factors_in_DR(
 	ax[1].legend()
 	return fig, ax
 
+
 def FF_closure_in_DR_tau1(
     df,
 	var,
 	bins,
 	label,
-	grouping = 'njets',
+	grouping = None,
 ):
     hep.style.use(hep.style.CMS)
 
     if grouping == 'tau_decaymode':
         ff_dnn_tau1 = 'ff_DR_dnn_tau1_tau_dm'
+        cat_title = r'$\tau$ DM: inclusive'
     elif grouping == 'njets':
         ff_dnn_tau1 = 'ff_DR_dnn_tau1_njets'
+        cat_title = r'$N_{jets}$: inclusive'
+    else:
+        ff_dnn_tau1 = 'ff_DR_dnn_tau1'
+        cat_title = 'inclusive'
 
     counts_SR_like, bin_edges = np.histogram(df.data.SR_like[var], weights = df.data.SR_like.weight_qcd, bins = bins)
     counts_FF_AR_like, _ = np.histogram(df.data.AR_like_tau1[var], weights = df.data.AR_like_tau1.weight_qcd * df.data.AR_like_tau1[ff_dnn_tau1], bins = bins)
@@ -863,9 +869,197 @@ def FF_closure_in_DR_tau1(
         constrained_layout=True,
     )
     CMS_LABEL(ax)
-    #CMS_CATEGORY_TITLE(ax)
+    CMS_CATEGORY_TITLE(ax, cat_title)
     CMS_LUMI_TITLE(ax)
     CMS_CHANNEL_TITLE(ax)
+
+    ax[0].errorbar(
+        bin_centers,
+        counts_SR_like,
+        yerr=err_SR_like,
+        xerr=err_bin,
+        fmt='o',
+        color='black',
+        label='data(SR-like)',
+        markersize=6,
+        elinewidth=1.2,
+        capsize=0,
+    )
+
+    ax[0].stairs(counts_FF_AR_like, bin_edges, label = r'$F_\mathrm{F} \cdot $ data(AR-like, leading $\tau$)', ls = '--', linewidth = 2)
+
+    ax[0].set_ylabel('Events')
+    ax[0].legend()
+    adjust_ylim_for_legend(ax[0])
+    ratio = np.divide(counts_SR_like, counts_FF_AR_like, out=np.zeros_like(counts_SR_like, dtype=float), where=counts_FF_AR_like > 0)
+    ratio_err_SR_like = np.divide(err_SR_like, counts_FF_AR_like, out=np.zeros_like(err_SR_like), where=counts_FF_AR_like > 0)
+    ratio_err_FF_AR_like = np.divide(err_FF_AR_like, counts_FF_AR_like, out=np.zeros_like(err_FF_AR_like), where=counts_FF_AR_like > 0)
+
+    ax[1].errorbar(bin_centers, ratio, xerr = err_bin, yerr = ratio_err_SR_like, fmt='o', color='black', markersize=6, label='ratio')
+    ax[1].fill_between(
+        bin_centers,
+        1 - ratio_err_FF_AR_like,
+        1 + ratio_err_FF_AR_like,
+        color='gray',
+        alpha=0.3,
+        step='mid',
+        label='Sys. Unc.',
+    )
+    ax[1].set_ylabel("Data / Model", loc='center')
+    ax[1].set_ylim([0.75, 1.25])
+    ax[1].grid(True, linestyle=':', alpha=0.7)
+    ax[1].tick_params(direction='in', top=True, right=True)
+    ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
+    ax[1].set_xlabel(label)
+
+    return fig, ax
+
+def FF_closure_in_DR_tau2(
+    df,
+	var,
+	bins,
+	label,
+	grouping = None,
+):
+    hep.style.use(hep.style.CMS)
+
+    if grouping == 'tau_decaymode':
+        ff_dnn_tau2 = 'ff_DR_dnn_tau2_tau_dm'
+        cat_title = r'$\tau$ DM: inclusive'
+    elif grouping == 'njets':
+        ff_dnn_tau2 = 'ff_DR_dnn_tau2_njets'
+        cat_title = r'$N_{jets}$: inclusive'
+    else:
+        ff_dnn_tau2 = 'ff_DR_dnn_tau2'
+        cat_title = 'inclusive'
+
+    counts_SR_like, bin_edges = np.histogram(df.data.SR_like[var], weights = df.data.SR_like.weight_qcd, bins = bins)
+    counts_FF_AR_like, _ = np.histogram(df.data.AR_like_tau2[var], weights = df.data.AR_like_tau2.weight_qcd * df.data.AR_like_tau2[ff_dnn_tau2], bins = bins)
+
+    variance_SR_like, _ = np.histogram(df.data.SR_like[var], weights = df.data.SR_like.weight_qcd**2, bins = bins)
+    variance_FF_AR_like, _ = np.histogram(
+        df.data.AR_like_tau2[var], 
+        weights = (df.data.AR_like_tau2.weight_qcd * df.data.AR_like_tau2[ff_dnn_tau2])**2,
+        bins = bins)
+
+    err_SR_like = np.sqrt(variance_SR_like)
+    err_FF_AR_like = np.sqrt(variance_FF_AR_like)
+
+    bin_widths = np.diff(bin_edges)
+    bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+    err_bin = 0.5 * bin_widths
+
+
+    fig, ax = plt.subplots(
+        2,
+        1,
+        figsize=(11.7, 9.1),
+        sharex=True,
+        gridspec_kw={
+            'height_ratios': [4, 1],
+            'hspace': 0.05,
+        },
+        constrained_layout=True,
+    )
+    CMS_LABEL(ax)
+    CMS_CATEGORY_TITLE(ax, cat_title)
+    CMS_LUMI_TITLE(ax)
+    CMS_CHANNEL_TITLE(ax)
+
+    ax[0].errorbar(
+        bin_centers,
+        counts_SR_like,
+        yerr=err_SR_like,
+        xerr=err_bin,
+        fmt='o',
+        color='black',
+        label='data(SR-like)',
+        markersize=6,
+        elinewidth=1.2,
+        capsize=0,
+    )
+
+    ax[0].stairs(counts_FF_AR_like, bin_edges, label = r'$F_\mathrm{F} \cdot $ data(AR-like, trailing $\tau$)', ls = '--', linewidth = 2)
+
+    ax[0].set_ylabel('Events')
+    ax[0].legend()
+    adjust_ylim_for_legend(ax[0])
+    ratio = np.divide(counts_SR_like, counts_FF_AR_like, out=np.zeros_like(counts_SR_like, dtype=float), where=counts_FF_AR_like > 0)
+    ratio_err_SR_like = np.divide(err_SR_like, counts_FF_AR_like, out=np.zeros_like(err_SR_like), where=counts_FF_AR_like > 0)
+    ratio_err_FF_AR_like = np.divide(err_FF_AR_like, counts_FF_AR_like, out=np.zeros_like(err_FF_AR_like), where=counts_FF_AR_like > 0)
+
+    ax[1].errorbar(bin_centers, ratio, xerr = err_bin, yerr = ratio_err_SR_like, fmt='o', color='black', markersize=6, label='ratio')
+    ax[1].fill_between(
+        bin_centers,
+        1 - ratio_err_FF_AR_like,
+        1 + ratio_err_FF_AR_like,
+        color='gray',
+        alpha=0.3,
+        step='mid',
+        label='Sys. Unc.',
+    )
+    ax[1].set_ylabel("Data / Model", loc='center')
+    ax[1].set_ylim([0.75, 1.25])
+    ax[1].grid(True, linestyle=':', alpha=0.7)
+    ax[1].tick_params(direction='in', top=True, right=True)
+    ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
+    ax[1].set_xlabel(label)
+
+    return fig, ax
+
+def FF_closure_in_DR_incl(
+    df,
+    incl,
+	var,
+	bins,
+	label,
+	grouping = None,
+):
+    hep.style.use(hep.style.CMS)
+
+    if grouping == 'tau_decaymode':
+        ff_dnn = f'ff_DR_dnn_incl_{incl}_tau_dm'
+        cat_title = r'$\tau$ DM: inclusive'
+    elif grouping == 'njets':
+        ff_dnn = f'ff_DR_dnn_incl_{incl}_njets'
+        cat_title = r'N_{jets} inclusive'
+    else:
+        ff_dnn = f'ff_DR_dnn_incl_{incl}'
+        cat_title = 'inclusive'
+
+    counts_SR_like, bin_edges = np.histogram(df.data.SR_like[var], weights = df.data.SR_like.weight_qcd, bins = bins)
+    counts_FF_AR_like, _ = np.histogram(df.data.AR_like[var], weights = df.data.AR_like.weight_qcd * df.data.AR_like[ff_dnn], bins = bins)
+
+    variance_SR_like, _ = np.histogram(df.data.SR_like[var], weights = df.data.SR_like.weight_qcd**2, bins = bins)
+    variance_FF_AR_like, _ = np.histogram(
+        df.data.AR_like[var], 
+        weights = (df.data.AR_like.weight_qcd * df.data.AR_like[ff_dnn])**2,
+        bins = bins)
+
+    err_SR_like = np.sqrt(variance_SR_like)
+    err_FF_AR_like = np.sqrt(variance_FF_AR_like)
+
+    bin_widths = np.diff(bin_edges)
+    bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+    err_bin = 0.5 * bin_widths
+
+
+    fig, ax = plt.subplots(
+        2,
+        1,
+        figsize=(11.7, 9.1),
+        sharex=True,
+        gridspec_kw={
+            'height_ratios': [4, 1],
+            'hspace': 0.05,
+        },
+        constrained_layout=True,
+    )
+
+    CMS_LABEL(ax)
+    CMS_LUMI_TITLE(ax)
+    CMS_CHANNEL_TITLE(ax)
+    CMS_CATEGORY_TITLE(ax, cat_title)
 
     ax[0].errorbar(
         bin_centers,
@@ -979,10 +1173,6 @@ def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode', clip
         group_mask_tau2 = _grouping_masks(frame_tau2, grouping)
 
     fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
-
-    
-    for x in frame_tau1[ff_tau1]:
-        if x > 3.0: print(x)
 
 
     n1 = ax[0].hist(frame_tau1[ff_tau1], bins=bins_tau1, histtype='step', linewidth=2, label=r'Leading $\tau_h$: incl')
