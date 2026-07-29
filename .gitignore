@@ -29,7 +29,8 @@ Classifier/data/
 Classifier/plots/
 Classifier/Categorizer_results/
 
-
+corrections/
+corrections_not_used/
 
 Classifier_all_in_one/.cache/
 Classifier_all_in_one/Categorizer_results/

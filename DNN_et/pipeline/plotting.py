@@ -138,21 +138,19 @@ def _opposite_distribution_grouping(grouping: str) -> str:
     raise ValueError(f"Unsupported grouping: {grouping}")
 
 
-def _require_grouped_fake_factor_features(df) -> None:
-    required_features = (
-        "ff_dnn",
-        "ff_dnn_tau_decaymode_2_alt",
-        "ff_dnn_njets",
-        "ff_dnn_wjets",
-        "ff_dnn_qcd",
-        "ff_dnn_ttbar",
-        "ff_dnn_wjets_tau_decaymode_2_alt",
-        "ff_dnn_qcd_tau_decaymode_2_alt",
-        "ff_dnn_ttbar_tau_decaymode_2_alt",
-        "ff_dnn_wjets_njets",
-        "ff_dnn_qcd_njets",
-        "ff_dnn_ttbar_njets",
-    )
+def _require_grouped_fake_factor_features(
+    df,
+    groupings=GROUPING_NAMES,
+) -> None:
+    required_features = []
+    for grouping in groupings:
+        suffix = grouping_suffix(grouping)
+        required_features.append(f"ff_dnn{suffix}")
+        required_features.extend(
+            f"ff_dnn_{process}{suffix}"
+            for process in ("wjets", "qcd", "ttbar")
+        )
+    required_features = tuple(dict.fromkeys(required_features))
     missing = [
         feature
         for feature in required_features
@@ -559,7 +557,7 @@ def plot_closure(
         fmt='o',
         color='black',
         label='Data',
-        markersize=10,
+        markersize=8,
         elinewidth=1.2,
         capsize=0,
     )
@@ -610,7 +608,7 @@ def plot_closure(
         yerr=ratio_err_dnn,
         fmt='o',
         color='black',
-        markersize=10,
+        markersize=8,
         label=r'DNN $F_\mathrm{F}$',
     )
 
@@ -625,7 +623,7 @@ def plot_closure(
     )
     if plot_corr_hline == True:
         ax[1].axhline(1/corr_emb_ff, color='blue', linestyle='--', linewidth=1.5)
-    ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
+    ax[1].axhline(1, color='gray', linestyle='--', linewidth=1.5)
     
     ax[1].set_ylabel("Data / Model", fontsize=20, labelpad=10)
     ax[1].set_ylim([0.75, 1.5])
@@ -666,7 +664,7 @@ def plot_closure(
             yerr=ratio_err_classic,
             fmt='o',
             color='black',
-            markersize=10,
+            markersize=8,
             label=r'Classic $F_\mathrm{F}$',
         )
 
@@ -679,8 +677,14 @@ def plot_closure(
             step='mid',
             label='Sys. Unc.',
         )
-        ax[3].axhline(1/corr_emb_ff, color='blue', linestyle='--', linewidth=1.5)
-        ax[3].axhline(1, color='red', linestyle='--', linewidth=1.5)
+        if plot_corr_hline == True:
+            ax[3].axhline(
+                1/corr_emb_ff,
+                color='blue',
+                linestyle='--',
+                linewidth=1.5,
+            )
+        ax[3].axhline(1, color='gray', linestyle='--', linewidth=1.5)
         ax[3].set_ylabel("Data / Model", fontsize=20, labelpad=10)
         ax[3].set_ylim([0.8, 1.4])
         ax[3].grid(True, linestyle=':', alpha=0.7)
@@ -980,10 +984,16 @@ def create_fake_factor_plots(
     output_dir: Union[str, Path],
     manifest_path: Union[str, Path, None] = None,
     variable_set: str = "variables_set_small",
+    grouping: str = "njets",
     channel: str = "et",
     feature_suffix: str = "",
 ) -> list[str]:
     """Create workflow-rooted closure and FF-distribution plots."""
+    if grouping not in GROUPING_NAMES:
+        raise ValueError(
+            f"Unsupported grouping '{grouping}'. Expected one of {GROUPING_NAMES}."
+        )
+
     plt.switch_backend("Agg")
     output_dir = Path(output_dir)
     plotting_config = _read_yaml(plotting_config_path)
@@ -999,12 +1009,8 @@ def create_fake_factor_plots(
     _install_feature_aliases(df, "ff_dnn", feature_suffix)
     required_features = (
         "ff_classic",
-        "reduced_weight_wjets_tau_decaymode_2_nominal",
-        "reduced_weight_wjets_tau_decaymode_2_alt_nominal",
-        "reduced_weight_wjets_njets_nominal",
-        "reduced_weight_qcd_tau_decaymode_2_nominal",
-        "reduced_weight_qcd_tau_decaymode_2_alt_nominal",
-        "reduced_weight_qcd_njets_nominal",
+        f"reduced_weight_wjets_{grouping}_nominal",
+        f"reduced_weight_qcd_{grouping}_nominal",
     )
     missing = [
         feature
@@ -1015,10 +1021,9 @@ def create_fake_factor_plots(
         raise KeyError(
             f"Fake-factor feature file is missing columns: {missing}"
         )
-    _require_grouped_fake_factor_features(df)
+    _require_grouped_fake_factor_features(df, groupings=(grouping,))
 
     outputs = []
-    grouping_names = GROUPING_NAMES
     process_closures = {
         "wjets": FF_closure_in_DR_wjets,
         "qcd": FF_closure_in_DR_qcd,
@@ -1037,7 +1042,7 @@ def create_fake_factor_plots(
         )
         subset_output_dir = output_dir / subset_name
 
-        for grouping in grouping_names:
+        for grouping_name in (grouping,):
             for variable in variables:
                 if variable not in binning:
                     raise KeyError(f"No binning configured for {variable}.")
@@ -1049,7 +1054,7 @@ def create_fake_factor_plots(
                     var=variable,
                     bins=bins,
                     label=label,
-                    grouping=grouping,
+                    grouping=grouping_name,
                     plot_classic_ff_comp=True,
                     plot_corr_hline=False,
                 )
@@ -1057,7 +1062,7 @@ def create_fake_factor_plots(
                     fig,
                     subset_output_dir
                     / "closure"
-                    / grouping
+                    / grouping_name
                     / f"closure_{variable}",
                 ))
 
@@ -1067,14 +1072,14 @@ def create_fake_factor_plots(
                         var=variable,
                         bins=bins,
                         label=label,
-                        grouping=grouping,
+                        grouping=grouping_name,
                     )
                     outputs.extend(_save_figure(
                         fig,
                         subset_output_dir
                         / "process_closure"
                         / process
-                        / grouping
+                        / grouping_name
                         / f"closure_{variable}",
                     ))
 
@@ -1082,32 +1087,32 @@ def create_fake_factor_plots(
                 continue
 
             category_title = (
-                f"{subset_title}, split in {_grouping_title(grouping)}"
+                f"{subset_title}, split in {_grouping_title(grouping_name)}"
             )
             fig, _ = plot_fake_factors_grouped(
                 df=subset_df,
                 category_title=category_title,
-                grouping=grouping,
+                grouping=grouping_name,
             )
             outputs.extend(_save_figure(
                 fig,
                 subset_output_dir
                 / "distribution"
                 / "AR"
-                / f"fake_factors_{grouping}",
+                / f"fake_factors_{grouping_name}",
             ))
 
             fig, _ = plot_fake_factors_in_dr_grouped(
                 df=subset_df,
                 category_title=category_title,
-                grouping=grouping,
+                grouping=grouping_name,
             )
             outputs.extend(_save_figure(
                 fig,
                 subset_output_dir
                 / "distribution"
                 / "AR_like"
-                / f"fake_factors_{grouping}",
+                / f"fake_factors_{grouping_name}",
             ))
 
     manifest_path = (
@@ -1278,6 +1283,100 @@ def create_corrected_fake_factor_closure_plots(
     return outputs
 
 
+def create_classic_fake_factor_closure_plots(
+    *,
+    data_path: Union[str, Path],
+    masks_path: Union[str, Path],
+    fake_factor_feature_path: Union[str, Path],
+    classic_feature_path: Union[str, Path],
+    plotting_config_path: Union[str, Path],
+    labels_path: Union[str, Path],
+    output_dir: Union[str, Path],
+    manifest_path: Union[str, Path, None] = None,
+    variable_set: str = "variables_set_small",
+    channel: str = "et",
+    feature_suffix: str = "",
+) -> list[str]:
+    """Plot classic-fraction DNN closures, with and without classic FF comparison."""
+    plt.switch_backend("Agg")
+    output_dir = Path(output_dir)
+    plotting_config = _read_yaml(plotting_config_path)
+    labels = _read_channel_labels(labels_path, channel)
+    variables = plotting_config.get(variable_set, [])
+    binning = plotting_config.get("bins_by_variable", {})
+    if not variables:
+        raise ValueError(f"No plotting variables configured in {variable_set}.")
+
+    df = load_data(data_path, masks_path)
+    df.load_feature_file(fake_factor_feature_path)
+    df.load_feature_file(classic_feature_path)
+    _install_feature_aliases(df, "ff_dnn", feature_suffix)
+    missing_columns = [
+        column
+        for column in ("ff_dnn_njets", "ff_classic")
+        if column not in df.events.columns
+    ]
+    if missing_columns:
+        raise KeyError(
+            "Classic-fraction closure input is missing required columns: "
+            f"{missing_columns}"
+        )
+
+    outputs = []
+    closure_subsets = (
+        ("inclusive", None),
+        ("njets_eq_0", ("njets", "eq", 0)),
+        ("njets_eq_1", ("njets", "eq", 1)),
+        ("njets_ge_2", ("njets", "ge", 2)),
+    )
+    for subset_name, selection in closure_subsets:
+        subset_df = _plot_subset(df, selection)
+        logger.info(
+            "Creating classic fake-factor closure plots for subset %s "
+            "with %d events.",
+            subset_name,
+            len(subset_df.events),
+        )
+        for variable in variables:
+            if variable not in binning:
+                raise KeyError(f"No binning configured for {variable}.")
+            for comparison_name, plot_classic_comparison in (
+                ("with_classic_comparison", True),
+                ("without_classic_comparison", False),
+            ):
+                fig, _, _ = plot_closure(
+                    df=subset_df,
+                    var=variable,
+                    bins=_plot_bins(binning[variable]),
+                    label=labels.get(variable, variable),
+                    grouping="njets",
+                    plot_classic_ff_comp=plot_classic_comparison,
+                    plot_corr_hline=False,
+                )
+                outputs.extend(_save_figure(
+                    fig,
+                    output_dir
+                    / subset_name
+                    / "closure"
+                    / comparison_name
+                    / f"closure_{variable}",
+                ))
+
+    manifest_path = (
+        Path(manifest_path)
+        if manifest_path is not None
+        else output_dir / "manifest.json"
+    )
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(outputs, indent=2) + "\n")
+    logger.info(
+        "Saved %d classic fake-factor closure plot files to %s.",
+        len(outputs),
+        output_dir,
+    )
+    return outputs
+
+
 def create_mlf_closure_plots(
     *,
     data_path: Union[str, Path],
@@ -1359,22 +1458,26 @@ def create_mlf_closure_plots(
         for variable in variables:
             if variable not in binning:
                 raise KeyError(f"No binning configured for {variable}.")
-            fig, _, _ = plot_closure(
-                df=subset_df,
-                var=variable,
-                bins=_plot_bins(binning[variable]),
-                label=labels.get(variable, variable),
-                grouping="njets",
-                plot_classic_ff_comp=True,
-                plot_corr_hline=False,
-            )
-            outputs.extend(_save_figure(
-                fig,
-                subset_output_dir
-                / "closure"
-                / "njets"
-                / f"closure_{variable}",
-            ))
+            for comparison_name, plot_classic_comparison in (
+                ("with_classic_comparison", True),
+                ("without_classic_comparison", False),
+            ):
+                fig, _, _ = plot_closure(
+                    df=subset_df,
+                    var=variable,
+                    bins=_plot_bins(binning[variable]),
+                    label=labels.get(variable, variable),
+                    grouping="njets",
+                    plot_classic_ff_comp=plot_classic_comparison,
+                    plot_corr_hline=False,
+                )
+                outputs.extend(_save_figure(
+                    fig,
+                    subset_output_dir
+                    / "closure"
+                    / comparison_name
+                    / f"closure_{variable}",
+                ))
 
     manifest_path = (
         Path(manifest_path)

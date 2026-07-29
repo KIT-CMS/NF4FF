@@ -13,7 +13,6 @@ from classes.DataHandling import FeatureRegistry, FeatureStore
 from ff_calculation import DEFAULT_PROCESS_FRACTIONS_PATH
 from plotting import (
     CMS_CHANNEL_TITLE,
-    CMS_CATEGORY_TITLE,
     CMS_LABEL,
     CMS_LUMI_TITLE,
     adjust_ylim_for_legend,
@@ -58,6 +57,24 @@ FRACTION_COLORS = {
     "wjets": "#e76300",
     "ttbar": "#832db6",
 }
+FRACTION_SUBSET_NAMES = (
+    "inclusive",
+    "njets_eq_0",
+    "njets_eq_1",
+    "njets_ge_2",
+)
+
+
+def _fraction_subset(frame, subset_name):
+    if subset_name == "inclusive":
+        return frame
+    if subset_name == "njets_eq_0":
+        return frame.loc[frame["njets"] == 0]
+    if subset_name == "njets_eq_1":
+        return frame.loc[frame["njets"] == 1]
+    if subset_name == "njets_ge_2":
+        return frame.loc[frame["njets"] >= 2]
+    raise ValueError(f"Unknown process-fraction subset: {subset_name}")
 
 
 def _read_yaml(path):
@@ -280,14 +297,13 @@ def plot_fraction_comparisons(
 
     plotting_config = _read_yaml(plotting_config_path)
     labels_config = _read_labels_yaml(labels_config_path)
-    variables = plotting_config.get("variables_set_small", [])
+    variables = plotting_config.get("variables_set_large", [])
     if not variables:
-        raise ValueError("No variables configured in variables_set_small.")
+        raise ValueError("No variables configured in variables_set_large.")
 
     process_fractions = cr.CorrectionSet.from_file(
         str(process_fractions_path)
     )["process_fractions"]
-    classic_fractions = _classic_process_fractions(frame, process_fractions)
     stack_order = ("data", "wjets", "ttbar")
     stack_labels = {
         "data": "QCD",
@@ -295,91 +311,109 @@ def plot_fraction_comparisons(
         "ttbar": "ttbar",
     }
 
-    for variable in variables:
-        bins = _get_bins(plotting_config, variable)
-
-        fig, axis = plt.subplots(figsize=(8, 6))
-
-        nn_cumulative = np.zeros(len(bins) - 1, dtype=np.float64)
-        classic_cumulative = np.zeros(len(bins) - 1, dtype=np.float64)
-
-        for stack_index, key in enumerate(stack_order):
-            color = FRACTION_COLORS[key]
-            label = stack_labels[key]
-            nn_means = np.nan_to_num(
-                _binned_mean(
-                    frame[variable].to_numpy(),
-                    frame[NN_FRACTIONS[key]].to_numpy(),
-                    bins,
-                ),
-                nan=0.0,
-            )
-            classic_means = np.nan_to_num(
-                _binned_mean(
-                    frame[variable].to_numpy(),
-                    classic_fractions[key],
-                    bins,
-                ),
-                nan=0.0,
-            )
-
-            nn_lower = nn_cumulative.copy()
-            nn_cumulative += nn_means
-            axis.fill_between(
-                bins,
-                np.r_[nn_lower, nn_lower[-1]],
-                np.r_[nn_cumulative, nn_cumulative[-1]],
-                step="post",
-                color=color,
-                alpha=0.45,
-                label=f"NN {label}",
-            )
-
-            classic_cumulative += classic_means
-            classic_label = (
-                "Classic QCD"
-                if stack_index == 0
-                else "Classic QCD+Wjets"
-                if stack_index == 1
-                else "Classic total"
-            )
-            axis.step(
-                bins,
-                np.r_[classic_cumulative, classic_cumulative[-1]],
-                where="post",
-                color=color,
-                linestyle="--",
-                linewidth=2.0,
-                label=classic_label,
-            )
-
-        axis.set_xlim(bins[0], bins[-1])
-        axis.set_ylim(0.0, 1.05)
-        axis.set_xlabel(_get_label(labels_config, variable))
-        axis.set_ylabel("Process fraction")
-        axis.grid(True, which="major", alpha=0.25)
-        axis.legend(
-            loc="upper center",
-            bbox_to_anchor=(0.5, 0.88),
-            ncol=3,
-            fontsize=9,
-            frameon=False,
+    for subset_name in FRACTION_SUBSET_NAMES:
+        subset_frame = _fraction_subset(frame, subset_name)
+        classic_fractions = _classic_process_fractions(
+            subset_frame,
+            process_fractions,
         )
-        adjust_ylim_for_legend(axis, spacing=0.18)
+        subset_output_dir = output_dir / subset_name
+        subset_output_dir.mkdir(parents=True, exist_ok=True)
 
-        CMS_LABEL([axis])
-        CMS_LUMI_TITLE([axis])
-        CMS_CHANNEL_TITLE([axis])
-        CMS_CATEGORY_TITLE([axis], title="fraction classifier")
+        for variable in variables:
+            bins = _get_bins(plotting_config, variable)
 
-        fig.tight_layout()
-        for extension in ("png", "pdf"):
-            fig.savefig(
-                output_dir / f"training_fraction_{variable}.{extension}",
-                dpi=200,
-                bbox_inches="tight",
+            fig, axis = plt.subplots(figsize=(10, 8))
+
+            nn_cumulative = np.zeros(len(bins) - 1, dtype=np.float64)
+            classic_cumulative = np.zeros(len(bins) - 1, dtype=np.float64)
+
+            for stack_index, key in enumerate(stack_order):
+                color = FRACTION_COLORS[key]
+                label = stack_labels[key]
+                nn_means = np.nan_to_num(
+                    _binned_mean(
+                        subset_frame[variable].to_numpy(),
+                        subset_frame[NN_FRACTIONS[key]].to_numpy(),
+                        bins,
+                    ),
+                    nan=0.0,
+                )
+                classic_means = np.nan_to_num(
+                    _binned_mean(
+                        subset_frame[variable].to_numpy(),
+                        classic_fractions[key],
+                        bins,
+                    ),
+                    nan=0.0,
+                )
+
+                nn_lower = nn_cumulative.copy()
+                nn_cumulative += nn_means
+                axis.fill_between(
+                    bins,
+                    np.r_[nn_lower, nn_lower[-1]],
+                    np.r_[nn_cumulative, nn_cumulative[-1]],
+                    step="post",
+                    color=color,
+                    alpha=0.4,
+                    label=f"NN {label}",
+                )
+                axis.step(
+                    bins,
+                    np.r_[nn_cumulative, nn_cumulative[-1]],
+                    where="post",
+                    color=color,
+                    alpha=1.0,
+                    linewidth=1.5,
+                    label="_nolegend_",
+                )
+
+                classic_cumulative += classic_means
+                classic_label = (
+                    "Classic QCD"
+                    if stack_index == 0
+                    else "Classic QCD+Wjets"
+                    if stack_index == 1
+                    else "Classic total"
+                )
+                axis.step(
+                    bins,
+                    np.r_[classic_cumulative, classic_cumulative[-1]],
+                    where="post",
+                    color=color,
+                    linestyle="--",
+                    linewidth=2.0,
+                    label=classic_label,
+                )
+
+            axis.set_xlim(bins[0], bins[-1])
+            axis.set_ylim(0.0, 1.05)
+            axis.set_xlabel(_get_label(labels_config, variable))
+            axis.set_ylabel("Process fraction")
+            axis.grid(True, which="major", alpha=0.25)
+            axis.legend(
+                loc="upper center",
+                bbox_to_anchor=(0.5, 0.88),
+                ncol=3,
+                fontsize=18,
+                frameon=False,
             )
-        plt.close(fig)
+            adjust_ylim_for_legend(axis, spacing=0.18)
+
+            CMS_LABEL([axis])
+            CMS_LUMI_TITLE([axis])
+            CMS_CHANNEL_TITLE([axis])
+
+            fig.tight_layout()
+            for extension in ("png", "pdf"):
+                fig.savefig(
+                    subset_output_dir
+                    / f"training_fraction_{variable}.{extension}",
+                    dpi=200,
+                    bbox_inches="tight",
+                )
+            plt.close(fig)
 
     return output_dir
 

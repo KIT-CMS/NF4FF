@@ -97,11 +97,14 @@ def _predict_drsr_correction(
     return corrections
 
 
-def _load_feature_file_by_event(df, path: Union[str, Path]) -> None:
+def _load_feature_file(df, path: Union[str, Path]) -> None:
     path = Path(path)
     feature_frame = pd.read_feather(path)
-    if "event" not in feature_frame.columns:
-        raise KeyError(f"Feature file {path} does not contain an 'event' column.")
+    key_column = "row_index" if "row_index" in feature_frame.columns else "event"
+    if key_column not in feature_frame.columns:
+        raise KeyError(
+            f"Feature file {path} does not contain a 'row_index' or 'event' column."
+        )
 
     feature_columns = [
         column for column in feature_frame.columns
@@ -111,13 +114,16 @@ def _load_feature_file_by_event(df, path: Union[str, Path]) -> None:
         return
 
     compact = (
-        feature_frame[["event", *feature_columns]]
-        .groupby("event", as_index=False, sort=False)
+        feature_frame[[key_column, *feature_columns]]
+        .groupby(key_column, as_index=False, sort=False)
         .last()
-        .set_index("event")
+        .set_index(key_column)
     )
     for column in feature_columns:
-        df.events[column] = df.events["event"].map(compact[column])
+        if key_column == "row_index":
+            df.events[column] = df.events.index.to_series().map(compact[column])
+        else:
+            df.events[column] = df.events["event"].map(compact[column])
 
 
 def calculate_and_store_drsr_correction_factors(
@@ -131,14 +137,14 @@ def calculate_and_store_drsr_correction_factors(
     squeezing: Optional[float] = 0.99,
     batch_size: int = 65536,
 ) -> Path:
-    """Calculate C(x)=NN(x)/(1-NN(x)) for each process on data AR."""
+    """Calculate C(x)=NN(x)/(1-NN(x)) for each process on all AR rows."""
     if batch_size <= 0:
         raise ValueError(f"batch_size must be positive, got {batch_size}")
 
     df = load_data(data_path, masks_path)
-    frame = df.data.AR.events.copy()
+    frame = df.AR.events.copy()
     if frame.empty:
-        raise ValueError("No data events selected in AR for DRSR corrections.")
+        raise ValueError("No events selected in AR for DRSR corrections.")
 
     training_variables = _load_variables(training_variables_path)
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
@@ -212,7 +218,7 @@ def calculate_drsr_corrected_training_fraction_fake_factor(
             for column in sorted(required_columns)
         }
         raise ValueError(
-            f"{output_name} has {invalid}/{len(frame)} data AR events with "
+            f"{output_name} has {invalid}/{len(frame)} AR events with "
             "non-finite fraction, fake-factor, or DRSR correction inputs. "
             f"Non-finite counts by column: {nonfinite_by_column}"
         )
@@ -249,7 +255,7 @@ def calculate_and_store_drsr_corrected_training_fraction_fake_factors(
     grouping: str = "njets",
     squeezing: Optional[float] = 0.99,
 ) -> Path:
-    """Calculate DRSR-corrected MLF fake factors for data events in AR."""
+    """Calculate DRSR-corrected MLF fake factors for all events in AR."""
     for path, description in (
         (fraction_feature_path, "training-fraction feature file"),
         (fake_factor_feature_path, "process fake-factor feature file"),
@@ -260,14 +266,14 @@ def calculate_and_store_drsr_corrected_training_fraction_fake_factors(
             raise FileNotFoundError(f"Missing {description}: {path}")
 
     df = load_data(data_path, masks_path)
-    _load_feature_file_by_event(df, fraction_feature_path)
-    _load_feature_file_by_event(df, fake_factor_feature_path)
-    _load_feature_file_by_event(df, drsr_correction_feature_path)
+    _load_feature_file(df, fraction_feature_path)
+    _load_feature_file(df, fake_factor_feature_path)
+    _load_feature_file(df, drsr_correction_feature_path)
 
-    calculation_frame = df.data.AR.events.copy()
+    calculation_frame = df.AR.events.copy()
     if calculation_frame.empty:
         raise ValueError(
-            "No data events selected in AR for DRSR-corrected MLF fake factors."
+            "No events selected in AR for DRSR-corrected MLF fake factors."
         )
 
     output_name = calculate_drsr_corrected_training_fraction_fake_factor(
@@ -280,7 +286,7 @@ def calculate_and_store_drsr_corrected_training_fraction_fake_factors(
         invalid = int((~np.isfinite(output_values)).sum())
         raise ValueError(
             f"{output_name} calculation produced {invalid} non-finite values "
-            "in data AR."
+            "in AR."
         )
 
     feature_df = pd.DataFrame({

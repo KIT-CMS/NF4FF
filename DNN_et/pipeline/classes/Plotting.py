@@ -1,8 +1,11 @@
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import pandas as pd
 from groupings import grouping_bounds, grouping_source, grouping_suffix
+
+import matplotlib.ticker as mticker
 
 def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
     ax[0].set_title(
@@ -32,7 +35,7 @@ def CMS_LABEL(ax, *args, **kwargs):
     ax[0].text(
         0.025, 0.95,
         "Private work (CMS data/simulation)",
-        fontsize=15,
+        fontsize=20,
         verticalalignment='top',
         fontproperties="Tex Gyre Heros:italic",
         bbox=dict(facecolor="white", alpha=0, edgecolor="white", boxstyle="round,pad=0.5"),
@@ -1110,13 +1113,30 @@ def FF_closure_in_DR_wjets(
 
 
     ax[0].set_ylabel('Events')
-    ax[0].legend()
+    ax[0].legend(
+        loc="upper right",
+        ncol=1,
+        frameon=False,
+        fontsize=18,
+        handlelength=1.8,
+        columnspacing=1.1,
+        labelspacing=0.6,
+    )
+
+    formatter = mticker.ScalarFormatter(useMathText=True)
+    formatter.set_scientific(True)
+    formatter.set_powerlimits((0, 0))  # always use scientific notation
+
+    CMS_LABEL(ax)
+    #CMS_CATEGORY_TITLE(ax)
+    CMS_LUMI_TITLE(ax)
+    CMS_CHANNEL_TITLE(ax)
     adjust_ylim_for_legend(ax[0])
     ratio = np.divide(counts_SR_like, counts_FF_AR_like, out=np.zeros_like(counts_SR_like, dtype=float), where=counts_FF_AR_like > 0)
     ratio_err_SR_like = np.divide(err_SR_like, counts_FF_AR_like, out=np.zeros_like(err_SR_like), where=counts_FF_AR_like > 0)
     ratio_err_FF_AR_like = np.divide(err_FF_AR_like, counts_FF_AR_like, out=np.zeros_like(err_FF_AR_like), where=counts_FF_AR_like > 0)
 
-    ax[1].errorbar(bin_centers, ratio, xerr = err_bin, yerr = ratio_err_SR_like, fmt='o', color='black', markersize=6, label='ratio')
+    ax[1].errorbar(bin_centers, ratio, xerr = err_bin, yerr = ratio_err_SR_like, fmt='o', color='black', markersize=6, label='data(SR-like)')
     ax[1].fill_between(
         bin_centers,
         1 - ratio_err_FF_AR_like,
@@ -1126,7 +1146,7 @@ def FF_closure_in_DR_wjets(
         step='mid',
         label='Sys. Unc.',
     )
-    ax[1].set_ylabel("Data / Model")
+    ax[1].set_ylabel("Ratio")
     ax[1].set_ylim([0.75, 1.25])
     ax[1].grid(True, linestyle=':', alpha=0.7)
     ax[1].tick_params(direction='in', top=True, right=True)
@@ -1134,6 +1154,7 @@ def FF_closure_in_DR_wjets(
     ax[1].set_xlabel(label)
 
     return fig, ax
+
 
 def FF_closure_in_DR_wjets_with_stat_unc(
     df,
@@ -1373,13 +1394,32 @@ def FF_closure_in_DR_qcd(
     ax[0].stairs(counts_FF_AR_like, bin_edges, label = r'$F_\mathrm{F} \cdot $ data(AR-like)', ls = '--', linewidth = 2)
 
     ax[0].set_ylabel('Events')
-    ax[0].legend()
+    ax[0].legend(
+        loc="upper right",
+        ncol=1,
+        frameon=False,
+        fontsize=18,
+        handlelength=1.8,
+        columnspacing=1.1,
+        labelspacing=0.6,
+    )
+
+    formatter = mticker.ScalarFormatter(useMathText=True)
+    formatter.set_scientific(True)
+    formatter.set_powerlimits((0, 0))  # always use scientific notation
+
+
+    CMS_LABEL(ax)
+    #CMS_CATEGORY_TITLE(ax)
+    CMS_LUMI_TITLE(ax)
+    CMS_CHANNEL_TITLE(ax)
     adjust_ylim_for_legend(ax[0])
+
     ratio = np.divide(counts_SR_like, counts_FF_AR_like, out=np.zeros_like(counts_SR_like, dtype=float), where=counts_FF_AR_like > 0)
     ratio_err_SR_like = np.divide(err_SR_like, counts_FF_AR_like, out=np.zeros_like(err_SR_like), where=counts_FF_AR_like > 0)
     ratio_err_FF_AR_like = np.divide(err_FF_AR_like, counts_FF_AR_like, out=np.zeros_like(err_FF_AR_like), where=counts_FF_AR_like > 0)
 
-    ax[1].errorbar(bin_centers, ratio, xerr = err_bin, yerr = ratio_err_SR_like, fmt='o', color='black', markersize=6, label='ratio')
+    ax[1].errorbar(bin_centers, ratio, xerr = err_bin, yerr = ratio_err_SR_like, fmt='o', color='black', markersize=6, label='data(SR-like)')
     ax[1].fill_between(
         bin_centers,
         1 - ratio_err_FF_AR_like,
@@ -1389,7 +1429,7 @@ def FF_closure_in_DR_qcd(
         step='mid',
         label='Sys. Unc.',
     )
-    ax[1].set_ylabel("Data / Model")
+    ax[1].set_ylabel("Ratio")
     ax[1].set_ylim([0.75, 1.25])
     ax[1].grid(True, linestyle=':', alpha=0.7)
     ax[1].tick_params(direction='in', top=True, right=True)
@@ -1436,10 +1476,6 @@ def FF_closure_in_DR_ttbar(
         },
         constrained_layout=True,
     )
-    CMS_LABEL(ax)
-    #CMS_CATEGORY_TITLE(ax)
-    CMS_LUMI_TITLE(ax)
-    CMS_CHANNEL_TITLE(ax)
 
     ax[0].errorbar(
         bin_centers,
@@ -1457,13 +1493,32 @@ def FF_closure_in_DR_ttbar(
     ax[0].stairs(counts_FF_AR_like, bin_edges, label = r'$F_\mathrm{F} \cdot $ data(AR-like)', ls = '--', linewidth = 2)
 
     ax[0].set_ylabel('Events')
-    ax[0].legend()
+    ax[0].legend(
+        loc="upper right",
+        ncol=1,
+        frameon=False,
+        fontsize=18,
+        handlelength=1.8,
+        columnspacing=1.1,
+        labelspacing=0.6,
+    )
+    CMS_LABEL(ax)
+    #CMS_CATEGORY_TITLE(ax)
+    CMS_LUMI_TITLE(ax)
+    CMS_CHANNEL_TITLE(ax)
     adjust_ylim_for_legend(ax[0])
+
+
+    formatter = mticker.ScalarFormatter(useMathText=True)
+    formatter.set_scientific(True)
+    formatter.set_powerlimits((0, 0))  # always use scientific notation
+
+
     ratio = np.divide(counts_SR_like, counts_FF_AR_like, out=np.zeros_like(counts_SR_like, dtype=float), where=counts_FF_AR_like > 0)
     ratio_err_SR_like = np.divide(err_SR_like, counts_FF_AR_like, out=np.zeros_like(err_SR_like), where=counts_FF_AR_like > 0)
     ratio_err_FF_AR_like = np.divide(err_FF_AR_like, counts_FF_AR_like, out=np.zeros_like(err_FF_AR_like), where=counts_FF_AR_like > 0)
 
-    ax[1].errorbar(bin_centers, ratio, xerr = err_bin, yerr = ratio_err_SR_like, fmt='o', color='black', markersize=6, label='ratio')
+    ax[1].errorbar(bin_centers, ratio, xerr = err_bin, yerr = ratio_err_SR_like, fmt='o', color='black', markersize=6, label='data(SR-like)')
     ax[1].fill_between(
         bin_centers,
         1 - ratio_err_FF_AR_like,
@@ -1471,9 +1526,9 @@ def FF_closure_in_DR_ttbar(
         color='gray',
         alpha=0.3,
         step='mid',
-        label='Sys. Unc.',
+        label='Stat. Unc.',
     )
-    ax[1].set_ylabel("Data / Model")
+    ax[1].set_ylabel("Ratio")
     ax[1].set_ylim([0.75, 1.25])
     ax[1].grid(True, linestyle=':', alpha=0.7)
     ax[1].tick_params(direction='in', top=True, right=True)
@@ -2092,7 +2147,7 @@ def _decorate_grouped_fake_factor_axes(fig, ax, grouping):
         handles,
         labels,
         loc='upper center',
-        bbox_to_anchor=(0.5, 0.995),
+        bbox_to_anchor=(0.5, 0.98),
         ncol=n_columns,
         frameon=False,
         prop={'size': 9},
@@ -2266,9 +2321,139 @@ def plot_fake_factors_grouped_c(df, category_title, grouping='tau_decaymode', sq
     ax[2].set_xlabel(r'$F_{\mathrm{F}}$ value')
     ax[2].legend(prop={'size': 9})
 
-
-
     return fig, ax
+
+
+def _plot_grouped_fake_factor_split_ranges(
+    frames,
+    category_title,
+    grouping,
+    split_grouping,
+):
+    """Plot 0--1 linearly and 1--10 with logarithmic x and y axes."""
+    suffix = grouping_suffix(grouping)
+    processes = ("wjets", "qcd", "ttbar")
+    ff_columns = tuple(
+        f"ff_dnn_{process}{suffix}"
+        for process in processes
+    )
+    linear_bins = np.linspace(0.0, 1.0, 100)
+    logarithmic_bins = np.logspace(0.0, 1.0, 91)
+
+    fig, axes = plt.subplots(
+        3,
+        2,
+        figsize=(12, 7),
+        sharex="col",
+        gridspec_kw={
+            "width_ratios": (3, 1),
+            "wspace": 0.08,
+        },
+    )
+    left_axes = axes[:, 0]
+    right_axes = axes[:, 1]
+
+    for row, (frame, process, ff_column) in enumerate(
+        zip(frames, processes, ff_columns)
+    ):
+        left_axis = left_axes[row]
+        right_axis = right_axes[row]
+        distributions = [
+            (frame[ff_column], "inclusive", "-", 2),
+        ]
+        distributions.extend(
+            (frame[ff_column][mask], mask_label, "--", 1.5)
+            for mask, mask_label in _grouping_masks(
+                frame,
+                split_grouping,
+                process=process,
+            )
+        )
+
+        left_counts = []
+        right_counts = []
+        for values, distribution_label, linestyle, linewidth in distributions:
+            counts, _, _ = left_axis.hist(
+                values,
+                bins=linear_bins,
+                histtype="step",
+                linestyle=linestyle,
+                linewidth=linewidth,
+                label=(
+                    distribution_label
+                    if row == 0
+                    or (row == 2 and split_grouping == "njets")
+                    else None
+                ),
+            )
+            left_counts.append(counts)
+            counts, _, _ = right_axis.hist(
+                values,
+                bins=logarithmic_bins,
+                histtype="step",
+                linestyle=linestyle,
+                linewidth=linewidth,
+            )
+            right_counts.append(counts)
+
+        left_axis.set_xlim(0.0, 1.0)
+        left_axis.set_ylabel("Events")
+        left_axis.yaxis.set_major_locator(
+            mticker.MaxNLocator(nbins=5, min_n_ticks=2)
+        )
+        left_axis.ticklabel_format(
+            axis="y",
+            style="sci",
+            scilimits=(0, 0),
+            useMathText=True,
+        )
+        right_axis.set_xlim(1.0, 10.0)
+        right_axis.set_xscale("log")
+        right_axis.set_yscale("log")
+        right_axis.xaxis.set_major_formatter(
+            mticker.FuncFormatter(lambda value, _: f"{value:g}")
+        )
+        right_axis.yaxis.set_major_formatter(
+            mticker.FuncFormatter(lambda value, _: f"{value:g}")
+        )
+        right_axis.xaxis.set_minor_formatter(mticker.NullFormatter())
+        right_axis.yaxis.set_minor_formatter(mticker.NullFormatter())
+        right_axis.yaxis.tick_right()
+        right_axis.tick_params(
+            axis="y",
+            which="both",
+            labelleft=False,
+            labelright=True,
+        )
+
+        right_maximum = max(
+            (float(np.max(counts)) for counts in right_counts),
+            default=0.0,
+        )
+        right_axis.set_ylim(
+            1.0,
+            max(10.0, 1.3 * right_maximum),
+        )
+
+        if row == 0:
+            left_maximum = max(
+                (float(np.max(counts)) for counts in left_counts),
+                default=0.0,
+            )
+            left_axis.set_ylim(
+                0.0,
+                1.3 * left_maximum if left_maximum > 0.0 else 1.0,
+            )
+
+    left_axes[-1].set_xlabel(r'$F_{\mathrm{F}}$ value')
+    right_axes[-1].set_xlabel(r'$F_{\mathrm{F}}$ value')
+
+    CMS_CHANNEL_TITLE([left_axes[0]])
+    CMS_LUMI_TITLE([left_axes[0]])
+    CMS_LABEL([left_axes[0]])
+    _decorate_grouped_fake_factor_axes(fig, left_axes, split_grouping)
+
+    return fig, axes
 
 
 def plot_fake_factors_grouped(
@@ -2278,66 +2463,13 @@ def plot_fake_factors_grouped(
     split_grouping=None,
 ):
     split_grouping = grouping if split_grouping is None else split_grouping
-    suffix = grouping_suffix(grouping)
-    ff_wjets = f'ff_dnn_wjets{suffix}'
-    ff_qcd = f'ff_dnn_qcd{suffix}'
-    ff_ttbar = f'ff_dnn_ttbar{suffix}'
-
-    bins = np.linspace(0, 1, 100)
-
     frame = df.data.AR
-
-    fig, ax = plt.subplots(3, 1, figsize=(10, 7), sharex=True)
-
-    first_ax_counts = []
-    counts, _, _ = ax[0].hist(
-        frame[ff_wjets],
-        bins=bins,
-        histtype='step',
-        linewidth=2,
-        label='inclusive',
+    return _plot_grouped_fake_factor_split_ranges(
+        (frame, frame, frame),
+        category_title,
+        grouping,
+        split_grouping,
     )
-    first_ax_counts.append(counts)
-    for mask, mask_label in _grouping_masks(frame, split_grouping, process="wjets"):
-        counts, _, _ = ax[0].hist(
-            frame[ff_wjets][mask],
-            bins=bins,
-            histtype='step',
-            ls='--',
-            label=f'{mask_label}',
-        )
-        first_ax_counts.append(counts)
-    ax[0].set_ylabel('Events')
-    first_ax_maximum = max(np.max(counts) for counts in first_ax_counts)
-    ax[0].set_ylim(0, 1.2 * first_ax_maximum if first_ax_maximum > 0 else 1)
-
-
-    CMS_CHANNEL_TITLE([ax[0]])
-    CMS_LUMI_TITLE([ax[0]])
-    CMS_LABEL([ax[0]])
-    CMS_CATEGORY_TITLE([ax[0]], title=category_title)
-
-    ax[1].set_ylabel('Events')
-    ax[1].hist(frame[ff_qcd], bins=bins, histtype='step', linewidth=2)
-    for mask, mask_label in _grouping_masks(frame, split_grouping, process="qcd"):
-        ax[1].hist(frame[ff_qcd][mask], bins=bins, histtype='step', ls='--')
-
-    ax[2].set_ylabel('Events')
-    ax[2].hist(frame[ff_ttbar], bins=bins, histtype='step', linewidth=2)
-    for mask, mask_label in _grouping_masks(frame, split_grouping, process="ttbar"):
-        ax[2].hist(
-            frame[ff_ttbar][mask],
-            bins=bins,
-            histtype='step',
-            ls='--',
-            label=mask_label if split_grouping == "njets" else None,
-        )
-    ax[2].set_xlabel(r'$F_{\mathrm{F}}$ value')
-
-    _decorate_grouped_fake_factor_axes(fig, ax, split_grouping)
-
-
-    return fig, ax
 
 
 def plot_fake_factors_in_dr_grouped_c(df, category_title, squeeze_upper_bound, grouping='tau_decaymode'):
@@ -2391,77 +2523,16 @@ def plot_fake_factors_in_dr_grouped(
     split_grouping=None,
 ):
     split_grouping = grouping if split_grouping is None else split_grouping
-    suffix = grouping_suffix(grouping)
-    ff_wjets = f'ff_dnn_wjets{suffix}'
-    ff_qcd = f'ff_dnn_qcd{suffix}'
-    ff_ttbar = f'ff_dnn_ttbar{suffix}'
-
-    bins = np.linspace(0, 1, 100)
-
-    frame_wjets = df.data.AR_like_wjets
-    frame_qcd = df.data.AR_like_qcd
-    frame_ttbar = df.data.AR_like_ttbar
-
-    fig, ax = plt.subplots(3, 1, figsize=(10, 7), sharex=True)
-    first_ax_counts = []
-    counts, _, _ = ax[0].hist(
-        frame_wjets[ff_wjets],
-        bins=bins,
-        histtype='step',
-        linewidth=2,
-        label='inclusive',
+    return _plot_grouped_fake_factor_split_ranges(
+        (
+            df.data.AR_like_wjets,
+            df.data.AR_like_qcd,
+            df.data.AR_like_ttbar,
+        ),
+        category_title,
+        grouping,
+        split_grouping,
     )
-    first_ax_counts.append(counts)
-    for mask, mask_label in _grouping_masks(
-        frame_wjets,
-        split_grouping,
-        process="wjets",
-    ):
-        counts, _, _ = ax[0].hist(
-            frame_wjets[ff_wjets][mask],
-            bins=bins,
-            histtype='step',
-            ls='--',
-            label=f'{mask_label}',
-        )
-        first_ax_counts.append(counts)
-    ax[0].set_ylabel('Events')
-    first_ax_maximum = max(np.max(counts) for counts in first_ax_counts)
-    ax[0].set_ylim(0, 1.2 * first_ax_maximum if first_ax_maximum > 0 else 1)
-
-    CMS_CHANNEL_TITLE([ax[0]])
-    CMS_LUMI_TITLE([ax[0]])
-    CMS_LABEL([ax[0]])
-    CMS_CATEGORY_TITLE([ax[0]], title=category_title)
-
-    ax[1].set_ylabel('Events')
-    ax[1].hist(frame_qcd[ff_qcd], bins=bins, histtype='step', linewidth=2)
-    for mask, mask_label in _grouping_masks(
-        frame_qcd,
-        split_grouping,
-        process="qcd",
-    ):
-        ax[1].hist(frame_qcd[ff_qcd][mask], bins=bins, histtype='step', ls='--')
-
-    ax[2].set_ylabel('Events')
-    ax[2].hist(frame_ttbar[ff_ttbar], bins=bins, histtype='step', linewidth=2)
-    for mask, mask_label in _grouping_masks(
-        frame_ttbar,
-        split_grouping,
-        process="ttbar",
-    ):
-        ax[2].hist(
-            frame_ttbar[ff_ttbar][mask],
-            bins=bins,
-            histtype='step',
-            ls='--',
-            label=mask_label if split_grouping == "njets" else None,
-        )
-    ax[2].set_xlabel(r'$F_{\mathrm{F}}$ value')
-
-    _decorate_grouped_fake_factor_axes(fig, ax, split_grouping)
-
-    return fig, ax
 
 def plot_NN_output_FF(
         NN_output_SR_like,

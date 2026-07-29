@@ -6,8 +6,7 @@ import numpy as np
 
 from classes import load_data
 from groupings import GROUPING_NAMES
-
-
+from plotting import CMS_LABEL, CMS_CATEGORY_TITLE, CMS_CHANNEL_TITLE, CMS_LUMI_TITLE, reorder_for_rowwise_legend, adjust_ylim_for_legend
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATA_PATH = PROJECT_ROOT / "data" / "dataframe_complete.feather"
 DEFAULT_MASKS_PATH = PROJECT_ROOT / "configs" / "masks.yaml"
@@ -96,13 +95,12 @@ def _plot_reduced_closure(
     model_uncertainty = _safe_ratio(np.sqrt(wjets_variance), wjets_counts)
 
     fig, axes = plt.subplots(
-        2,
+        1,
         1,
         figsize=(10, 9),
         sharex=True,
-        gridspec_kw={"height_ratios": (3, 1), "hspace": 0.05},
     )
-    axes[0].errorbar(
+    axes.errorbar(
         centers,
         reduced_counts,
         xerr=0.5 * widths,
@@ -111,7 +109,7 @@ def _plot_reduced_closure(
         color="black",
         label="Reduced data",
     )
-    axes[0].bar(
+    axes.bar(
         centers,
         wjets_counts,
         width=widths,
@@ -119,31 +117,50 @@ def _plot_reduced_closure(
         alpha=0.8,
         label="W+jets simulation",
     )
-    axes[0].set_ylabel("Events")
-    axes[0].set_title(f"W+jets reduced-data closure: {grouping}")
-    axes[0].legend()
+    axes.set_ylabel("Events")
+    handles, labels = axes.get_legend_handles_labels()
+    handles = handles[::-1]
+    labels = labels[::-1]
+    handles, labels = reorder_for_rowwise_legend(handles, labels, ncol=2)
+    axes.legend(
+        handles,
+        labels,
+        loc='upper center',
+        ncol=2,
+        frameon=False,
+        bbox_to_anchor=(0.5, 0.90),
+        fontsize=20,
+        handlelength=1.8,
+        columnspacing=1.1,
+        labelspacing=0.6,
+    )
+    CMS_LABEL([axes])
+    CMS_LUMI_TITLE([axes])
+    # CMS_CATEGORY_TITLE([axes], title="W+jets enrichment")
+    CMS_CHANNEL_TITLE([axes])
 
-    axes[1].errorbar(
-        centers,
-        ratio,
-        xerr=0.5 * widths,
-        fmt="o",
-        color="black",
-    )
-    axes[1].fill_between(
-        centers,
-        1.0 - model_uncertainty,
-        1.0 + model_uncertainty,
-        step="mid",
-        color="gray",
-        alpha=0.35,
-        label="Simulation stat. unc.",
-    )
-    axes[1].axhline(1.0, color="red", linestyle="--")
-    axes[1].set_ylim(0.5, 1.5)
-    axes[1].set_ylabel("Data / Model")
-    axes[1].set_xlabel("NN output")
-    axes[1].legend()
+    adjust_ylim_for_legend(axes, spacing=0.15)
+    # axes.errorbar(
+    #     centers,
+    #     ratio,
+    #     xerr=0.5 * widths,
+    #     fmt="o",
+    #     color="black",
+    # )
+    # axes[1].fill_between(
+    #     centers,
+    #     1.0 - model_uncertainty,
+    #     1.0 + model_uncertainty,
+    #     step="mid",
+    #     color="gray",
+    #     alpha=0.35,
+    #     label="Simulation stat. unc.",
+    # )
+    # axes[1].axhline(1.0, color="red", linestyle="--")
+    # axes[1].set_ylim(0.5, 1.5)
+    # axes[1].set_ylabel("Data / Model")
+    # axes[1].set_xlabel("NN output")
+    # axes[1].legend()
 
     fig.savefig(output_dir / f"reduced_closure_wjets_{grouping}.png", dpi=160)
     fig.savefig(output_dir / f"reduced_closure_wjets_{grouping}.pdf")
@@ -201,9 +218,19 @@ def _plot_training_composition(
         1,
         figsize=(11, 11),
         sharex=True,
-        gridspec_kw={"height_ratios": (3, 1, 1), "hspace": 0.05},
+        gridspec_kw={"height_ratios": (3, 1, 1), "hspace": 0.1},
     )
     bottom = np.zeros_like(simulation)
+    
+    axes[0].errorbar(
+        centers,
+        data_counts,
+        xerr=0.5 * widths,
+        yerr=np.sqrt(data_counts),
+        fmt="o",
+        color="black",
+        label="Data",
+    )
     for counts, label, color in zip(component_counts, labels, colors):
         axes[0].bar(
             centers,
@@ -215,19 +242,30 @@ def _plot_training_composition(
         )
         bottom += counts
 
-    axes[0].errorbar(
-        centers,
-        data_counts,
-        xerr=0.5 * widths,
-        yerr=np.sqrt(data_counts),
-        fmt="o",
-        color="black",
-        label="Data",
-    )
-    axes[0].set_ylabel("Events")
-    axes[0].set_title(f"W+jets enrichment training: {grouping}")
-    axes[0].legend(ncol=3, frameon=False)
 
+    axes[0].set_ylabel("Events")
+    handles, labels = axes[0].get_legend_handles_labels()
+    handles = handles[::-1]
+    labels = labels[::-1]
+    handles, labels = reorder_for_rowwise_legend(handles, labels, ncol=3)
+    axes[0].legend(
+        handles,
+        labels,
+        loc='upper center',
+        ncol=3,
+        frameon=False,
+        bbox_to_anchor=(0.5, 0.90),
+        fontsize=20,
+        handlelength=1.8,
+        columnspacing=1.1,
+        labelspacing=0.6,
+    )
+    CMS_LABEL([axes[0]])
+    CMS_LUMI_TITLE([axes[0]])
+    # CMS_CATEGORY_TITLE([axes[0]], title="W+jets enrichment")
+    CMS_CHANNEL_TITLE([axes[0]])
+
+    adjust_ylim_for_legend(axes[0], spacing=0.15)
     axes[1].errorbar(
         centers,
         ratio,

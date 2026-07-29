@@ -1,3 +1,4 @@
+import json
 import numpy as np
 import torch as t
 import torch.nn.functional as F
@@ -87,13 +88,128 @@ def _qcd_yield_correction_array(frame, corrections):
     return correction_values
 
 
+def _normalize_qcd_weights_to_ss_yields(frame, weights, corrections):
+    """Normalize non-negative QCD shape weights to subtracted SS yields."""
+    normalized = np.asarray(weights, dtype=np.float64).copy()
+    bin_specs = (
+        ("njets_0", frame["njets"] == 0),
+        ("njets_1", frame["njets"] == 1),
+        ("njets_ge_2", frame["njets"] >= 2),
+    )
+    normalization = {}
+
+    for bin_name, mask in bin_specs:
+        mask = np.asarray(mask, dtype=bool)
+        observed_yield = float(normalized[mask].sum(dtype=np.float64))
+        expected_yield = float(corrections[bin_name]["yield_SS"]["qcd"])
+        if not np.isfinite(expected_yield) or expected_yield <= 0:
+            raise ValueError(
+                f"{bin_name}: invalid subtracted SS QCD yield {expected_yield}."
+            )
+        if not np.isfinite(observed_yield) or observed_yield <= 0:
+            raise ValueError(
+                f"{bin_name}: QCD enrichment weights have invalid total "
+                f"yield {observed_yield}."
+            )
+
+        scale = expected_yield / observed_yield
+        normalized[mask] *= scale
+        normalization[bin_name] = {
+            "pre_normalization_yield": observed_yield,
+            "expected_subtracted_ss_yield": expected_yield,
+            "normalization_factor": scale,
+            "post_normalization_yield": float(
+                normalized[mask].sum(dtype=np.float64)
+            ),
+        }
+
+    return normalized.astype(np.float32), normalization
+
+
+def calculate_qcd_training_yield_closure(
+    frame,
+    corrections,
+    *,
+    weight_column=QCD_FRACTION_WEIGHT_COLUMN,
+    relative_tolerance=1.0e-3,
+    absolute_tolerance=1.0,
+):
+    """Compare final SS-derived QCD training yields with subtracted OS targets."""
+    raw_weights = _weight_array(frame, weight_column, "qcd")
+    normalized_weights, normalization = _normalize_qcd_weights_to_ss_yields(
+        frame,
+        raw_weights,
+        corrections,
+    )
+    correction_values = _qcd_yield_correction_array(frame, corrections)
+    corrected_weights = normalized_weights * correction_values
+    bin_specs = (
+        ("njets_0", frame["njets"] == 0),
+        ("njets_1", frame["njets"] == 1),
+        ("njets_ge_2", frame["njets"] >= 2),
+    )
+
+    report = {}
+    failures = []
+    for bin_name, mask in bin_specs:
+        mask = np.asarray(mask, dtype=bool)
+        raw_ss_yield = float(raw_weights[mask].sum(dtype=np.float64))
+        normalized_ss_yield = float(
+            normalized_weights[mask].sum(dtype=np.float64)
+        )
+        observed_os_yield = float(
+            corrected_weights[mask].sum(dtype=np.float64)
+        )
+        expected_ss_yield = float(corrections[bin_name]["yield_SS"]["qcd"])
+        expected_os_yield = float(corrections[bin_name]["yield_OS"]["qcd"])
+        absolute_difference = observed_os_yield - expected_os_yield
+        relative_difference = (
+            absolute_difference / expected_os_yield
+            if expected_os_yield != 0.0
+            else np.inf
+        )
+        passed = bool(
+            np.isclose(
+                observed_os_yield,
+                expected_os_yield,
+                rtol=relative_tolerance,
+                atol=absolute_tolerance,
+            )
+        )
+        report[bin_name] = {
+            "raw_ss_training_yield": raw_ss_yield,
+            "ss_normalization_factor": normalization[bin_name][
+                "normalization_factor"
+            ],
+            "normalized_ss_training_yield": normalized_ss_yield,
+            "expected_subtracted_ss_yield": expected_ss_yield,
+            "os_ss_correction": float(corrections[bin_name]["correction"]),
+            "corrected_training_yield": observed_os_yield,
+            "expected_subtracted_os_yield": expected_os_yield,
+            "absolute_difference": absolute_difference,
+            "relative_difference": relative_difference,
+            "passed": passed,
+        }
+        if not passed:
+            failures.append(bin_name)
+
+    report["configuration"] = {
+        "weight_column": weight_column,
+        "relative_tolerance": relative_tolerance,
+        "absolute_tolerance": absolute_tolerance,
+    }
+    report["passed"] = not failures
+
+    return report
+
+
 def build_multiclass_training_arrays(df, training_var, qcd_yield_corrections=None):
     data_qcd_fraction = qcd_fraction_data_frame(df)
 
     class_frames = [
         data_qcd_fraction,
         df.wjets.AR.events,
-        df.ttbar.AR.events,
+        df.ttbar_J.AR.events,
     ]
     class_labels = ("qcd", "wjets", "ttbar")
 
@@ -126,6 +242,11 @@ def build_multiclass_training_arrays(df, training_var, qcd_yield_corrections=Non
     ):
         weights = _weight_array(frame, weight_column, label)
         if label == "qcd" and qcd_yield_corrections is not None:
+            weights, _ = _normalize_qcd_weights_to_ss_yields(
+                frame,
+                weights,
+                qcd_yield_corrections,
+            )
             weights = (
                 weights
                 * _qcd_yield_correction_array(frame, qcd_yield_corrections)
@@ -482,6 +603,7 @@ def train_fraction_classifier(
     masks_path=MASKS_PATH,
     training_var_path=TRAINING_VAR_PATH,
     output_dir=MODEL_RESULT_DIR,
+    yield_closure_report_path=None,
 ):
 
     # ------------------------------------------------------------
@@ -494,6 +616,35 @@ def train_fraction_classifier(
     df = load_data(data_path, masks_path)
     training_var = load_variables(training_var_path)
     qcd_yield_corrections = calculate_qcd_yield_corrections(df)
+    qcd_frame = qcd_fraction_data_frame(df)
+    yield_closure_report = calculate_qcd_training_yield_closure(
+        qcd_frame,
+        qcd_yield_corrections,
+    )
+    if yield_closure_report_path is None:
+        yield_closure_report_path = output_dir / "qcd_yield_closure.json"
+    yield_closure_report_path = Path(yield_closure_report_path)
+    yield_closure_report_path.parent.mkdir(parents=True, exist_ok=True)
+    yield_closure_report_path.write_text(
+        json.dumps(yield_closure_report, indent=2) + "\n"
+    )
+    print("QCD yield closure:", yield_closure_report)
+    if not yield_closure_report["passed"]:
+        failed_bins = [
+            bin_name
+            for bin_name in ("njets_0", "njets_1", "njets_ge_2")
+            if not yield_closure_report[bin_name]["passed"]
+        ]
+        details = ", ".join(
+            f"{bin_name}: corrected="
+            f"{yield_closure_report[bin_name]['corrected_training_yield']:.8g}, "
+            f"expected="
+            f"{yield_closure_report[bin_name]['expected_subtracted_os_yield']:.8g}, "
+            f"relative_difference="
+            f"{yield_closure_report[bin_name]['relative_difference']:.3%}"
+            for bin_name in failed_bins
+        )
+        raise ValueError(f"QCD training yield closure failed ({details}).")
 
     n_classes = 3
     X, y, parity, weights_event = build_multiclass_training_arrays(

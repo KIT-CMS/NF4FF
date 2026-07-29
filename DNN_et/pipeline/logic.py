@@ -46,6 +46,7 @@ from multiclass_classification import (
     validate_qcd_fraction_weights,
 )
 from plot_fractions import (
+    FRACTION_SUBSET_NAMES,
     calculate_and_store_fraction_nn_outputs,
     plot_fraction_comparisons,
 )
@@ -84,6 +85,7 @@ from calculate_ff_corrected import (
     calculate_and_store_corrected_fake_factors,
 )
 from plotting import (
+    create_classic_fake_factor_closure_plots,
     create_corrected_fake_factor_closure_plots,
     create_drsr_correction_distribution_plots,
     create_extrapolation_corrected_mlf_closure_plots,
@@ -125,6 +127,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW_ROOT = PROJECT_ROOT / 'Law_workflow_results'
 WORKFLOW_DATA_ROOT = WORKFLOW_ROOT / 'data'
 WORKFLOW_FEATURE_ROOT = WORKFLOW_DATA_ROOT / 'features'
+CORRECTION_JSON_ROOT = PROJECT_ROOT / 'corrections' / 'fake_factors'
+DEFAULT_CLASSIC_CORRECTION_DIR = CORRECTION_JSON_ROOT / 'classic' / '2018'
+DEFAULT_CLASSIC_FAKE_FACTORS_PATH = (
+    DEFAULT_CLASSIC_CORRECTION_DIR / 'fake_factors_et.json.gz'
+)
+DEFAULT_CLASSIC_CORRECTIONS_PATH = (
+    DEFAULT_CLASSIC_CORRECTION_DIR / 'FF_corrections_et.json.gz'
+)
+DEFAULT_NON_DRSR_CORRECTION_ROOT = CORRECTION_JSON_ROOT / 'non_drsr'
+DEFAULT_DRSR_CORRECTION_ROOT = CORRECTION_JSON_ROOT / 'drsr'
 ENRICHMENT_GROUPINGS = GROUPING_NAMES
 FF_MODEL_OUTPUT_NAMES = {
     'wjets': 'Wjets',
@@ -588,6 +600,12 @@ class TrainFractionClassifier(law.Task):
             'combined': law.LocalFileTarget(
                 output_dir / 'model_weights.pth'
             ),
+            'yield_closure': law.LocalFileTarget(
+                output_dir / 'qcd_yield_closure.json'
+            ),
+            'schema': law.LocalFileTarget(
+                output_dir / '.schema_v3_qcd_normalized_ttbar_j_only'
+            ),
         }
 
     def run(self):
@@ -597,6 +615,12 @@ class TrainFractionClassifier(law.Task):
             masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
             training_var_path=PROJECT_ROOT / 'configs' / 'training_variables.yaml',
             output_dir=output_dir,
+            yield_closure_report_path=self.output()['yield_closure'].path,
+        )
+        Path(self.output()['schema'].path).write_text(
+            "fraction classifier trained after per-njets QCD SS-yield "
+            "normalization and successful OS-yield closure; ttbar class "
+            "contains ttbar_J only\n"
         )
 
         print("FRACTION CLASSIFIER OUTPUT:", output_dir)
@@ -606,21 +630,18 @@ class PlotFractions(law.Task):
     """Evaluate and plot the three-class process-fraction classifier."""
 
     process_fractions_path = law.Parameter(
-        default=(
-            '/work/mmoser/TauFakeFactors.back/workdir/'
-            'ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz'
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
     batch_size = luigi.IntParameter(default=100_000)
 
     def requires(self):
         return TrainFractionClassifier()
 
-    def _variables_small(self):
+    def _variables_large(self):
         config_path = PROJECT_ROOT / 'configs' / 'plotting.yaml'
         with open(config_path, 'r', encoding='utf-8') as stream:
             config = yaml.safe_load(stream) or {}
-        return tuple(config.get('variables_set_small', ()))
+        return tuple(config.get('variables_set_large', ()))
 
     def output(self):
         plot_dir = WORKFLOW_ROOT / 'plots' / 'training_fraction'
@@ -634,14 +655,17 @@ class PlotFractions(law.Task):
             'schema': law.LocalFileTarget(
                 WORKFLOW_FEATURE_ROOT
                 / 'training_fraction'
-                / '.schema_v2_all_ar'
+                / '.schema_v7_all_ar_njets_split_alpha_0p4_plots'
             ),
         }
         outputs.update({
-            f'{variable}_{extension}': law.LocalFileTarget(
-                plot_dir / f'training_fraction_{variable}.{extension}'
+            f'{subset}_{variable}_{extension}': law.LocalFileTarget(
+                plot_dir
+                / subset
+                / f'training_fraction_{variable}.{extension}'
             )
-            for variable in self._variables_small()
+            for subset in FRACTION_SUBSET_NAMES
+            for variable in self._variables_large()
             for extension in ('png', 'pdf')
         })
         return outputs
@@ -681,7 +705,8 @@ class PlotFractions(law.Task):
         print("FRACTION FEATURE OUTPUT:", feature_path)
         print("FRACTION PLOT OUTPUT:", WORKFLOW_ROOT / 'plots' / 'training_fraction')
         Path(self.output()['schema'].path).write_text(
-            "fraction_qcd, fraction_wjets, fraction_ttbar calculated for all AR rows\n"
+            "fraction_qcd, fraction_wjets, fraction_ttbar calculated for all "
+            "AR rows; plots made inclusively and in njets bins\n"
         )
 
 
@@ -1971,10 +1996,7 @@ class CalculateFakeFactors(law.Task):
     squeezing = luigi.OptionalFloatParameter(default=None)
     batch_size = luigi.IntParameter(default=65536, significant=False)
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
 
     def requires(self):
@@ -2026,10 +2048,7 @@ class CalculateExtrapolationCorrectedFakeFactors(law.Task):
     squeezing_loss_limit = luigi.FloatParameter(default=0.1)
     batch_size = luigi.IntParameter(default=65536, significant=False)
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
 
     def requires(self):
@@ -2183,6 +2202,22 @@ class CalculateDRSRCorrectionFactors(law.Task):
             ),
         }
 
+    def complete(self):
+        correction_columns = [
+            drsr_correction_name(process, squeezing=self.squeezing)
+            for process in ('wjets', 'qcd', 'ttbar')
+        ]
+        return (
+            super().complete()
+            and all(
+                ar_feature_file_is_complete(
+                    self.output()['features'].path,
+                    column,
+                )
+                for column in correction_columns
+            )
+        )
+
     def run(self):
         drsr_model_dir = drsr_squeezed_model_dir(
             self.squeezing,
@@ -2222,10 +2257,7 @@ class CalculateTrainingFractionFakeFactors(law.Task):
     )
     squeezing = luigi.OptionalFloatParameter(default=0.99)
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
 
     def requires(self):
@@ -2302,13 +2334,10 @@ class CalculateCorrectedTrainingFractionFakeFactors(law.Task):
     )
     squeezing = luigi.OptionalFloatParameter(default=0.99)
     correction_set_root = law.Parameter(
-        default="/work/mmoser/TauFakeFactors/workdirs"
+        default=str(DEFAULT_NON_DRSR_CORRECTION_ROOT)
     )
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
 
     def requires(self):
@@ -2377,7 +2406,6 @@ class CalculateCorrectedTrainingFractionFakeFactors(law.Task):
                 ),
                 grouping=self.grouping,
                 squeezing=self.squeezing,
-                squeezing_loss_limit=self.squeezing_loss_limit,
             )
         )
         Path(self.output()['schema'].path).write_text(
@@ -2397,13 +2425,10 @@ class CalculateExtrapolationCorrectedTrainingFractionFakeFactors(law.Task):
     squeezing = luigi.FloatParameter(default=0.99)
     squeezing_loss_limit = luigi.FloatParameter(default=0.1)
     correction_set_root = law.Parameter(
-        default="/work/mmoser/TauFakeFactors/workdirs_with_extrapolation_correction"
+        default=str(DEFAULT_DRSR_CORRECTION_ROOT)
     )
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
 
     def requires(self):
@@ -2467,6 +2492,7 @@ class CalculateExtrapolationCorrectedTrainingFractionFakeFactors(law.Task):
                 ),
                 grouping=self.grouping,
                 squeezing=self.squeezing,
+                squeezing_loss_limit=self.squeezing_loss_limit,
             )
         )
         feature_name = extrapolation_corrected_training_fraction_fake_factor_name(
@@ -2495,10 +2521,7 @@ class CalculateDRSRCorrectedTrainingFractionFakeFactors(law.Task):
     squeezing = luigi.FloatParameter(default=0.99)
     squeezing_loss_limit = luigi.FloatParameter(default=0.1)
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
 
     def requires(self):
@@ -2587,31 +2610,37 @@ class PlotClosure(law.Task):
         choices=('njets',),
     )
     squeezing = luigi.OptionalFloatParameter(default=0.99)
+    use_drsr_correction = luigi.BoolParameter(default=False)
+    squeezing_loss_limit = luigi.FloatParameter(default=0.1)
     variable_set = luigi.Parameter(default='variables_set_large')
     correction_set_root = law.Parameter(
-        default="/work/mmoser/TauFakeFactors/workdirs"
+        default=str(DEFAULT_NON_DRSR_CORRECTION_ROOT)
     )
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
     classic_corrections_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_CORRECTIONS_PATH)
     )
 
     def requires(self):
-        return {
-            'mlf_corrected': CalculateCorrectedTrainingFractionFakeFactors(
+        mlf_task = (
+            CalculateDRSRCorrectedTrainingFractionFakeFactors(
+                grouping=self.grouping,
+                squeezing=self.squeezing,
+                squeezing_loss_limit=self.squeezing_loss_limit,
+                process_fractions_path=self.process_fractions_path,
+            )
+            if self.use_drsr_correction
+            else CalculateCorrectedTrainingFractionFakeFactors(
                 grouping=self.grouping,
                 squeezing=self.squeezing,
                 correction_set_root=self.correction_set_root,
                 process_fractions_path=self.process_fractions_path,
-            ),
+            )
+        )
+        return {
+            'mlf': mlf_task,
             'classic': CalculateClassicFakeFactors(
                 fake_factors_path=self.process_fractions_path,
                 corrections_path=self.classic_corrections_path,
@@ -2619,22 +2648,47 @@ class PlotClosure(law.Task):
         }
 
     def output(self):
-        return law.LocalFileTarget(
+        correction_label = (
+            'drsr_corrected'
+            if self.use_drsr_correction
+            else 'non_drsr_corrected'
+        )
+        output_dir = (
             WORKFLOW_ROOT
             / 'plots'
             / 'training_fraction_fake_factors'
+            / correction_label
             / squeezing_label(self.squeezing)
+        )
+        if self.use_drsr_correction:
+            output_dir = drsr_limit_subdir(
+                output_dir,
+                self.squeezing_loss_limit,
+            )
+        return law.LocalFileTarget(
+            output_dir
             / self.grouping
             / self.variable_set
-            / 'manifest_closures_v1.json'
+            / 'manifest_closures_v2.json'
         )
 
     def run(self):
+        mlf_column = (
+            drsr_corrected_training_fraction_fake_factor_name(
+                grouping=self.grouping,
+                squeezing=self.squeezing,
+            )
+            if self.use_drsr_correction
+            else corrected_training_fraction_fake_factor_name(
+                grouping=self.grouping,
+                squeezing=self.squeezing,
+            )
+        )
         create_mlf_closure_plots(
             data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
             masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
             mlf_feature_path=(
-                self.input()['mlf_corrected']['features'].path
+                self.input()['mlf']['features'].path
             ),
             classic_feature_path=self.input()['classic']['features'].path,
             plotting_config_path=PROJECT_ROOT / 'configs' / 'plotting.yaml',
@@ -2642,10 +2696,7 @@ class PlotClosure(law.Task):
             output_dir=Path(self.output().path).parent,
             manifest_path=self.output().path,
             variable_set=self.variable_set,
-            mlf_column=corrected_training_fraction_fake_factor_name(
-                grouping=self.grouping,
-                squeezing=self.squeezing,
-            ),
+            mlf_column=mlf_column,
         )
 
 
@@ -2657,19 +2708,13 @@ class PlotExtrapolationCorrectedClosure(law.Task):
     squeezing_loss_limit = luigi.FloatParameter(default=0.1)
     variable_set = luigi.Parameter(default='variables_set_large')
     correction_set_root = law.Parameter(
-        default="/work/mmoser/TauFakeFactors/workdirs_with_extrapolation_correction"
+        default=str(DEFAULT_DRSR_CORRECTION_ROOT)
     )
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
     classic_corrections_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_CORRECTIONS_PATH)
     )
 
     def requires(self):
@@ -2701,7 +2746,7 @@ class PlotExtrapolationCorrectedClosure(law.Task):
             output_dir
             / self.grouping
             / self.variable_set
-            / 'manifest_closures_v1.json'
+            / 'manifest_closures_v2.json'
         )
 
     def run(self):
@@ -2728,16 +2773,10 @@ class CalculateClassicFakeFactors(law.Task):
     """Calculate classic fake factors and store them as lazy features."""
 
     fake_factors_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
     corrections_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_CORRECTIONS_PATH)
     )
 
     def requires(self):
@@ -2770,18 +2809,64 @@ class CalculateClassicFakeFactors(law.Task):
         )
 
 
+class PlotClassicClosure(law.Task):
+    """Plot DNN FF closures combined with classic process fractions."""
+
+    squeezing = luigi.OptionalFloatParameter(default=None)
+    variable_set = luigi.Parameter(default='variables_set_large')
+    fake_factors_path = law.Parameter(
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
+    )
+    corrections_path = law.Parameter(
+        default=str(DEFAULT_CLASSIC_CORRECTIONS_PATH)
+    )
+
+    def requires(self):
+        return {
+            'dnn': CalculateFakeFactors(
+                squeezing=self.squeezing,
+                process_fractions_path=self.fake_factors_path,
+            ),
+            'classic': CalculateClassicFakeFactors(
+                fake_factors_path=self.fake_factors_path,
+                corrections_path=self.corrections_path,
+            ),
+        }
+
+    def output(self):
+        return law.LocalFileTarget(
+            WORKFLOW_ROOT
+            / 'plots'
+            / 'classic_fraction_fake_factors'
+            / squeezing_label(self.squeezing)
+            / self.variable_set
+            / 'manifest_closures_v3.json'
+        )
+
+    def run(self):
+        create_classic_fake_factor_closure_plots(
+            data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
+            masks_path=PROJECT_ROOT / 'configs' / 'masks.yaml',
+            fake_factor_feature_path=self.input()['dnn']['features'].path,
+            classic_feature_path=self.input()['classic']['features'].path,
+            plotting_config_path=PROJECT_ROOT / 'configs' / 'plotting.yaml',
+            labels_path=PROJECT_ROOT / 'configs' / 'labels.yaml',
+            output_dir=Path(self.output().path).parent,
+            manifest_path=self.output().path,
+            variable_set=self.variable_set,
+            feature_suffix=squeezing_feature_suffix(self.squeezing),
+        )
+
+
 class CalculateCorrectedFakeFactors(law.Task):
     """Apply correctionlib corrections to DNN fake factors in AR."""
 
     squeezing = luigi.OptionalFloatParameter(default=None)
     correction_set_root = law.Parameter(
-        default="/work/mmoser/TauFakeFactors/workdirs"
+        default=str(DEFAULT_NON_DRSR_CORRECTION_ROOT)
     )
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
 
     def requires(self):
@@ -2834,19 +2919,13 @@ class PlotCorrectedFakeFactors(law.Task):
     squeezing = luigi.OptionalFloatParameter(default=None)
     variable_set = luigi.Parameter(default='variables_set_small')
     correction_set_root = law.Parameter(
-        default="/work/mmoser/TauFakeFactors/workdirs"
+        default=str(DEFAULT_NON_DRSR_CORRECTION_ROOT)
     )
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
     classic_corrections_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_CORRECTIONS_PATH)
     )
 
     def requires(self):
@@ -2893,18 +2972,16 @@ class PlotFakeFactors(law.Task):
     """Create closure and FF-distribution plots from workflow features."""
 
     squeezing = luigi.OptionalFloatParameter(default=None)
+    grouping = luigi.ChoiceParameter(
+        default='njets',
+        choices=GROUPING_NAMES,
+    )
     variable_set = luigi.Parameter(default='variables_set_small')
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
     classic_corrections_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_CORRECTIONS_PATH)
     )
 
     def requires(self):
@@ -2926,8 +3003,9 @@ class PlotFakeFactors(law.Task):
             / 'plots'
             / 'fake_factors'
             / squeezing_label(self.squeezing)
+            / self.grouping
             / self.variable_set
-            / 'manifest_subsets_v8.json'
+            / 'manifest_subsets_v14.json'
         )
 
     def run(self):
@@ -2941,9 +3019,8 @@ class PlotFakeFactors(law.Task):
             reduced_weight_paths=(
                 *(
                     Path(self.input()['reduced'][process].path)
-                    / f'reduced_weight_{grouping}.feather'
+                    / f'reduced_weight_{self.grouping}.feather'
                     for process in ('wjets', 'qcd')
-                    for grouping in ENRICHMENT_GROUPINGS
                 ),
             ),
             plotting_config_path=PROJECT_ROOT / 'configs' / 'plotting.yaml',
@@ -2951,6 +3028,7 @@ class PlotFakeFactors(law.Task):
             output_dir=Path(self.output().path).parent,
             manifest_path=self.output().path,
             variable_set=self.variable_set,
+            grouping=self.grouping,
             feature_suffix=squeezing_feature_suffix(self.squeezing),
         )
 
@@ -2960,10 +3038,7 @@ class PlotFakeFactorDistributionsOppositeGrouping(law.Task):
 
     squeezing = luigi.OptionalFloatParameter(default=None)
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
 
     def requires(self):
@@ -2978,7 +3053,7 @@ class PlotFakeFactorDistributionsOppositeGrouping(law.Task):
             / 'plots'
             / 'fake_factor_distributions_opposite_grouping'
             / squeezing_label(self.squeezing)
-            / 'manifest_grouped_dnn_v1.json'
+            / 'manifest_grouped_dnn_v3.json'
         )
 
     def run(self):
@@ -3011,10 +3086,7 @@ class PlotDRSRProcessFakeFactorDistributions(law.Task):
     value_max = luigi.FloatParameter(default=10.0)
     n_bins = luigi.IntParameter(default=80)
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
 
     def requires(self):
@@ -3119,10 +3191,7 @@ class PlotHighFakeFactorClosures(law.Task):
     squeezing = luigi.OptionalFloatParameter(default=None)
     variable_set = luigi.Parameter(default='variables_set_small')
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
 
     def requires(self):
@@ -3175,10 +3244,7 @@ class PlotHighFakeFactorDistributions(law.Task):
     value_max = luigi.FloatParameter(default=100.0)
     n_bins = luigi.IntParameter(default=90)
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
 
     def requires(self):
@@ -3441,7 +3507,6 @@ class ConvertSingleDNNModels(law.Task):
         )
         return outputs
 
-    def run(self):
         trained_models_dir = Path(self.input()['metadata'].path).parent
         convert_single_dnn_models(
             data_path=WORKFLOW_DATA_ROOT / 'dataframe_complete.feather',
@@ -3468,10 +3533,7 @@ class CalculateSingleDNNFakeFactors(law.Task):
     )
     batch_size = luigi.IntParameter(default=65536, significant=False)
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
 
     def requires(self):
@@ -3532,16 +3594,10 @@ class PlotSingleDNNFakeFactorDistributions(law.Task):
     )
     variable_set = luigi.Parameter(default='variables_set_small')
     process_fractions_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/fake_factors_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_FAKE_FACTORS_PATH)
     )
     classic_corrections_path = law.Parameter(
-        default=(
-            "/work/mmoser/TauFakeFactors.back/workdir/"
-            "ff_2026_01_19_check_variable/2018/FF_corrections_et.json.gz"
-        )
+        default=str(DEFAULT_CLASSIC_CORRECTIONS_PATH)
     )
 
     def requires(self):
