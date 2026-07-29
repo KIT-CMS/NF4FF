@@ -24,7 +24,7 @@ random.seed(SEED)
 t.set_num_threads(8)
 
 class Args(Tap):
-    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
@@ -70,6 +70,10 @@ def main():
         model_tau2_njets = load_fold_combined_model(
             even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau2' / 'fold_even',
             odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau2' / 'fold_odd',
+        )
+        model_incl_njets = load_fold_combined_model(
+            even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau_incl' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau_incl' / 'fold_odd',
         )
     else:
         logger.info("Loading models from training.py for ungrouped DNN...")
@@ -220,7 +224,28 @@ def main():
                 )
 
     elif args.taus == 'incl' and args.dnn_grouped:
-        logger.warning('Not implemented.')
+        logger.info("Calculating fake factors inclusive...")
+        calculate_fake_factors_incl(
+            df=df,
+            incl = args.incl,
+            model=model_incl_njets,
+            training_variables=training_variables,
+            grouping_variable = 'njets',
+            grouping_definition = grouping_njets,
+            output_suffix = 'njets',
+        )
+
+        # ----- calculate fake factors in DR -----
+        logger.info("Calculating incusive fake factors in DR...")
+        calculate_fake_factors_in_DR_incl(
+            df=df,
+            incl=args.incl,
+            model=model_incl_njets,
+            training_variables=training_variables,
+            grouping_variable = 'njets',
+            grouping_definition = grouping_njets,
+            output_suffix = 'njets',
+        )
 
     elif args.taus == 'incl' and not args.dnn_grouped:
         logger.info("Calculating fake factors inclusive...")

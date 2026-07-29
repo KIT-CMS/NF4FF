@@ -272,13 +272,6 @@ def calculate_fake_factors_incl(
     eps = 1e-6
     suffix = f"_{output_suffix}" if output_suffix else ""
 
-    if isinstance(grouping_variable, list):
-        grouping_var_1 = grouping_variable[0]
-        grouping_var_2 = grouping_variable[1]
-    elif grouping_variable is not None:
-        grouping_var_1 = grouping_variable
-        grouping_var_2 = grouping_variable
-
     # ------------------------------------------------------------------
     # Helper to run inference only if model exists
     # ------------------------------------------------------------------
@@ -307,8 +300,7 @@ def calculate_fake_factors_incl(
     if grouping_variable is None:
         ar_group_values = np.asarray(df.AR)
     else:
-        ar_tau1_group_values = np.asarray(df.AR_tau1[grouping_var_1])
-        ar_tau2_group_values = np.asarray(df.AR_tau2[grouping_var_2])
+        ar_group_values = np.asarray(df.AR[grouping_variable])
 
     
     group_masks = _build_group_masks(
@@ -321,83 +313,55 @@ def calculate_fake_factors_incl(
     # ------------------------------------------------------------------
     
     if model is not None and grouping_definition is not None:
-        #Todo!
-        sr_tau1_masks = dict(
+        sr_masks = dict(
             _build_group_masks(
-                np.asarray(df.data.SR_like[grouping_var_1]),
+                np.asarray(df.data.SR_like[grouping_variable]),
                 grouping_definition,
             )
         )
 
-        ar_tau1_masks = dict(
+        ar_masks = dict(
             _build_group_masks(
-                np.asarray(df.data.AR_like_tau1[grouping_var_1]),
+                np.asarray(df.data.AR_like[grouping_variable]),
                 grouping_definition,
             )
         )
+
+        # ----- Main Loop -----
+        for group_name, ar_mask in group_masks:
+
+                sr_mask = sr_masks[group_name]
+                ar_mask_ = ar_masks[group_name]
+
+                norm = (
+                    np.sum(df.data.SR_like.weight[sr_mask])
+                    / np.sum(df.data.AR_like.weight[ar_mask_])
+                )
+
+                fake_factor[ar_mask] = (
+                    norm * ratio[ar_mask]
+                )
+
+                print(f"norm (global FF) = {norm:.4f}")
     
-    # ------------------------------------------------------------------
-    # Main loop
-    # ------------------------------------------------------------------
-    if grouping_variable is None and model is not None:
+    elif grouping_variable is None and model is not None:
 
         norm = (
             np.sum(df.data.SR_like.weight)
             / np.sum(df.data.AR_like.weight)
         )
 
-        fake_factor = (norm * ratio)
+        fake_factor = (norm * ratio)        
+
+        print(f"norm (global FF) = {norm:.4f}")
 
         
-
-        print(f"norm = {norm:.4f}")
-
-    else:
-        for group_name, ar_mask in group_tau1_masks:
-
-            print_parts = [f"[{group_name}]"]
-
-            # ---------------- Tau 1 ----------------
-            if model_tau1 is not None:
-
-                sr_tau1_mask = sr_tau1_masks[group_name]
-                ar_tau1_mask = ar_tau1_masks[group_name]
-
-                norm_tau1 = (
-                    np.sum(df.data.SR_like.weight[sr_tau1_mask])
-                    / np.sum(df.data.AR_like_tau1.weight[ar_tau1_mask])
-                )
-
-                fake_factor_tau1[ar_mask] = (
-                    norm_tau1 * ratio_tau1[ar_mask]
-                )
-
-                print_parts.append(f"tau1 norm = {norm_tau1:.4f}")
-
-        for group_name, ar_mask in group_tau2_masks:
-            # ---------------- Tau 2 ----------------
-            if model_tau2 is not None:
-
-                sr_tau2_mask = sr_tau2_masks[group_name]
-                ar_tau2_mask = ar_tau2_masks[group_name]
-
-                norm_tau2 = (
-                    np.sum(df.data.SR_like.weight[sr_tau2_mask])
-                    / np.sum(df.data.AR_like_tau2.weight[ar_tau2_mask])
-                )
-
-                fake_factor_tau2[ar_mask] = (
-                    norm_tau2 * ratio_tau2[ar_mask]
-                )
-
-                print_parts.append(f"tau2 norm = {norm_tau2:.4f}")
-
-            print(", ".join(print_parts))
 
     # ----- number of FF over 3 -----
     print('FF over 3.0')
     for x in fake_factor:
             if x > 3.0: print(x)
+
     # ------------------------------------------------------------------
     # Optional clipping + output assignment
     # ------------------------------------------------------------------
@@ -673,9 +637,9 @@ def calculate_fake_factors_in_DR_incl(
     fake_factor = np.zeros_like(ratio)
 
     if grouping_variable is None:
-        ar_group_values = np.asarray(df.AR)
+        ar_group_values = np.asarray(df.AR_like)
     else:
-        ar_group_values = np.asarray(df.AR_tau1[grouping_variable])
+        ar_group_values = np.asarray(df.AR_like[grouping_variable])
 
     group_masks = _build_group_masks(
         ar_group_values,
@@ -690,7 +654,7 @@ def calculate_fake_factors_in_DR_incl(
 
         fake_factor = (norm * ratio)
 
-        print(f"Tau incl norm = {norm:.4f}, ")
+        print(f"Tau incl norm (global FF) = {norm:.4f}, ")
 
     else:
         for group_name, ar_mask in group_masks: 
@@ -699,18 +663,18 @@ def calculate_fake_factors_in_DR_incl(
                 grouping_definition,
             )
 
-            ar_mask = _build_group_masks(
+            ar_mask_incl = _build_group_masks(
                 np.asarray(df.data.AR_like[grouping_variable]),
                 grouping_definition,
             )
 
             # get corresponding mask
             sr_mask = dict(sr_mask)[group_name]
-            ar_mask = dict(ar_mask)[group_name]
+            ar_mask_incl = dict(ar_mask_incl)[group_name]
 
             norm = (
                 np.sum(df.data.SR_like.weight[sr_mask])
-                / np.sum(df.data.AR_like.weight[ar_mask])
+                / np.sum(df.data.AR_like.weight[ar_mask_incl])
             )
 
             fake_factor[ar_mask] = (
@@ -719,7 +683,7 @@ def calculate_fake_factors_in_DR_incl(
 
             print(
                 f"[{group_name}] "
-                f"Tau incl norm = {norm:.4f}, "
+                f"Tau incl norm (global FF) = {norm:.4f}, "
             )
 
     # optional clipping
