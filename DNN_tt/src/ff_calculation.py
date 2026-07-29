@@ -28,7 +28,7 @@ class Args(Tap):
     incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
     classic: bool = False
 
 args = Args().parse_args()

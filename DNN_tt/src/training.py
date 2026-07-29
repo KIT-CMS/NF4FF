@@ -25,11 +25,11 @@ random.seed(SEED)
 t.set_num_threads(8)
 
 class Args(Tap):
-    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
 
 args = Args().parse_args()
 
@@ -128,6 +128,7 @@ def _train_fold_model(cfg, grouping, training_var, df_sig, df_bkg, weight_column
 
 
 def main():
+    print('start')
 
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
 
@@ -143,6 +144,7 @@ def main():
         df = load_data(DATA_PATH, MASKS_PATH_INCL[incl])
     else:
         logger.error(f'Value Error: args.taus = {args.taus}, but ony allows split or incl.')
+        exit()
 
     training_var = load_variables(TRAINING_VAR_PATH, args.var)
 
@@ -256,6 +258,7 @@ def main():
 
                 if group_label == 'tau_decaymode':
                     i += 1
+
     elif args.taus=='split' and not args.dnn_grouped:
         logger.info('Training uses the ungrouped DNN.')
         for process in ['tau1', 'tau2']:
@@ -327,10 +330,9 @@ def main():
             save_model(model, base_path)
 
     elif args.taus == 'incl' and args.dnn_grouped:
-        logger.warning('ta incl not yet implemented for grouped DNN.')
         logger.info('Training uses the grouped DNN tau inclusive.')
 
-        for grouping, group_label in zip([[grouping_taudm1, grouping_taudm2], [grouping_njets]], ['tau_decaymode', 'njets']):
+        for grouping, group_label in zip([grouping_njets], ['njets']):
             logger.info(f'Group splitting: {group_label}')
 
             logger.info(f'Training process: tau inclusive')
@@ -347,9 +349,8 @@ def main():
             df_bkg_odd  = df_bkg_plain[df_bkg_plain['event']%2 == 1]
 
             logger.info(
-                "%s/%s fold sizes: even=%d (sig=%d, bkg=%d), odd=%d (sig=%d, bkg=%d)",
+                "%s fold sizes: even=%d (sig=%d, bkg=%d), odd=%d (sig=%d, bkg=%d)",
                 group_label,
-                process,
                 len(df_sig_even) + len(df_bkg_even),
                 len(df_sig_even),
                 len(df_bkg_even),
@@ -361,7 +362,7 @@ def main():
             # even_model: trained on odd events, applied to even events
             even_model = _train_fold_model(
                 cfg=cfg,
-                grouping=grouping[i],
+                grouping=grouping,
                 training_var=training_var,
                 df_sig=df_sig_odd,
                 df_bkg=df_bkg_odd,
@@ -374,7 +375,7 @@ def main():
             # odd_model: trained on even events, applied to odd events
             odd_model = _train_fold_model(
                 cfg=cfg,
-                grouping=grouping[i],
+                grouping=grouping,
                 training_var=training_var,
                 df_sig=df_sig_even,
                 df_bkg=df_bkg_even,

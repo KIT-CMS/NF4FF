@@ -345,19 +345,27 @@ class GroupedDNN(GroupedLayerABC):
             default_model._input_names = [f"x{i}" for i in range(default_model._input_nodes)]
 
         global_input_names = default_model._input_names
+        #print(global_input_names)
         sorted_col_indices = sorted(grouping.keys())
+        #print(grouping)
+        #print(sorted_col_indices)
         group_lists = [grouping[k] for k in sorted_col_indices]
+        #print(group_lists)
         specific_models = specific_models or {}
+        #print(specific_models)
         allowed_variables = allowed_variables or {}
+        #print(allowed_variables)
 
         for _comb in itertools.product(*group_lists):
+            #print(_comb)
             if (str_key := str(_comb)) in self.sub_models:
                 continue
 
             group_var_names = allowed_variables[_comb] if _comb in allowed_variables else global_input_names
-
+            #print(group_var_names)
             try:
                 indices = [global_input_names.index(name) for name in group_var_names]
+                #print(indices)
             except ValueError as e:
                 raise ValueError(f"Variable in group {_comb} not found in global inputs: {e}")
 
