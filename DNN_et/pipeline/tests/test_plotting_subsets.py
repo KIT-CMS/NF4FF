@@ -7,7 +7,7 @@ import pandas as pd
 PIPELINE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PIPELINE_DIR))
 
-from plotting import (
+from visualization.fake_factors import (
     CLOSURE_ONLY_SUBSETS,
     GROUPING_NAMES,
     HIGH_FF_CLOSURE_GROUPINGS,

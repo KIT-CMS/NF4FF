@@ -10,13 +10,16 @@ PIPELINE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PIPELINE_DIR))
 
 
-classes_stub = types.ModuleType("classes")
-classes_stub.DNN = object
-classes_stub.FoldCombinedDNN = object
-classes_stub.load_data = None
-classes_stub.load_variables = None
-classes_stub.save_model = None
-sys.modules.setdefault("classes", classes_stub)
+networks_stub = types.ModuleType("models.networks")
+networks_stub.DNN = object
+networks_stub.FoldCombinedDNN = object
+networks_stub.save_model = None
+sys.modules.setdefault("models.networks", networks_stub)
+
+handling_stub = types.ModuleType("data.handling")
+handling_stub.load_data = None
+handling_stub.load_variables = None
+sys.modules.setdefault("data.handling", handling_stub)
 
 lightning_stub = types.ModuleType("lightning")
 lightning_pytorch_stub = types.ModuleType("lightning.pytorch")
@@ -33,7 +36,7 @@ sys.modules.setdefault("lightning.pytorch", lightning_pytorch_stub)
 sys.modules.setdefault("lightning.pytorch.callbacks", callbacks_stub)
 sys.modules.setdefault("lightning.pytorch.loggers", loggers_stub)
 
-from multiclass_classification import (
+from training.fractions import (
     QCD_FRACTION_WEIGHT_COLUMN,
     _qcd_yield_correction_array,
     _weight_array,

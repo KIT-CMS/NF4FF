@@ -1,0 +1,17 @@
+qcd_reweighting:
+  use_grouping: true
+
+  default_grouping:
+    index_name: njets
+    groups:
+      - [0]
+      - [1]
+      - [2, 1000]
+
+  groupings:
+    - name: njets
+      index_name: njets
+      groups:
+        - [0]
+        - [1]
+        - [2, 1000]

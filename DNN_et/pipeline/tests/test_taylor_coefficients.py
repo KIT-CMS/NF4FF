@@ -11,8 +11,8 @@ import torch as t
 PIPELINE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PIPELINE_DIR))
 
-from classes import DNN, FoldCombinedDNN, GroupedDNN
-from taylor_coefficient_analysis import (
+from models.networks import DNN, FoldCombinedDNN, GroupedDNN
+from interpretation.taylor import (
     _analysis_arrays,
     calculate_taylor_coefficients,
     calculate_taylor_coefficients_manually,

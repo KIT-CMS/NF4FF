@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 
 
-CONFIG_PATH = Path(__file__).resolve().parents[2] / "configs" / "masks.yaml"
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "selections.yaml"
 
 
 def _config():

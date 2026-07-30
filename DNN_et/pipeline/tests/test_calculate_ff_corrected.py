@@ -9,7 +9,7 @@ import pytest
 PIPELINE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PIPELINE_DIR))
 
-import calculate_ff_corrected as corrected
+import inference.nonclosure as corrected
 
 
 class _Input:

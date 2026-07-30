@@ -7,7 +7,7 @@ import pytest
 PIPELINE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PIPELINE_DIR))
 
-from groupings import single_dnn_feature_suffix, squeezing_feature_suffix
+from core.groupings import single_dnn_feature_suffix, squeezing_feature_suffix
 
 
 @pytest.mark.parametrize(

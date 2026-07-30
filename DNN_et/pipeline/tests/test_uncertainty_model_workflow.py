@@ -7,7 +7,7 @@ import numpy as np
 PIPELINE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PIPELINE_DIR))
 
-from uncertainty_model_workflow import (
+from interpretation.uncertainty import (
     plot_taylor_ensemble,
     plot_taylor_method_comparison,
     summarize_taylor_ensemble,
