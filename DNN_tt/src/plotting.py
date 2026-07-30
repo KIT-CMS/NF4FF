@@ -102,7 +102,7 @@ def get_bins(variable):
     return np.asarray(bin_spec, dtype=float)
 
 
-def get_label(variable, channel='et'):
+def get_label(variable, channel='tt'):
     labels_by_channel = LABELS_CFG.get(channel, {}) if isinstance(LABELS_CFG, dict) else {}
     return labels_by_channel.get(variable, variable)
 
@@ -114,6 +114,7 @@ def get_bins_and_label(variable, channel='et'):
 # ------------------------------------------------------
 
 def main():
+    labels_cfg = load_config(LABELS_CONFIG_PATH)
 
     if args.classic:
         logger.info('Initialize plotting for classic FF...')
@@ -159,6 +160,7 @@ def main():
             for grouping in PLOT_GROUPINGS:
                 for var in VARIABLES_SMALL:
                     bins, label = get_bins_and_label(var)
+                    label = labels_cfg['tt'][var]
 
                     fig_q, _ = FF_closure_in_DR_tau1(
                         df=df,
@@ -243,6 +245,7 @@ def main():
             if args.dnn_grouped and args.taus=='split':
                 for var in VARIABLES_SMALL:
                     bins, label = get_bins_and_label(var)
+                    label = labels_cfg['tt'][var]
                     fig, ax, _ = plot_closure(
                             df = df,
                             var = var,
@@ -260,6 +263,7 @@ def main():
     
                 for var in VARIABLES_SMALL:
                     bins, label = get_bins_and_label(var)
+                    label = labels_cfg['tt'][var]
                     fig, ax, _ = plot_closure(
                             df = df,
                             var = var,
@@ -287,6 +291,7 @@ def main():
         if args.closure_DR:
             for var in VARIABLES_SMALL:
                 bins, label = get_bins_and_label(var)
+                label = labels_cfg['tt'][var]
 
                 fig_q, _ = FF_closure_in_DR_tau1(
                     df=df,
@@ -338,6 +343,7 @@ def main():
         if args.closure_AR:
             for var in VARIABLES_SMALL:
                 bins, label = get_bins_and_label(var)
+                label = labels_cfg['tt'][var]
                 fig, ax, _ = plot_closure(
                         df = df,
                         var = var,
@@ -373,6 +379,7 @@ def main():
         if args.closure_DR:
             for var in VARIABLES_SMALL:
                 bins, label = get_bins_and_label(var)
+                label = labels_cfg['tt'][var]
 
                 fig_q, _ = FF_closure_in_DR_incl(
                     df=df,
@@ -387,7 +394,7 @@ def main():
                 plt.close(fig_q)
 
             logger.info(f'Saved closure plots for tau inclusive in DR for njets.')
-
+            
         # ----- Fake-factor distributions -----
         if args.FF_dist:
             # ----- DNN FF -----
@@ -408,6 +415,7 @@ def main():
         if args.closure_AR:
             for var in VARIABLES_SMALL:
                 bins, label = get_bins_and_label(var)
+                label = labels_cfg['tt'][var]
                 fig, ax, _ = plot_closure_incl(
                         df = df,
                         incl = args.incl,
@@ -441,6 +449,7 @@ def main():
         if args.closure_DR:
             for var in VARIABLES_SMALL:
                 bins, label = get_bins_and_label(var)
+                label = labels_cfg['tt'][var]
 
                 fig_q, _ = FF_closure_in_DR_incl(
                     df=df,
@@ -475,6 +484,7 @@ def main():
         if args.closure_AR:
             for var in VARIABLES_SMALL:
                 bins, label = get_bins_and_label(var)
+                label = labels_cfg['tt'][var]
                 fig, ax, _ = plot_closure_incl(
                         df = df,
                         incl = args.incl,
