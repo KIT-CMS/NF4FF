@@ -242,14 +242,14 @@ def calculate_fake_factors(
     # ------------------------------------------------------------------
     if fake_factor_tau1 is not None:
         df.AR_tau1[f"ff_unclipped_dnn_tau1{suffix}"] = fake_factor_tau1
-        fake_factor_tau1 = np.clip(fake_factor_tau1, 0, 1)
+        fake_factor_tau1 = np.clip(fake_factor_tau1, 0, 3)
         df.AR_tau1[f"ff_dnn_tau1{suffix}"] = fake_factor_tau1            
     else:
         print("FF for tau 1 is None")
 
     if fake_factor_tau2 is not None:
         df.AR_tau2[f"ff_unclipped_dnn_tau2{suffix}"] = fake_factor_tau2
-        fake_factor_tau2 = np.clip(fake_factor_tau2, 0, 1)
+        fake_factor_tau2 = np.clip(fake_factor_tau2, 0, 3)
         df.AR_tau2[f"ff_dnn_tau2{suffix}"] = fake_factor_tau2
     else:
         print("FF for tau 2 is None")
@@ -367,100 +367,11 @@ def calculate_fake_factors_incl(
     # ------------------------------------------------------------------
     if fake_factor is not None:
         df.AR[f"ff_unclipped_dnn_incl_{incl}{suffix}"] = fake_factor
-        fake_factor = np.clip(fake_factor, 0, 1)
+        fake_factor = np.clip(fake_factor, 0, 3)
         df.AR[f"ff_dnn_incl_{incl}{suffix}"] = fake_factor           
     else:
         print("FF is None")
 
-
-
-
-def calculate_fake_factors_in_DR_wjets(
-    df,
-    model_wjets: t.nn.Module,
-    training_variables,
-):
-    output_suffix = None
-    grouping_variable = 'tau_decaymode_2'
-    grouping_tdm = (
-        (0,),
-        (1,),
-        (10,),
-        (11,),
-    )
-
-    grouping_definition = grouping_tdm
-
-    X = test_data(df.AR_like_wjets, training_variables)
-
-    X_tensor = t.from_numpy(X.X).float()
-
-    X_wjets = _prepare_input_tensor(model_wjets, X_tensor, df.AR_like_wjets)
-
-    with t.no_grad():
-
-        f_wjets = model_wjets(X_wjets).cpu().numpy().flatten()
-
-    eps = 1e-6
-
-    f_wjets = np.clip(f_wjets, eps, 1 - eps)
-
-    ratio_wjets = f_wjets / (1.0 - f_wjets)
-
-
-    fake_factor_wjets = np.zeros_like(ratio_wjets)
-
-
-
-    ar_group_values = np.asarray(df.AR_like_wjets[grouping_variable])
-
-    group_masks = _build_group_masks(
-        ar_group_values,
-        grouping_definition,
-    )
-
-
-    for group_name, ar_mask in group_masks:
-
-
-
-        sr_wjets_mask = _build_group_masks(
-            np.asarray(df.data.SR_like_wjets[grouping_variable]),
-            grouping_definition,
-        )
-
-        ar_wjets_mask = _build_group_masks(
-            np.asarray(df.data.AR_like_wjets[grouping_variable]),
-            grouping_definition,
-        )
-
-
-        # get corresponding mask
-        sr_wjets_mask = dict(sr_wjets_mask)[group_name]
-        ar_wjets_mask = dict(ar_wjets_mask)[group_name]
-
-        norm_wjets = (
-            np.sum(df.data.SR_like_wjets.weight[sr_wjets_mask])
-            / np.sum(df.data.AR_like_wjets.weight[ar_wjets_mask])
-        )
-
-        fake_factor_wjets[ar_mask] = (
-            norm_wjets * ratio_wjets[ar_mask]
-        )
-
-        print(
-            f"[{group_name}] "
-            f"WJets norm = {norm_wjets:.4f}, "
-        )
-
-    # optional clipping
-    fake_factor_wjets = np.clip(fake_factor_wjets, 0, 1)
-
-
-
-    suffix = f"_{output_suffix}" if output_suffix else ""
-
-    df.AR_like_wjets[f"ff_dnn_wjets{suffix}"] = fake_factor_wjets
 
 def calculate_fake_factors_in_DR(
     df,
@@ -602,8 +513,8 @@ def calculate_fake_factors_in_DR(
             )
 
     # optional clipping
-    fake_factor_tau1 = np.clip(fake_factor_tau1, 0, 1)
-    fake_factor_tau2 = np.clip(fake_factor_tau2, 0, 1)
+    fake_factor_tau1 = np.clip(fake_factor_tau1, 0, 3)
+    fake_factor_tau2 = np.clip(fake_factor_tau2, 0, 3)
 
     df.AR_like_tau1[f"ff_DR_dnn_tau1{suffix}"] = fake_factor_tau1
     df.AR_like_tau2[f"ff_DR_dnn_tau2{suffix}"] = fake_factor_tau2
@@ -689,101 +600,11 @@ def calculate_fake_factors_in_DR_incl(
     # optional clipping
     if fake_factor is not None:
         df.AR_like[f"ff_DR_unclipped_dnn_incl_{incl}{suffix}"] = fake_factor
-        fake_factor = np.clip(fake_factor, 0, 1)
+        fake_factor = np.clip(fake_factor, 0, 3)
         df.AR_like[f"ff_DR_dnn_incl_{incl}{suffix}"] = fake_factor           
     else:
         print("FF is None")
 
-
-def calculate_fake_factors_in_DR_ttbar(
-    df,
-    model_ttbar: t.nn.Module,
-    training_variables,
-    #grouping_variable,
-    #grouping_definition,
-    #output_suffix=None,
-):
-
-    output_suffix = None
-    grouping_variable = 'tau_decaymode_2'
-    grouping_tdm = (
-        (0,),
-        (1,),
-        (10,),
-        (11,),
-    )
-
-    grouping_definition = grouping_tdm
-
-    X = test_data(df.AR_like_ttbar, training_variables)
-
-    X_tensor = t.from_numpy(X.X).float()
-
-    X_ttbar = _prepare_input_tensor(model_ttbar, X_tensor, df.AR_like_ttbar)
-
-    with t.no_grad():
-
-        f_ttbar = model_ttbar(X_ttbar).cpu().numpy().flatten()
-
-    eps = 1e-6
-
-    f_ttbar = np.clip(f_ttbar, eps, 1 - eps)
-
-    ratio_ttbar = f_ttbar / (1.0 - f_ttbar)
-
-
-    fake_factor_ttbar = np.zeros_like(ratio_ttbar)
-
-
-
-    ar_group_values = np.asarray(df.AR_like_ttbar[grouping_variable])
-
-    group_masks = _build_group_masks(
-        ar_group_values,
-        grouping_definition,
-    )
-
-
-    for group_name, ar_mask in group_masks:
-
-
-
-        sr_ttbar_mask = _build_group_masks(
-            np.asarray(df.data.SR_like_ttbar[grouping_variable]),
-            grouping_definition,
-        )
-
-        ar_ttbar_mask = _build_group_masks(
-            np.asarray(df.data.AR_like_ttbar[grouping_variable]),
-            grouping_definition,
-        )
-
-        # get corresponding mask
-        sr_ttbar_mask = dict(sr_ttbar_mask)[group_name]
-        ar_ttbar_mask = dict(ar_ttbar_mask)[group_name]
-
-        norm_ttbar = (
-            np.sum(df.data.SR_like_ttbar.weight[sr_ttbar_mask])
-            / np.sum(df.data.AR_like_ttbar.weight[ar_ttbar_mask])
-        )
-
-        fake_factor_ttbar[ar_mask] = (
-            norm_ttbar * ratio_ttbar[ar_mask]
-        )
-
-        print(
-            f"[{group_name}] "
-            f"ttbar norm = {norm_ttbar:.4f}, "
-        )
-
-    # optional clipping
-    fake_factor_ttbar = np.clip(fake_factor_ttbar, 0, 1)
-
-
-
-    suffix = f"_{output_suffix}" if output_suffix else ""
-
-    df.AR_like_ttbar[f"ff_dnn_ttbar{suffix}"] = fake_factor_ttbar
 
 
 def evaluate_compound_ff_correction(correction_set, compound_name: str, df: pd.DataFrame, short) -> np.ndarray:
