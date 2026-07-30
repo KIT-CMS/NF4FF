@@ -13,7 +13,7 @@ import uproot
 
 from classes.Plotting import plot_fake_factors, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
 from classes.Loading import load_config, load_labels, load_data
-from classes.Plotting import FF_closure_in_DR_tau1, FF_closure_in_DR_tau2, FF_closure_in_DR_incl, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl, plot_fake_factors_combTaus
+from classes.Plotting import FF_closure_in_DR_tau1, FF_closure_in_DR_tau2, FF_closure_in_DR_incl, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl, plot_fake_factors_combTaus, plot_fake_factors_grouped_incl
 
 
 
@@ -30,7 +30,7 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
     dnn_grouped: bool = True
     classic: bool = False
@@ -361,7 +361,6 @@ def main():
 
     elif args.taus=='incl' and args.dnn_grouped:
         logger.info('Initiaize plotting for tau inclusive FF calculated through grouped DNN...')
-        logger.warning('Tau inclusive grouped DNN is not yet implemented.')
 
         if args.incl=='and': incl = 0
         elif args.incl=='or': incl = 1
@@ -372,15 +371,57 @@ def main():
 
         # ----- Closure plots in DR -----
         if args.closure_DR:
-            logger.warning('Not yet implemented.')
+            for var in VARIABLES_SMALL:
+                bins, label = get_bins_and_label(var)
 
-        # ----- FF closure in AR -----
-        if args.closure_AR:
-            logger.warning('Not yet implemented.')
+                fig_q, _ = FF_closure_in_DR_incl(
+                    df=df,
+                    incl=args.incl,
+                    var=var,
+                    bins=bins,
+                    label=label,
+                    grouping=None,
+                )
+                plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'closure_in_DR' / 'njets' / f'FF_closure_DR_incl_{args.incl}_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'closure_in_DR' / 'njets' / f'FF_closure_DR_incl_{args.incl}_{var}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig_q)
+
+            logger.info(f'Saved closure plots for tau inclusive in DR for njets.')
 
         # ----- Fake-factor distributions -----
         if args.FF_dist:
-            logger.warning('Not yet implemented.')
+            # ----- DNN FF -----
+            fig_ar, ax_ar = plot_fake_factors_grouped_incl(df=df, incl=args.incl, category_title=r'split in $N_{jets}$', grouping='njets')
+            plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'FF_distribution_AR' / 'njets' / f'plot_ff_incl_{args.incl}.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'FF_distribution_AR' / 'njets' / f'plot_ff_incl_{args.incl}.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar)
+            logger.info(f'Saved inclusive FF distributions in AR for ungrouped DNN')
+
+            fig_ar, ax_ar = plot_fake_factors_grouped_incl(df=df, incl=args.incl, clipped=False, category_title=r'split in $N_{jets}$', grouping='njets')
+            plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'FF_distribution_AR' / 'njets' / f'plot_ff_unclipped_incl_{args.incl}.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'FF_distribution_AR' / 'njets' / f'plot_ff_unclipped_incl_{args.incl}.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar)
+            logger.info(f'Saved inclusive unclipped FF distributions in AR for ungrouped DNN')
+
+
+        # ----- FF closure in AR -----
+        if args.closure_AR:
+            for var in VARIABLES_SMALL:
+                bins, label = get_bins_and_label(var)
+                fig, ax, _ = plot_closure_incl(
+                        df = df,
+                        incl = args.incl,
+                        var = var,
+                        bins = bins,
+                        label = label,
+                        grouping = 'njets'
+                    )
+                
+                plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'closure_plots' / 'njets' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'closure_plots' / 'njets' / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig)
+
+            logger.info('Saved all closure plots for tau inclusive ungrouped DNN')
 
 
 

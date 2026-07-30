@@ -417,11 +417,9 @@ def plot_closure_incl(
 
     if grouping == 'tau_decaymode':
         ff_dnn_tau1 = 'ff_dnn_tau1_tau_dm'
-        ff_dnn_tau2 = 'ff_dnn_tau2_tau_dm'
         cat_title = r'$\tau$ DM: inclusive'
     elif grouping == 'njets':
-        ff_dnn_tau1 = 'ff_dnn_tau1_njets'
-        ff_dnn_tau2 = 'ff_dnn_tau2_njets'
+        ff_dnn = f'ff_dnn_incl_{incl}_njets'
         cat_title = r'$N_{jets}$: inclusive'
     else:
         ff_dnn = f'ff_dnn_incl_{incl}'
@@ -715,6 +713,7 @@ def plot_fake_factors_incl(
     hep.style.use(hep.style.CMS)
 	
     if clipped:
+
         ff_dnn = f'ff_dnn_incl_{incl}'    
         bins = np.linspace(0, 1, 51)
     else:
@@ -1194,6 +1193,53 @@ def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode', clip
         ax[1].hist(frame_tau2[ff_tau2][mask], bins=bins_tau2, histtype='step', ls='--', label=f'{mask_label}')
     ax[1].set_xlabel(r'$F_{\mathrm{F}}$ value')
     ax[1].legend(loc = 'upper left', prop={'size': 15})
+
+    return fig, ax
+
+def plot_fake_factors_grouped_incl(df, incl, category_title, grouping='tau_decaymode', clipped = True):
+    hep.style.use(hep.style.CMS)
+
+    if clipped:
+        bins = np.linspace(0, 1.0, 51)
+
+        if grouping == 'tau_decaymode':
+            ff = f'ff_dnn_incl_{incl}_tau_dm'
+            grouping = ['tau_decaymode_1', 'tau_decaymode_2']
+        elif grouping == 'njets':
+            ff = f'ff_dnn_incl_{incl}_njets'
+        else:
+            raise ValueError(f'Unsupported grouping: {grouping}')
+    else:
+        bins = np.linspace(0, 2., 51)
+
+        if grouping == 'tau_decaymode':
+            ff = f'ff_unclipped_dnn_incl_{incl}_tau_dm'
+            grouping = ['tau_decaymode_1', 'tau_decaymode_2']
+        elif grouping == 'njets':
+            ff = f'ff_unclipped_dnn_incl_{incl}_njets'
+        else:
+            raise ValueError(f'Unsupported grouping: {grouping}')
+
+
+    frame = df.data.AR
+
+    group_mask = _grouping_masks(frame, grouping)
+
+    fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+
+
+    n1 = ax.hist(frame[ff], bins=bins, histtype='step', linewidth=2, label=r'$\tau_h$ incl: $N_{jets}$ incl')
+    for mask, mask_label in group_mask:
+        ax.hist(frame[ff][mask], bins=bins, histtype='step', ls='--', label=f'{mask_label}')
+    ax.set_ylabel('Events')
+    ax.legend(loc = 'center left', prop={'size': 15})
+    ax.set_ylim(top=1.2 * np.max(n1[0]))
+
+
+    CMS_CHANNEL_TITLE([ax])
+    CMS_LUMI_TITLE([ax])
+    CMS_LABEL([ax])
+    CMS_CATEGORY_TITLE([ax], title=category_title)
 
     return fig, ax
 
