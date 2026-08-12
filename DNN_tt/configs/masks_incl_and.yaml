@@ -8,22 +8,12 @@ masks:
     - (tau_decaymode_1 == 0) | (tau_decaymode_1 == 1) | (tau_decaymode_1 == 10) | (tau_decaymode_1 == 11)
     - (tau_decaymode_2 == 0) | (tau_decaymode_2 == 1) | (tau_decaymode_2 == 10) | (tau_decaymode_2 == 11)
 
-  SR:
-    - id_tau_vsJet_Tight_1 > 0.5
-    - id_tau_vsJet_Tight_2 > 0.5
+  Anti_DR:
     - (q_1*q_2) < 0
     - extramuon_veto < 0.5
     - extraelec_veto < 0.5
-
-  AR:
     - id_tau_vsJet_VLoose_1 > 0.5
     - id_tau_vsJet_VLoose_2 > 0.5
-    - id_tau_vsJet_Tight_1 < 0.5
-    - id_tau_vsJet_Tight_2 < 0.5
-    - (q_1*q_2) < 0
-    - extramuon_veto < 0.5
-    - extraelec_veto < 0.5
-
 
   DR_qcd:
     - q_1 * q_2 > 0
@@ -32,49 +22,44 @@ masks:
     - id_tau_vsJet_VLoose_1 > 0.5
     - id_tau_vsJet_VLoose_2 > 0.5
 
-  DR_qcd_no_signs:
-    - extramuon_veto < 0.5
-    - extraelec_veto < 0.5
-    - id_tau_vsJet_VLoose_1 > 0.5
-    - id_tau_vsJet_VLoose_2 > 0.5
-  
-  AR_like:  
-    - id_tau_vsJet_VLoose_1 > 0.5
-    - id_tau_vsJet_VLoose_2 > 0.5
-    - id_tau_vsJet_Tight_1 < 0.5
-    - id_tau_vsJet_Tight_2 > 0.5
-
-  SR_like:
+  SR:
     - id_tau_vsJet_Tight_1 > 0.5
     - id_tau_vsJet_Tight_2 > 0.5
+
+  AR:
+    - id_tau_vsJet_Tight_1 < 0.5
+    - id_tau_vsJet_Tight_2 < 0.5
 
 regions:
 
   SR:
     - preselection
+    - Anti_DR
     - SR
 
   AR:
     - preselection
+    - Anti_DR
     - AR
 
   SR_like:
     - preselection
     - DR_qcd
-    - SR_like
+    - SR
   
   AR_like:
     - preselection
     - DR_qcd
-    - AR_like
+    - AR
   
   DR_qcd:
     - DR_qcd
     - preselection
 
-  DR_qcd_without_signs:
-    - DR_qcd_no_signs
+  Anti_DR:
+    - Anti_DR
     - preselection
+
 
 #identical to data_process_mapping_embedding.yaml in classifier_tt/configs
 processes:
