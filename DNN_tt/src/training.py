@@ -45,6 +45,7 @@ CHECKPOINT_DIR = cfg_path["traininfg_results"]
 @dataclass
 class ModelConfig:
     hidden_nodes: Tuple[int, ...]
+    hidden_nodes_incl: Tuple[int, ...]
     output_nodes: int
 
     activation: str = "ReLU"
@@ -73,7 +74,7 @@ class Config:
     scheduler: SchedulerConfig
 
 
-def _train_fold_model(cfg, grouping, training_var, df_sig, df_bkg, weight_column, device, checkpoint_dir, fold_label):
+def _train_fold_model(cfg, grouping, training_var, df_sig, df_bkg, weight_column, device, checkpoint_dir, taus, fold_label):
     train, val = create_training_dataset(
         df_sig=df_sig,
         df_bkg=df_bkg,
@@ -84,15 +85,29 @@ def _train_fold_model(cfg, grouping, training_var, df_sig, df_bkg, weight_column
         random_state=SEED,
     )
 
-    base_model = DNN(
-        input_nodes=train.X.shape[1],
-        hidden_nodes=cfg.model.hidden_nodes,
-        output_nodes=1,
-        activation=cfg.model.activation,
-        output_activation=cfg.model.output_activation,
-        dropout=cfg.model.dropout,
-        input_names=training_var,
-    )
+    if taus == 'incl':
+        base_model = DNN(
+            input_nodes=train.X.shape[1],
+            hidden_nodes=cfg.model.hidden_nodes_incl,
+            output_nodes=1,
+            activation=cfg.model.activation,
+            output_activation=cfg.model.output_activation,
+            dropout=cfg.model.dropout,
+            input_names=training_var,
+        )
+    elif taus == 'split':
+        base_model = DNN(
+            input_nodes=train.X.shape[1],
+            hidden_nodes=cfg.model.hidden_nodes,
+            output_nodes=1,
+            activation=cfg.model.activation,
+            output_activation=cfg.model.output_activation,
+            dropout=cfg.model.dropout,
+            input_names=training_var,
+        )
+    else:
+        logger.error(f'Value Error: args.taus = {taus}, but ony allows split or incl.')
+        exit()
 
     base_model.initialize_scaler(
         shift=train.X.mean(dim=0),
@@ -229,6 +244,7 @@ def main():
                     weight_column=weight_column,
                     device=device,
                     checkpoint_dir=CHECKPOINT_DIR,
+                    taus=args.taus,
                     fold_label='fold_odd',
                 )
 
@@ -242,6 +258,7 @@ def main():
                     weight_column=weight_column,
                     device=device,
                     checkpoint_dir=CHECKPOINT_DIR,
+                    taus=args.taus,
                     fold_label='fold_even',
                 )
 
@@ -302,6 +319,7 @@ def main():
                 weight_column=weight_column,
                 device=device,
                 checkpoint_dir=CHECKPOINT_DIR,
+                taus=args.taus,
                 fold_label='fold_odd',
             )
 
@@ -315,6 +333,7 @@ def main():
                 weight_column=weight_column,
                 device=device,
                 checkpoint_dir=CHECKPOINT_DIR,
+                taus=args.taus,
                 fold_label='fold_even',
             )
 
@@ -369,6 +388,7 @@ def main():
                 weight_column=weight_column,
                 device=device,
                 checkpoint_dir=CHECKPOINT_DIR,
+                taus=args.taus,
                 fold_label='fold_odd',
             )
 
@@ -382,6 +402,7 @@ def main():
                 weight_column=weight_column,
                 device=device,
                 checkpoint_dir=CHECKPOINT_DIR,
+                taus=args.taus,
                 fold_label='fold_even',
             )
 
@@ -431,6 +452,7 @@ def main():
             weight_column=weight_column,
             device=device,
             checkpoint_dir=CHECKPOINT_DIR,
+            taus=args.taus,
             fold_label='fold_odd',
         )
 
@@ -444,6 +466,7 @@ def main():
             weight_column=weight_column,
             device=device,
             checkpoint_dir=CHECKPOINT_DIR,
+            taus=args.taus,
             fold_label='fold_even',
         )
 
