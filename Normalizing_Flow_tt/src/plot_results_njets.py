@@ -56,15 +56,15 @@ class Args(Tap):
     model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'conditional_nf'  # Training mode to load: grouped NF split by njets, single inclusive NF, or conditional NF with njets as input.
     classifier_training_tag: str = ''  # Optional classifier training folder suffix after 'training_'. Empty -> pick most recent.
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
-    plot_training_diagnostics: bool = True   # Plot training loss / learning-rate / time-per-epoch curves.
-    plot_nf_sampling: bool = True           # Plot NF-sampled vs data histograms in training variables.
+    plot_training_diagnostics: bool = False   # Plot training loss / learning-rate / time-per-epoch curves.
+    plot_nf_sampling: bool = False           # Plot NF-sampled vs data histograms in training variables.
     plot_ff_results: bool = True             # Plot fake-factor comparison stacks for each njets category.
-    plot_ff_values: bool = True              # Plot FF values in histogram
-    plot_ar_data_with_clipping: bool = True  # Plot AR data with both kept and excluded events (by clipping mask).
-    plot_taylor_coefficients: bool = True   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
-    plot_complete_variables: bool = True
-    ratio_ylim_min: float = 0.5  # Lower y-limit for ratio panels.
-    ratio_ylim_max: float = 1.5  # Upper y-limit for ratio panels.
+    plot_ff_values: bool = False             # Plot FF values in histogram
+    plot_ar_data_with_clipping: bool = False  # Plot AR data with both kept and excluded events (by clipping mask).
+    plot_taylor_coefficients: bool = False   # Compute and plot first-order Taylor coefficients (mean |d log p/d x_i|). Slow — needs a backward pass.
+    plot_complete_variables: bool = False
+    ratio_ylim_min: float = 0.75  # Lower y-limit for ratio panels.
+    ratio_ylim_max: float = 1.25  # Upper y-limit for ratio panels.
 
     taus = 1 #[1, 2] #[1, 2, 12] # list of tau fakes
     embedding: Literal["embedding", "no_embedding"] = "embedding"
@@ -1070,9 +1070,9 @@ def _build_main_bins_by_variable() -> dict[str, np.ndarray]:
     # Existing defaults (kept identical to plot_complete_variables == False setup)
     'pt_1': np.linspace(30, 150, 31),
     'pt_2': np.linspace(30, 150, 31),
-    'm_vis': np.linspace(0, 300, 31),
+    'm_vis': np.linspace(0, 220, 31),
     'deltaR_ditaupair': np.linspace(0, 5, 21),
-    'pt_vis': np.linspace(0, 150, 31),
+    'pt_vis': np.linspace(0, 160, 31),
     'pt_tt': np.linspace(0, 200, 31),
     'm_fastmtt': np.linspace(0, 220, 31),
     'eta_1': np.linspace(-2.5, 2.5, 31),
@@ -2536,7 +2536,7 @@ def run_plots_for_njets_category(category_name, njets_title):
 
             fig, ax = plt.subplots(
                 2, 1,
-                figsize=(9,9),
+                figsize=(11.7, 9.1),
                 sharex=True,
                 gridspec_kw={'height_ratios': [4,1], 'hspace': 0.05},
                 constrained_layout=True

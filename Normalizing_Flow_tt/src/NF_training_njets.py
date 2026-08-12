@@ -131,13 +131,19 @@ def build_training_variables_tag(variables: list[str]) -> str:
 def mask_preselection_loose(df):
     mask_eta = (df.eta_1 <= 2.3) & (df.eta_2 <= 2.3)
     mask_pt = (df.pt_1 >= 40) & (df.pt_2 >= 40)
-    mask_tau_decay_mode = (
-        (df.tau_decaymode_2 == 0)
-        | (df.tau_decaymode_2 == 1)
-        | (df.tau_decaymode_2 == 10)
-        | (df.tau_decaymode_2 == 11)
+    mask_tau_decay_mode1 = (
+        (df.tau_decaymode_1 == 0)
+        | (df.tau_decaymode_1 == 1)
+        | (df.tau_decaymode_1 == 10)
+        | (df.tau_decaymode_1 == 11)
     )
-    return df[mask_pt & mask_tau_decay_mode]
+    mask_tau_decay_mode2 = (
+            (df.tau_decaymode_2 == 0)
+            | (df.tau_decaymode_2 == 1)
+            | (df.tau_decaymode_2 == 10)
+            | (df.tau_decaymode_2 == 11)
+        )
+    return df[mask_pt & mask_tau_decay_mode1 & mask_tau_decay_mode2 & mask_eta]
 
 
 #todo: muss hier noch näheres spezifiziert werden? Ein cut zum anderen tau?
@@ -618,7 +624,7 @@ def main():
     data_complete = pd.read_feather(cfg_path['datasets'] + args.embedding + '/combined_data_updated.feather')
     logger.info("Loaded %d total events", len(data_complete))
     print(cfg_path['datasets'] + args.embedding + '/combined_data_updated.feather')
-    exit()
+    #exit()
     #data_DR = mask_DR(data_complete)
     #plt.hist(data_DR["deltaR_ditaupair"])
     #plt.savefig('test.png')

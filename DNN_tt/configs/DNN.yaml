@@ -10,8 +10,8 @@ training:
   lr: 0.002
 
 scheduler:
-  patience: 20
+  patience: 20 #30
   early_stopping_patience: 1000
   factor: 0.1
   min_delta: 1.0e-4
-  min_lr: 1.0e-7
+  min_lr: 1.0e-7 #1.0e-7

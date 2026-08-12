@@ -16,8 +16,8 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 class Args(Tap):
     loc: Literal["remote", "present"] = "present"
-    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
-    classic: bool = True
+    embedding: Literal["embedding", "no_embedding"] = "embedding"
+    classic: bool = False
 
 
 # ----- functions to load files -----
@@ -137,6 +137,8 @@ def main():
     # set class weights for process
     combined_data['class_weights'] = get_class_weights(weights = combined_data.weight, Y = combined_data.Label, classes = (0, 1), class_weighted=True)
     #print(combined_data['class_weights'].value_counts())
+    print(sum(combined_data['id_tau_vsJet_VLoose_1'] < 0.5))
+    exit()
     
     if args.classic:
         out_classic = Path(cfg['output_dir'][args.loc] + "classic")

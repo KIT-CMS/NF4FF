@@ -32,8 +32,8 @@ class Args(Tap):
 
     taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
-    dnn_grouped: bool = True
-    classic: bool = False
+    dnn_grouped: bool = False
+    classic: bool = True
 
     closure_DR: bool = True
     FF_dist: bool = True
@@ -154,6 +154,7 @@ def main():
         logger.info('Initiaize plotting for tau split FF calculated through grouped DNN...')
 
         df = load_data(DATA_PATH, MASKS_PATH)
+        print(len(df['ff_dnn_tau1']))
 
         # ----- Closure plots in DR -----
         if args.closure_DR:
@@ -286,6 +287,12 @@ def main():
         df = load_data(DATA_PATH, MASKS_PATH)
         print(len(df.data.AR_tau1))
         print(len(df.data.AR_tau2))
+        h = 0
+        for x in df['ff_dnn_tau1']:
+            if not np.isnan(x): h+=1
+
+        print(h)
+        exit()
 
         # ----- Closure plots in DR -----
         if args.closure_DR:
@@ -387,7 +394,7 @@ def main():
                     var=var,
                     bins=bins,
                     label=label,
-                    grouping=None,
+                    grouping='njets',
                 )
                 plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'closure_in_DR' / 'njets' / f'FF_closure_DR_incl_{args.incl}_{var}.png', dpi=150, bbox_inches='tight')
                 plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'closure_in_DR' / 'njets' / f'FF_closure_DR_incl_{args.incl}_{var}.pdf', dpi=150, bbox_inches='tight')
@@ -402,13 +409,13 @@ def main():
             plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'FF_distribution_AR' / 'njets' / f'plot_ff_incl_{args.incl}.png', dpi=150, bbox_inches='tight')
             plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'FF_distribution_AR' / 'njets' / f'plot_ff_incl_{args.incl}.pdf', dpi=150, bbox_inches='tight')
             plt.close(fig_ar)
-            logger.info(f'Saved inclusive FF distributions in AR for ungrouped DNN')
+            logger.info(f'Saved inclusive FF distributions in AR for grouped DNN')
 
             fig_ar, ax_ar = plot_fake_factors_grouped_incl(df=df, incl=args.incl, clipped=False, category_title=r'split in $N_{jets}$', grouping='njets')
             plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'FF_distribution_AR' / 'njets' / f'plot_ff_unclipped_incl_{args.incl}.png', dpi=150, bbox_inches='tight')
             plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'FF_distribution_AR' / 'njets' / f'plot_ff_unclipped_incl_{args.incl}.pdf', dpi=150, bbox_inches='tight')
             plt.close(fig_ar)
-            logger.info(f'Saved inclusive unclipped FF distributions in AR for ungrouped DNN')
+            logger.info(f'Saved inclusive unclipped FF distributions in AR for grouped DNN')
 
 
         # ----- FF closure in AR -----
@@ -429,7 +436,7 @@ def main():
                 plt.savefig(PLOTS_DIR / f'tau_incl_{args.incl}' / 'closure_plots' / 'njets' / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig)
 
-            logger.info('Saved all closure plots for tau inclusive ungrouped DNN')
+            logger.info('Saved all closure plots for tau inclusive grouped DNN')
 
 
 

@@ -16,7 +16,7 @@ masks:
     - extraelec_veto < 0.5
 
   AR:
-    - (id_tau_vsJet_VLoose_1 > 0.5) | (id_tau_vsJet_VLoose_2 > 0.5) 
+    - (id_tau_vsJet_VLoose_1 > 0.5) & (id_tau_vsJet_VLoose_2 > 0.5) 
     - (id_tau_vsJet_Tight_1 < 0.5) | (id_tau_vsJet_Tight_2 < 0.5)
     - (q_1*q_2) < 0
     - extramuon_veto < 0.5
@@ -31,7 +31,7 @@ masks:
 
   
   AR_like:  
-    - (id_tau_vsJet_VLoose_1 > 0.5) | (id_tau_vsJet_VLoose_2 > 0.5)
+    - (id_tau_vsJet_VLoose_1 > 0.5) & (id_tau_vsJet_VLoose_2 > 0.5)
     - (id_tau_vsJet_Tight_1 < 0.5) | (id_tau_vsJet_Tight_2 > 0.5) 
 
   SR_like:

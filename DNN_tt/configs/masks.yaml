@@ -81,6 +81,12 @@ masks:
 
   #AR_SS was here once -> makes no sense for me
 
+  Anti_DR:
+    - (q_1*q_2) < 0
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+    - id_tau_vsJet_VLoose_1 > 0.5
+    - id_tau_vsJet_VLoose_2 > 0.5
 
   DR_qcd:
     - q_1 * q_2 > 0
@@ -156,6 +162,10 @@ regions:
     - preselection
     - DR_qcd
     - AR_like_tau2
+
+  Anti_DR:
+    - preselection
+    - Anti_DR
   
   DR_qcd:
     - DR_qcd
@@ -163,6 +173,9 @@ regions:
 
   DR_qcd_without_signs:
     - DR_qcd_no_signs
+    - preselection
+
+  preselection:
     - preselection
 
 #identical to data_process_mapping_embedding.yaml in classifier_tt/configs

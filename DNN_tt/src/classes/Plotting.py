@@ -634,8 +634,8 @@ def plot_fake_factors(
         ff_dnn_tau1 = 'ff_dnn_tau1'
         ff_dnn_tau2 = 'ff_dnn_tau2'
     
-        bins_tau1 = np.linspace(0, 1, 51)
-        bins_tau2 = np.linspace(0, 1., 51)
+        bins_tau1 = np.linspace(0, 1.25, 51)
+        bins_tau2 = np.linspace(0, 1.25, 51)
     else:
         ff_dnn_tau1 = 'ff_unclipped_dnn_tau1'
         ff_dnn_tau2 = 'ff_unclipped_dnn_tau2'
@@ -646,9 +646,10 @@ def plot_fake_factors(
 
     fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
 
-    ax[0].hist(df.data.AR_tau1[ff_dnn_tau1], bins=bins_tau1, histtype = 'step', linewidth = 2, label='Tau 1')
+    n = ax[0].hist(df.data.AR_tau1[ff_dnn_tau1], bins=bins_tau1, histtype = 'step', linewidth = 2, label='Tau 1')
     ax[0].set_ylabel("Events")
     ax[0].legend()
+    ax[0].set_ylim(top=1.2*np.max(n[0]))
 
     CMS_CHANNEL_TITLE([ax[0]])
     CMS_LUMI_TITLE([ax[0]])
@@ -672,8 +673,8 @@ def plot_fake_factors_combTaus(
         ff_dnn_tau1 = 'ff_dnn_tau1'
         ff_dnn_tau2 = 'ff_dnn_tau2'
     
-        bins_tau1 = np.linspace(0, 1, 51)
-        bins_tau2 = np.linspace(0, 1., 51)
+        bins_tau1 = np.linspace(0, 1.25, 51)
+        bins_tau2 = np.linspace(0, 1.25, 51)
     else:
         ff_dnn_tau1 = 'ff_unclipped_dnn_tau1'
         ff_dnn_tau2 = 'ff_unclipped_dnn_tau2'
@@ -701,6 +702,7 @@ def plot_fake_factors_combTaus(
 
     ax.set_ylabel('Events')
     ax.set_xlabel("fake_factor")
+    ax.set_ylim(top=1.2*np.max(n))
     ax.legend()
     return fig, ax
 
@@ -715,10 +717,10 @@ def plot_fake_factors_incl(
     if clipped:
 
         ff_dnn = f'ff_dnn_incl_{incl}'    
-        bins = np.linspace(0, 1, 51)
+        bins = np.linspace(0, 0.5, 51)
     else:
         ff_dnn = f'ff_unclipped_dnn_incl_{incl}'    
-        bins = np.linspace(0, 2., 51)
+        bins = np.linspace(0, 0.5, 51)
     
 
     fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
@@ -749,8 +751,7 @@ def plot_classic_fake_factors(
         ff_tau2 = f'ff_corr_classic_tau2_{short}'
     else:
         ff_tau1 = f'ff_classic_tau1_{short}'
-        ff_tau2 = f'ff_classic_tau2_{short}'
-    
+        ff_tau2 = f'ff_classic_tau2_{short}'    
 
     fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
 
@@ -758,14 +759,32 @@ def plot_classic_fake_factors(
         bins_tau1 = np.linspace(0, 0.5, 71)
         bins_tau2 = np.linspace(0, 0.5, 71)
 
+        group_mask_tau1 = _grouping_masks(df.data.AR_tau1_jvoss, 'njets')
+        group_mask_tau2 = _grouping_masks(df.data.AR_tau2_jvoss, 'njets')
+
         n = ax[0].hist(df.data.AR_tau1_jvoss[ff_tau1], bins=bins_tau1, histtype = 'step', linewidth = 2, label='Tau 1')
+        for mask, mask_label in group_mask_tau1:
+            ax[0].hist(df.data.AR_tau1_jvoss[ff_tau1][mask], bins=bins_tau1, histtype='step', ls='--', label=f'{mask_label}')
+
         ax[1].hist(df.data.AR_tau2_jvoss[ff_tau2], bins=bins_tau2, histtype = 'step', linewidth = 2, label="Tau 2")
+        for mask, mask_label in group_mask_tau2:
+            ax[1].hist(df.data.AR_tau2_jvoss[ff_tau2][mask], bins=bins_tau2, histtype='step', ls='--', label=f'{mask_label}')
+        
 
     elif short=='sg':
-        bins_tau1 = np.linspace(0, 0.5, 51)
-        bins_tau2 = np.linspace(0, 0.5, 51)
+        bins_tau1 = np.linspace(0, 0.8, 51)
+        bins_tau2 = np.linspace(0, 0.8, 51)
+
+        group_mask_tau1 = _grouping_masks(df.data.AR_tau1_sgiappic, 'njets')
+        group_mask_tau2 = _grouping_masks(df.data.AR_tau2_sgiappic, 'njets')
+
         n = ax[0].hist(df.data.AR_tau1_sgiappic[ff_tau1], bins=bins_tau1, histtype = 'step', linewidth = 2, label='Tau 1')
+        for mask, mask_label in group_mask_tau1:
+            ax[0].hist(df.data.AR_tau1_sgiappic[ff_tau1][mask], bins=bins_tau1, histtype='step', ls='--', label=f'{mask_label}')
+
         ax[1].hist(df.data.AR_tau2_sgiappic[ff_tau2], bins=bins_tau2, histtype = 'step', linewidth = 2, label="Tau 2")
+        for mask, mask_label in group_mask_tau2:
+            ax[1].hist(df.data.AR_tau2_sgiappic[ff_tau2][mask], bins=bins_tau2, histtype='step', ls='--', label=f'{mask_label}')
 
     else:
         print(f'short = {short} is not implmented. Use either jv or sg')
@@ -1134,8 +1153,8 @@ def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode', clip
     hep.style.use(hep.style.CMS)
 
     if clipped:
-        bins_tau1 = np.linspace(0, 1.0, 51)
-        bins_tau2 = np.linspace(0, 1.0, 51)
+        bins_tau1 = np.linspace(0, 1.25, 51)
+        bins_tau2 = np.linspace(0, 1.25, 51)
 
         if grouping == 'tau_decaymode':
             ff_tau1 = 'ff_dnn_tau1_tau_dm'
@@ -1178,7 +1197,7 @@ def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode', clip
     for mask, mask_label in group_mask_tau1:
         ax[0].hist(frame_tau1[ff_tau1][mask], bins=bins_tau1, histtype='step', ls='--', label=f'{mask_label}')
     ax[0].set_ylabel('Events')
-    ax[0].legend(loc = 'center left', prop={'size': 15})
+    ax[0].legend(loc = 'upper right', prop={'size': 15})
     ax[0].set_ylim(top=1.2 * np.max(n1[0]))
 
 
@@ -1192,7 +1211,7 @@ def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode', clip
     for mask, mask_label in group_mask_tau2:
         ax[1].hist(frame_tau2[ff_tau2][mask], bins=bins_tau2, histtype='step', ls='--', label=f'{mask_label}')
     ax[1].set_xlabel(r'$F_{\mathrm{F}}$ value')
-    ax[1].legend(loc = 'upper left', prop={'size': 15})
+    ax[1].legend(loc = 'upper right', prop={'size': 15})
 
     return fig, ax
 
@@ -1200,7 +1219,7 @@ def plot_fake_factors_grouped_incl(df, incl, category_title, grouping='tau_decay
     hep.style.use(hep.style.CMS)
 
     if clipped:
-        bins = np.linspace(0, 1.0, 51)
+        bins = np.linspace(0, 0.5, 51)
 
         if grouping == 'tau_decaymode':
             ff = f'ff_dnn_incl_{incl}_tau_dm'
@@ -1210,7 +1229,7 @@ def plot_fake_factors_grouped_incl(df, incl, category_title, grouping='tau_decay
         else:
             raise ValueError(f'Unsupported grouping: {grouping}')
     else:
-        bins = np.linspace(0, 2., 51)
+        bins = np.linspace(0, 0.5, 51)
 
         if grouping == 'tau_decaymode':
             ff = f'ff_unclipped_dnn_incl_{incl}_tau_dm'
@@ -1232,7 +1251,7 @@ def plot_fake_factors_grouped_incl(df, incl, category_title, grouping='tau_decay
     for mask, mask_label in group_mask:
         ax.hist(frame[ff][mask], bins=bins, histtype='step', ls='--', label=f'{mask_label}')
     ax.set_ylabel('Events')
-    ax.legend(loc = 'center left', prop={'size': 15})
+    ax.legend(loc = 'upper right', prop={'size': 20})
     ax.set_ylim(top=1.2 * np.max(n1[0]))
 
 
@@ -1256,8 +1275,8 @@ def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymo
     else:
         raise ValueError(f'Unsupported grouping: {grouping}')
 
-    bins_tau1 = np.linspace(0, 1.0, 51)
-    bins_tau2 = np.linspace(0, 1.0, 51)
+    bins_tau1 = np.linspace(0, 1.25, 51)
+    bins_tau2 = np.linspace(0, 1.25, 51)
 
     frame_tau1 = df.data.AR_tau1
     frame_tau2 = df.data.AR_tau2
@@ -1302,7 +1321,7 @@ def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymo
 
     ax.set_ylabel('Events')
     ax.set_xlabel(r'$F_{\mathrm{F}}$ value')
-    ax.set_ylabel('Events')
+    ax.set_ylim(top=1.2*np.max(n))
     ax.legend(loc = 'upper right', prop={'size': 20})
 
     return fig, ax
