@@ -190,8 +190,6 @@ def calculate_fake_factors(
     else:
         for group_name, ar_mask in group_tau1_masks:
 
-            print_parts = [f"[{group_name}]"]
-
             # ---------------- Tau 1 ----------------
             if model_tau1 is not None:
 
@@ -207,7 +205,7 @@ def calculate_fake_factors(
                     norm_tau1 * ratio_tau1[ar_mask]
                 )
 
-                print_parts.append(f"tau1 norm = {norm_tau1:.4f}")
+                print(f"{group_name}:tau1 norm = {norm_tau1:.4f}")
 
         for group_name, ar_mask in group_tau2_masks:
             # ---------------- Tau 2 ----------------
@@ -225,18 +223,24 @@ def calculate_fake_factors(
                     norm_tau2 * ratio_tau2[ar_mask]
                 )
 
-                print_parts.append(f"tau2 norm = {norm_tau2:.4f}")
-
-            print(", ".join(print_parts))
+                print(f"{group_name}:tau2 norm = {norm_tau2:.4f}")
 
     # ----- number of FF over 3 -----
-    print('Tau 1 FF over 3.0')
+    number = 0
+    highest = 0
     for x in fake_factor_tau1:
-            if x > 3.0: print(x)
-    print('Tau 2 FF over 3.0')
-    for x in fake_factor_tau1:
-            if x > 3.0: print(x)
+        if x > 3.0:
+            number += 1
+            highest = max(highest, x)
+    print(f"Number of tau1 FF over 3.0: {number}, highest: {highest:.4f}")
 
+    number = 0
+    highest = 0
+    for x in fake_factor_tau2:
+        if x > 3.0:
+            number += 1
+            highest = max(highest, x)
+    print(f"Number of tau2 FF over 3.0: {number}, highest: {highest:.4f}")
     # ------------------------------------------------------------------
     # Optional clipping + output assignment
     # ------------------------------------------------------------------
@@ -358,9 +362,14 @@ def calculate_fake_factors_incl(
         
 
     # ----- number of FF over 3 -----
+    number = 0
+    highest = 0
     print('FF over 3.0')
     for x in fake_factor:
-            if x > 3.0: print(x)
+        if x > 3.0:
+            number += 1
+            highest = max(highest, x)
+    print(f"Number of tau incl FF over 3.0: {number}, highest: {highest:.4f}")
 
     # ------------------------------------------------------------------
     # Optional clipping + output assignment

@@ -15,4 +15,4 @@ scheduler:
   early_stopping_patience: 1000
   factor: 0.1
   min_delta: 1.0e-4
-  min_lr: 1.0e-7
+  min_lr: 1.0e-8

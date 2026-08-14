@@ -8,55 +8,58 @@ masks:
     - (tau_decaymode_1 == 0) | (tau_decaymode_1 == 1) | (tau_decaymode_1 == 10) | (tau_decaymode_1 == 11)
     - (tau_decaymode_2 == 0) | (tau_decaymode_2 == 1) | (tau_decaymode_2 == 10) | (tau_decaymode_2 == 11)
 
-  Anti_DR:
+  SR:
+    - id_tau_vsJet_Tight_1 > 0.5
+    - id_tau_vsJet_Tight_2 > 0.5
     - (q_1*q_2) < 0
     - extramuon_veto < 0.5
     - extraelec_veto < 0.5
-    - id_tau_vsJet_VLoose_1 > 0.5
-    - id_tau_vsJet_VLoose_2 > 0.5
+
+  AR:
+    - (id_tau_vsJet_VLoose_1 > 0.5) & (id_tau_vsJet_VLoose_2 > 0.5) 
+    - (id_tau_vsJet_Tight_1 < 0.5) | (id_tau_vsJet_Tight_2 < 0.5)
+    - (q_1*q_2) < 0
+    - extramuon_veto < 0.5
+    - extraelec_veto < 0.5
+
 
   DR_qcd:
     - q_1 * q_2 > 0
     - extramuon_veto < 0.5
     - extraelec_veto < 0.5
-    - id_tau_vsJet_VLoose_1 > 0.5
-    - id_tau_vsJet_VLoose_2 > 0.5
+    - (id_tau_vsJet_VLoose_1 > 0.5) & (id_tau_vsJet_VLoose_2 > 0.5)
 
-  SR:
+  
+  AR_like:  
+    - (id_tau_vsJet_VLoose_1 > 0.5) & (id_tau_vsJet_VLoose_2 > 0.5)
+    - (id_tau_vsJet_Tight_1 < 0.5) | (id_tau_vsJet_Tight_2 < 0.5) 
+
+  SR_like:
     - id_tau_vsJet_Tight_1 > 0.5
     - id_tau_vsJet_Tight_2 > 0.5
-
-  AR:
-    - (id_tau_vsJet_Tight_1 < 0.5) | (id_tau_vsJet_Tight_2 < 0.5)
 
 regions:
 
   SR:
     - preselection
-    - Anti_DR
     - SR
 
   AR:
     - preselection
-    - Anti_DR
     - AR
 
   SR_like:
     - preselection
     - DR_qcd
-    - SR
+    - SR_like
   
   AR_like:
     - preselection
     - DR_qcd
-    - AR
+    - AR_like
   
   DR_qcd:
     - DR_qcd
-    - preselection
-
-  Anti_DR:
-    - Anti_DR
     - preselection
 
 
