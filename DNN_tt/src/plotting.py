@@ -32,8 +32,8 @@ class Args(Tap):
 
     taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
-    dnn_grouped: bool = False
-    classic: bool = True
+    dnn_grouped: bool = True
+    classic: bool = False
 
     closure_DR: bool = True
     FF_dist: bool = True
@@ -292,7 +292,6 @@ def main():
             if not np.isnan(x): h+=1
 
         print(h)
-        exit()
 
         # ----- Closure plots in DR -----
         if args.closure_DR:

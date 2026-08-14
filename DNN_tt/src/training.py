@@ -29,7 +29,7 @@ class Args(Tap):
     incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
 
 args = Args().parse_args()
 
@@ -189,7 +189,7 @@ def main():
     grouping_njets = {
         njets_idx: (
             (0,),
-            (1),
+            (1,),
             (2, 1000),
         )
     }

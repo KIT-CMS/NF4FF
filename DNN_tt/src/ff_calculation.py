@@ -28,7 +28,7 @@ class Args(Tap):
     incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
     classic: bool = False
 
 args = Args().parse_args()
@@ -98,7 +98,7 @@ def main():
 
     grouping_njets = (
         (0,),
-        (1),
+        (1,),
         (2, 1000),
     )
 
@@ -125,14 +125,7 @@ def main():
     else:
         logger.error(f'Value Error: args.taus = {args.taus}, but ony allows split or incl.')
     
-    #print(df.columns)
-    #exit()
-    dfand = load_data(DATA_PATH, MASKS_PATH_INCL[0])
-    dfor = load_data(DATA_PATH, MASKS_PATH_INCL[1])
-    print('and: ', len(dfand.data.AR_like))
-    print('or: ', len(dfor.data.AR_like))
-    print(len(dfand.data.AR_like)/len(dfor.data.AR_like))
-    exit()
+  
     training_variables = load_variables(TRAINING_VAR_PATH, args.var)
 
    

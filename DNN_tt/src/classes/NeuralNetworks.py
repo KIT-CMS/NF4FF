@@ -216,7 +216,7 @@ class GroupedLayerABC(t.nn.Module, ABC):
                     shift = self._fallback_payload._scaler_shift_copy[column_idx].to(vals.device)
                     scale = self._fallback_payload._scaler_scale_copy[column_idx].to(vals.device)
                     vals = vals * scale + shift
-    
+                    
                 if len(bounds) == 1:  # checks at trace time, not ONNX run time
                     current_mask = current_mask & (t.abs(vals - bounds[0]) < 1e-4)
                 elif len(bounds) == 2:
