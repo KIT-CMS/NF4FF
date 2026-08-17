@@ -27,8 +27,7 @@ masks:
     - id_tau_vsJet_Tight_2 > 0.5
 
   AR:
-    - id_tau_vsJet_Tight_1 < 0.5
-    - id_tau_vsJet_Tight_2 < 0.5
+    - (id_tau_vsJet_Tight_1 < 0.5) & (id_tau_vsJet_Tight_2 < 0.5)
 
 regions:
 

@@ -2,10 +2,15 @@ from dataclasses import is_dataclass, fields
 from typing import Tuple
 
 import pandas as pd
+import uproot
 import yaml
 
 from classes.DataHandling import SelectionManager, AnalysisDataFrame
 
+def load_root_file_as_pd(file_path):
+    with uproot.open(file_path) as file:
+        data = file["ntuple"].arrays(file["ntuple"].keys(), library="pd")
+    return data
 
 def load_data(feather_file, config_file):
 
