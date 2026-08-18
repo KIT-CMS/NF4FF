@@ -461,6 +461,8 @@ def training_data(
     training_var,
     weight_column="weight",
     balance=True,
+    balance_column=None,
+    balance_groups=None,
 ):
 
     X_sig = df_sig[training_var].to_numpy(dtype=np.float32)
@@ -474,25 +476,28 @@ def training_data(
 
 
     if balance:
-        # Normalize SR to AR, preferably per njets category like in FF calculation.
-        if "tau_decaymode_2" in df_sig.columns and "tau_decaymode_2" in df_bkg.columns:
+        if balance_column is not None:
+            if balance_groups is None:
+                raise ValueError(
+                    "balance_groups must be provided when balance_column is set"
+                )
+            if balance_column not in df_sig.columns or balance_column not in df_bkg.columns:
+                raise KeyError(f"Missing balancing column: {balance_column}")
 
-            njets_sig = df_sig["tau_decaymode_2"].to_numpy(dtype=np.float32)
-            njets_bkg = df_bkg["tau_decaymode_2"].to_numpy(dtype=np.float32)
-
-            # Categories:
-            group_defs = (
-                (lambda x: x == 0),
-                (lambda x: x == 1),
-                (lambda x: x == 10),
-                (lambda x: x == 11),
-            )
-
+            values_sig = df_sig[balance_column].to_numpy(dtype=np.float32)
+            values_bkg = df_bkg[balance_column].to_numpy(dtype=np.float32)
             w_sig_scaled = w_sig.copy()
 
-            for group_fn in group_defs:
-                sig_mask = group_fn(njets_sig)
-                bkg_mask = group_fn(njets_bkg)
+            for group in balance_groups:
+                if len(group) == 1:
+                    sig_mask = values_sig == group[0]
+                    bkg_mask = values_bkg == group[0]
+                elif len(group) == 2:
+                    low, high = group
+                    sig_mask = (values_sig >= low) & (values_sig <= high)
+                    bkg_mask = (values_bkg >= low) & (values_bkg <= high)
+                else:
+                    raise ValueError(f"Invalid balancing group: {group}")
 
                 sig_yield = np.sum(w_sig[sig_mask])
                 bkg_yield = np.sum(w_bkg[bkg_mask])
@@ -542,6 +547,8 @@ def create_training_dataset(
     training_var,
     weight_column="weight",
     balance=True,
+    balance_column=None,
+    balance_groups=None,
     test_size=0.25,
     random_state=42,
 ):
@@ -563,6 +570,8 @@ def create_training_dataset(
         training_var=training_var,
         weight_column=weight_column,
         balance=balance,
+        balance_column=balance_column,
+        balance_groups=balance_groups,
     )
 
     val_dataset = training_data(

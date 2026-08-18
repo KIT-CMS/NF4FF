@@ -75,13 +75,19 @@ class Config:
     scheduler: SchedulerConfig
 
 
-def _train_fold_model(cfg, grouping, training_var, df_sig, df_bkg, weight_column, device, checkpoint_dir, taus, fold_label):
+def _train_fold_model(
+    cfg, grouping, training_var, df_sig, df_bkg, weight_column, device,
+    checkpoint_dir, taus, fold_label, balance_column=None,
+    balance_groups=None,
+):
     train, val = create_training_dataset(
         df_sig=df_sig,
         df_bkg=df_bkg,
         training_var=training_var,
         weight_column=weight_column,
         balance=True,
+        balance_column=balance_column,
+        balance_groups=balance_groups,
         test_size=0.25,
         random_state=SEED,
     )
@@ -211,11 +217,15 @@ def main():
                     df_sig = df.data.SR_like
                     df_bkg = df.data.AR_like_tau1
                     weight_column = 'weight_qcd'
+                    balance_column = 'tau_decaymode_1' if group_label == 'tau_decaymode' else 'njets'
 
                 elif process == 'tau2':
                     df_sig = df.data.SR_like
                     df_bkg = df.data.AR_like_tau2
                     weight_column = 'weight_qcd'
+                    balance_column = 'tau_decaymode_2' if group_label == 'tau_decaymode' else 'njets'
+
+                balance_groups = next(iter(grouping[i].values()))
 
                 df_sig_plain = df_sig.events
                 df_bkg_plain = df_bkg.events
@@ -248,6 +258,8 @@ def main():
                     checkpoint_dir=CHECKPOINT_DIR,
                     taus=args.taus,
                     fold_label='fold_odd',
+                    balance_column=balance_column,
+                    balance_groups=balance_groups,
                 )
 
                 # odd_model: trained on even events, applied to odd events
@@ -262,6 +274,8 @@ def main():
                     checkpoint_dir=CHECKPOINT_DIR,
                     taus=args.taus,
                     fold_label='fold_even',
+                    balance_column=balance_column,
+                    balance_groups=balance_groups,
                 )
 
                 model = FoldCombinedDNN(
@@ -323,6 +337,8 @@ def main():
                 checkpoint_dir=CHECKPOINT_DIR,
                 taus=args.taus,
                 fold_label='fold_odd',
+                balance_column=None,
+                balance_groups=None,
             )
 
             # odd_model: trained on even events, applied to odd events
@@ -337,6 +353,8 @@ def main():
                 checkpoint_dir=CHECKPOINT_DIR,
                 taus=args.taus,
                 fold_label='fold_even',
+                balance_column=None,
+                balance_groups=None,
             )
 
             model = FoldCombinedDNN(
@@ -392,6 +410,8 @@ def main():
                 checkpoint_dir=CHECKPOINT_DIR,
                 taus=args.taus,
                 fold_label='fold_odd',
+                balance_column='njets',
+                balance_groups=grouping_njets,
             )
 
             # odd_model: trained on even events, applied to odd events
@@ -406,6 +426,8 @@ def main():
                 checkpoint_dir=CHECKPOINT_DIR,
                 taus=args.taus,
                 fold_label='fold_even',
+                balance_column='njets',
+                balance_groups=grouping_njets,
             )
 
             model = FoldCombinedDNN(
@@ -456,6 +478,8 @@ def main():
             checkpoint_dir=CHECKPOINT_DIR,
             taus=args.taus,
             fold_label='fold_odd',
+            balance_column=None,
+            balance_groups=None,
         )
 
         # odd_model: trained on even events, applied to odd events
@@ -470,6 +494,8 @@ def main():
             checkpoint_dir=CHECKPOINT_DIR,
             taus=args.taus,
             fold_label='fold_even',
+            balance_column=None,
+            balance_groups=None,
         )
 
         model = FoldCombinedDNN(
