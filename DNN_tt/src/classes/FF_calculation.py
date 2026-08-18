@@ -167,15 +167,15 @@ def calculate_fake_factors(
     if grouping_variable is None and model_tau1 is not None and model_tau2 is not None:
 
         norm_tau1 = (
-            np.sum(df.data.SR_like.weight)
-            / np.sum(df.data.AR_like_tau1.weight)
+            np.sum(df.data.SR_like.weight_qcd)
+            / np.sum(df.data.AR_like_tau1.weight_qcd)
         )
 
         fake_factor_tau1 = (norm_tau1 * ratio_tau1)
 
         norm_tau2 = (
-            np.sum(df.data.SR_like.weight)
-            / np.sum(df.data.AR_like_tau2.weight)
+            np.sum(df.data.SR_like.weight_qcd)
+            / np.sum(df.data.AR_like_tau2.weight_qcd)
         )
 
         fake_factor_tau2 = (norm_tau2 * ratio_tau2)
@@ -193,8 +193,8 @@ def calculate_fake_factors(
                 ar_tau1_mask = ar_tau1_masks[group_name]
 
                 norm_tau1 = (
-                    np.sum(df.data.SR_like.weight[sr_tau1_mask])
-                    / np.sum(df.data.AR_like_tau1.weight[ar_tau1_mask])
+                    np.sum(df.data.SR_like.weight_qcd[sr_tau1_mask])
+                    / np.sum(df.data.AR_like_tau1.weight_qcd[ar_tau1_mask])
                 )
 
                 fake_factor_tau1[ar_mask] = (
@@ -211,8 +211,8 @@ def calculate_fake_factors(
                 ar_tau2_mask = ar_tau2_masks[group_name]
 
                 norm_tau2 = (
-                    np.sum(df.data.SR_like.weight[sr_tau2_mask])
-                    / np.sum(df.data.AR_like_tau2.weight[ar_tau2_mask])
+                    np.sum(df.data.SR_like.weight_qcd[sr_tau2_mask])
+                    / np.sum(df.data.AR_like_tau2.weight_qcd[ar_tau2_mask])
                 )
 
                 fake_factor_tau2[ar_mask] = (
@@ -334,8 +334,8 @@ def calculate_fake_factors_incl(
                 ar_mask_ = ar_masks[group_name]
 
                 norm = (
-                    np.sum(df.data.SR_like.weight[sr_mask])
-                    / np.sum(df.data.AR_like.weight[ar_mask_])
+                    np.sum(df.data.SR_like.weight_qcd[sr_mask])
+                    / np.sum(df.data.AR_like.weight_qcd[ar_mask_])
                 )
 
                 fake_factor[ar_mask] = (
@@ -347,8 +347,8 @@ def calculate_fake_factors_incl(
     elif grouping_variable is None and model is not None:
 
         norm = (
-            np.sum(df.data.SR_like.weight)
-            / np.sum(df.data.AR_like.weight)
+            np.sum(df.data.SR_like.weight_qcd)
+            / np.sum(df.data.AR_like.weight_qcd)
         )
 
         fake_factor = (norm * ratio)        
@@ -440,16 +440,16 @@ def calculate_fake_factors_in_DR(
 
     if group_tau1_masks is None and group_tau2_masks is None:
         norm_tau1 = (
-            np.sum(df.data.SR_like.weight)
-            / np.sum(df.data.AR_like_tau1.weight)
+            np.sum(df.data.SR_like.weight_qcd)
+            / np.sum(df.data.AR_like_tau1.weight_qcd)
         )
 
         fake_factor_tau1 = (norm_tau1 * ratio_tau1)
 
 
         norm_tau2 = (
-            np.sum(df.data.SR_like.weight)
-            / np.sum(df.data.AR_like_tau2.weight)
+            np.sum(df.data.SR_like.weight_qcd)
+            / np.sum(df.data.AR_like_tau2.weight_qcd)
         )
 
         fake_factor_tau2 = (norm_tau2 * ratio_tau2)
@@ -473,8 +473,8 @@ def calculate_fake_factors_in_DR(
             ar_tau1_mask = dict(ar_tau1_mask)[group_name]
 
             norm_tau1 = (
-                np.sum(df.data.SR_like.weight[sr_tau1_mask])
-                / np.sum(df.data.AR_like_tau1.weight[ar_tau1_mask])
+                np.sum(df.data.SR_like.weight_qcd[sr_tau1_mask])
+                / np.sum(df.data.AR_like_tau1.weight_qcd[ar_tau1_mask])
             )
 
             fake_factor_tau1[ar_mask] = (
@@ -504,8 +504,8 @@ def calculate_fake_factors_in_DR(
             ar_tau2_mask = dict(ar_tau2_mask)[group_name]
 
             norm_tau2 = (
-                np.sum(df.data.SR_like.weight[sr_tau2_mask])
-                / np.sum(df.data.AR_like_tau2.weight[ar_tau2_mask])
+                np.sum(df.data.SR_like.weight_qcd[sr_tau2_mask])
+                / np.sum(df.data.AR_like_tau2.weight_qcd[ar_tau2_mask])
             )
 
             fake_factor_tau2[ar_mask] = (
@@ -564,8 +564,8 @@ def calculate_fake_factors_in_DR_incl(
 
     if group_masks is None:
         norm = (
-            np.sum(df.data.SR_like.weight)
-            / np.sum(df.data.AR_like.weight)
+            np.sum(df.data.SR_like.weight_qcd)
+            / np.sum(df.data.AR_like.weight_qcd)
         )
 
         fake_factor = (norm * ratio)
@@ -589,8 +589,8 @@ def calculate_fake_factors_in_DR_incl(
             ar_mask_incl = dict(ar_mask_incl)[group_name]
 
             norm = (
-                np.sum(df.data.SR_like.weight[sr_mask])
-                / np.sum(df.data.AR_like.weight[ar_mask_incl])
+                np.sum(df.data.SR_like.weight_qcd[sr_mask])
+                / np.sum(df.data.AR_like.weight_qcd[ar_mask_incl])
             )
 
             fake_factor[ar_mask] = (

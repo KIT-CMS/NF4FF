@@ -108,24 +108,7 @@ def main():
         (1,),
         (10,),
         (11,),
-    )
-
-    # ----- execution -----
-    logger.info("Loading data...")
-
-    if args.taus=='split':
-        df = load_data(DATA_PATH, MASKS_PATH)
-
-    elif args.taus == 'incl':
-        if args.incl=='and': incl = 0
-        elif args.incl=='or': incl = 1
-        else:
-            logger.error(f'Value Error: args.incl = {args.incl}, but only accepts "and or "or".')
-            exit()
-        df = load_data(DATA_PATH, MASKS_PATH_INCL[incl])
-    else:
-        logger.error(f'Value Error: args.taus = {args.taus}, but ony allows split or incl.')
-    
+    )    
   
     training_variables = load_variables(TRAINING_VAR_PATH, args.var)
 
@@ -154,6 +137,9 @@ def main():
 
 
     if args.taus=='split' and args.dnn_grouped:
+        logger.info("Loading data...")
+        df = load_data(DATA_PATH, MASKS_PATH)
+
         # tau decay mode
         logger.info("Calculating fake factors for tau decay mode...")
         calculate_fake_factors(
@@ -208,6 +194,8 @@ def main():
         )
 
     elif args.taus == 'split' and not args.dnn_grouped:
+        logger.info("Loading data...")
+        df = load_data(DATA_PATH, MASKS_PATH)
         
         logger.info("Calculating fake factors...")
         calculate_fake_factors(
@@ -225,6 +213,15 @@ def main():
                 )
 
     elif args.taus == 'incl' and args.dnn_grouped:
+        if args.incl=='and': incl = 0
+        elif args.incl=='or': incl = 1
+        else:
+            logger.error(f'Value Error: args.incl = {args.incl}, but only accepts "and or "or".')
+            exit()
+
+        logger.info("Loading data...")
+        df = load_data(DATA_PATH, MASKS_PATH_INCL[incl])
+        
         logger.info("Calculating fake factors inclusive...")
         calculate_fake_factors_incl(
             df=df,
@@ -249,6 +246,15 @@ def main():
         )
 
     elif args.taus == 'incl' and not args.dnn_grouped:
+        if args.incl=='and': incl = 0
+        elif args.incl=='or': incl = 1
+        else:
+            logger.error(f'Value Error: args.incl = {args.incl}, but only accepts "and or "or".')
+            exit()
+
+        logger.info("Loading data...")
+        df = load_data(DATA_PATH, MASKS_PATH_INCL[incl])
+
         logger.info("Calculating fake factors inclusive...")
         calculate_fake_factors_incl(
             df=df,
@@ -267,7 +273,6 @@ def main():
         )
     
 
-    #print(list(df.columns))
 
     if args.taus == 'split':
         logger.info(f"Saving main dataframe to feather file: {DATA_PATH}")
