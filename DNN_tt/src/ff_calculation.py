@@ -11,7 +11,7 @@ import torch as t
 
 from classes.NeuralNetworks import load_fold_combined_model
 from classes.Loading import load_config, load_variables, load_data
-from classes.FF_calculation import calculate_fake_factors_incl, calculate_fake_factors, calculate_fake_factor_classic, calculate_fake_factors_in_DR, calculate_fake_factors_in_DR_incl
+from classes.FF_calculation import calculate_fake_factors_ungrouped, calculate_fake_factors_incl, calculate_fake_factors_grouped, calculate_fake_factor_classic, calculate_fake_factors_in_DR, calculate_fake_factors_in_DR_incl
 
 
 SEED = 42
@@ -198,7 +198,7 @@ def main():
         df = load_data(DATA_PATH, MASKS_PATH)
         
         logger.info("Calculating fake factors...")
-        calculate_fake_factors(
+        calculate_fake_factors_ungrouped(
             df=df,
             model_tau1=model_tau1,
             model_tau2=model_tau2,

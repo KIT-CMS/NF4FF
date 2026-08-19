@@ -284,13 +284,6 @@ def main():
         logger.info('Initiaize plotting for tau split FF calculated through single DNN...')
 
         df = load_data(DATA_PATH, MASKS_PATH)
-        print(len(df.data.AR_tau1))
-        print(len(df.data.AR_tau2))
-        h = 0
-        for x in df['ff_dnn_tau1']:
-            if not np.isnan(x): h+=1
-
-        print(h)
 
         # ----- Closure plots in DR -----
         if args.closure_DR:
