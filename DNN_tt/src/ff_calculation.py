@@ -11,8 +11,9 @@ import torch as t
 
 from classes.NeuralNetworks import load_fold_combined_model
 from classes.Loading import load_config, load_variables, load_data
-from classes.FF_calculation import calculate_fake_factors_ungrouped, calculate_fake_factors_incl, calculate_fake_factors_grouped, calculate_fake_factor_classic, calculate_fake_factors_in_DR, calculate_fake_factors_in_DR_incl
-
+from classes.FF_calculation import calculate_fake_factors_ungrouped, calculate_fake_factors_grouped
+from classes.FF_calculation import calculate_fake_factors_incl, calculate_fake_factors_in_DR_incl
+from classes.FF_calculation import calculate_fake_factor_classic
 
 SEED = 42
 logger = logging.getLogger(__name__)
@@ -165,22 +166,25 @@ def main():
         )
         
         # ----- calculate fake factors in DR -----
-        logger.info("Calculating fake factors in DR...")
-        calculate_fake_factors_in_DR(
+        logger.info("Calculating fake factors in DR for tau decay mode...")
+        calculate_fake_factors_grouped(
             df=df,
             model_tau1=model_tau1_tdm,
             model_tau2=model_tau2_tdm,
             training_variables=training_variables,
+            DR = True,
             grouping_variable = ['tau_decaymode_1', 'tau_decaymode_2'],
             grouping_definition = grouping_tdm,
             output_suffix = 'tau_dm',
         )
 
-        calculate_fake_factors_in_DR(
+        logger.info("Calculating fake factors in DR for njets...")
+        calculate_fake_factors_grouped(
             df=df,
             model_tau1=model_tau1_njets,
             model_tau2=model_tau2_njets,
             training_variables=training_variables,
+            DR = True,
             grouping_variable = 'njets',
             grouping_definition = grouping_njets,
             output_suffix = 'njets',
@@ -198,11 +202,13 @@ def main():
             training_variables=training_variables,
         )
 
-        calculate_fake_factors_in_DR(
+        logger.info("Calculating fake factors in DR...")
+        calculate_fake_factors_ungrouped(
             df=df,
             model_tau1=model_tau1,
             model_tau2=model_tau2,
-            training_variables=training_variables
+            training_variables=training_variables,
+            DR = True,
         )
 
     elif args.taus == 'incl' and args.dnn_grouped:
