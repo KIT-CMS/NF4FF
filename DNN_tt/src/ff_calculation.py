@@ -29,7 +29,7 @@ class Args(Tap):
     
     taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
     classic: bool = False
 
 args = Args().parse_args()
@@ -142,7 +142,7 @@ def main():
 
         # tau decay mode
         logger.info("Calculating fake factors for tau decay mode...")
-        calculate_fake_factors(
+        calculate_fake_factors_grouped(
             df=df,
             model_tau1=model_tau1_tdm,
             model_tau2=model_tau2_tdm,
@@ -154,7 +154,7 @@ def main():
 
         # njets
         logger.info("Calculating fake factors for njets...")
-        calculate_fake_factors(
+        calculate_fake_factors_grouped(
             df=df,
             model_tau1=model_tau1_njets,
             model_tau2=model_tau2_njets,
@@ -163,13 +163,6 @@ def main():
             grouping_definition = grouping_njets,
             output_suffix = 'njets',
         )
-
-
-        #logger.info("Saving fake factors to df in ff_dnn_tau_dm and ff_dnn_njets columns...")
-        #calculate_fake_factor_dnn(df1 = df.AR_tau1, df2 = df.AR_tau2, grouping = 'tau_decaymode')
-        #calculate_fake_factor_dnn(df1 = df.AR_tau1, df2 = df.AR_tau2, grouping = 'njets')
-
-        #the equivalent would be saving the tau1 and tau2 FF seperately
         
         # ----- calculate fake factors in DR -----
         logger.info("Calculating fake factors in DR...")
@@ -206,11 +199,11 @@ def main():
         )
 
         calculate_fake_factors_in_DR(
-                    df=df,
-                    model_tau1=model_tau1,
-                    model_tau2=model_tau2,
-                    training_variables=training_variables
-                )
+            df=df,
+            model_tau1=model_tau1,
+            model_tau2=model_tau2,
+            training_variables=training_variables
+        )
 
     elif args.taus == 'incl' and args.dnn_grouped:
         if args.incl=='and': incl = 0

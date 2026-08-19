@@ -49,33 +49,26 @@ def _build_group_masks(values, grouping_definition):
 
     return masks
 
-def _compute_ratio(model_tau1, model_tau2, df, training_variables):
-    if model_tau1 is None or model_tau2 is None:
-        return None, None
+def _compute_ratio(model, df_AR, training_variables):
+    '''
+    In SR: df_AR is either df.AR_tau1 or df.AR_tau2 or df.AR for model_tau1, model_tau2 or model respectively
+    In DR: df_AR is either df.AR_like_tau1 or df.AR_like_tau2 or df.AR_like for model_tau1, model_tau2 or model respectively
+    '''
+    if model is None:
+        return None
 
-    X_tau1 = test_data(df.AR_tau1, training_variables)
-    X_tau1_tensor = t.from_numpy(X_tau1.X).float()
-
-    X_tau2 = test_data(df.AR_tau2, training_variables)
-    X_tau2_tensor = t.from_numpy(X_tau2.X).float()
+    X_tau = test_data(df_AR, training_variables)
+    X_tensor = t.from_numpy(X_tau.X).float()
+    X_prepared = _prepare_input_tensor(model, X_tensor, df_AR)
+    
+    with t.no_grad():
+        f = model(X_prepared).cpu().numpy().flatten()
 
     eps = 1e-6
+    f_ = np.clip(f, eps, 1 - eps)
 
-    X_tau1_prepared = _prepare_input_tensor(model_tau1, X_tau1_tensor, df.AR_tau1)
-    X_tau2_prepared = _prepare_input_tensor(model_tau2, X_tau2_tensor, df.AR_tau2)
-
-    with t.no_grad():
-        f_tau1 = model_tau1(X_tau1_prepared).cpu().numpy().flatten()
-        f_tau2 = model_tau2(X_tau2_prepared).cpu().numpy().flatten()
-
-    f_tau1_ = np.clip(f_tau1, eps, 1 - eps)
-    f_tau2_ = np.clip(f_tau2, eps, 1 - eps)
-
-    return f_tau1_ / (1.0 - f_tau1_), f_tau2_ / (1.0 - f_tau2_)
-
-
+    return f_ / (1.0 - f_)
     
-
 def _FF_over_3(ff, tau_label):
     number = 0
     highest = 0
@@ -95,8 +88,12 @@ def calculate_fake_factors_ungrouped(
     model_tau2: t.nn.Module = None,
     training_variables=None,
 ):
+    if model_tau1 is None and model_tau2 is None:
+        logger.error("Both model_tau1 and model_tau2 are None. No fake factors will be calculated.")
+        return
 
-    ratio_tau1, ratio_tau2 = _compute_ratio(model_tau1, model_tau2, df, training_variables)
+    ratio_tau1 = _compute_ratio(model_tau1, df.AR_tau1, training_variables)
+    ratio_tau2 = _compute_ratio(model_tau2, df.AR_tau2, training_variables) 
 
     norm_tau1 = (
         np.sum(df.data.SR_like.weight_qcd)
@@ -118,9 +115,7 @@ def calculate_fake_factors_ungrouped(
     _FF_over_3(fake_factor_tau1, "tau1")
     _FF_over_3(fake_factor_tau2, "tau2")
 
-    # ------------------------------------------------------------------
-    # Optional clipping + output assignment
-    # ------------------------------------------------------------------
+    # ----- clipping + output assignment -----
     if fake_factor_tau1 is not None:
         df.AR_tau1[f"ff_unclipped_dnn_tau1"] = fake_factor_tau1
         fake_factor_tau1 = np.clip(fake_factor_tau1, 0, 3)
@@ -181,8 +176,12 @@ def calculate_fake_factors_grouped(
     
     # ----- Main FF calculation -----
 
-    ratio_tau1, ratio_tau2 = _compute_ratio(model_tau1, model_tau2, df, training_variables)
-    
+    ratio_tau1 = _compute_ratio(model_tau1, df.AR_tau1, training_variables)
+    ratio_tau2 = _compute_ratio(model_tau2, df.AR_tau2, training_variables)
+
+    fake_factor_tau1 = np.zeros_like(ratio_tau1) if ratio_tau1 is not None else None
+    fake_factor_tau2 = np.zeros_like(ratio_tau2) if ratio_tau2 is not None else None
+
     for group_name, ar_mask in group_tau1_masks:
 
         sr_tau1_mask = sr_tau1_masks[group_name]
@@ -216,9 +215,7 @@ def calculate_fake_factors_grouped(
     _FF_over_3(fake_factor_tau2, "tau2")
 
 
-    # ------------------------------------------------------------------
-    # Optional clipping + output assignment
-    # ------------------------------------------------------------------
+    # ----- clipping + output assignment -----
     suffix = f"_{output_suffix}"
 
     if fake_factor_tau1 is not None:
@@ -235,7 +232,48 @@ def calculate_fake_factors_grouped(
     else:
         print("FF for tau 2 is None")
 
-def calculate_fake_factors_in_DR(
+def calculate_fake_factors_in_DR_ungrouped(
+    df,
+    model_tau1: t.nn.Module,
+    model_tau2: t.nn.Module,
+    training_variables
+):
+
+    if model_tau1 is None and model_tau2 is None:
+        logger.error("Both model_tau1 and model_tau2 are None. No fake factors will be calculated.")
+        return
+
+    ratio_tau1 = _compute_ratio(model_tau1, df.AR_like_tau1, training_variables)
+    ratio_tau2 = _compute_ratio(model_tau2, df.AR_like_tau2, training_variables)
+
+
+    
+    norm_tau1 = (
+        np.sum(df.data.SR_like.weight_qcd)
+        / np.sum(df.data.AR_like_tau1.weight_qcd)
+    )
+
+    fake_factor_tau1 = (norm_tau1 * ratio_tau1)
+
+
+    norm_tau2 = (
+        np.sum(df.data.SR_like.weight_qcd)
+        / np.sum(df.data.AR_like_tau2.weight_qcd)
+    )
+
+    fake_factor_tau2 = (norm_tau2 * ratio_tau2)
+
+    
+
+    # optional clipping
+    fake_factor_tau1 = np.clip(fake_factor_tau1, 0, 3)
+    fake_factor_tau2 = np.clip(fake_factor_tau2, 0, 3)
+
+    df.AR_like_tau1[f"ff_DR_dnn_tau1"] = fake_factor_tau1
+    df.AR_like_tau2[f"ff_DR_dnn_tau2"] = fake_factor_tau2
+
+
+def calculate_fake_factors_in_DR_ungrouped(
     df,
     model_tau1: t.nn.Module,
     model_tau2: t.nn.Module,
