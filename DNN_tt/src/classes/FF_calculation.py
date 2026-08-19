@@ -155,7 +155,7 @@ def calculate_fake_factors_grouped(
     output_suffix=None,
 ):
     if output_suffix is None or grouping_variable is None or grouping_definition is None:
-        calculate_fake_factors_ungrouped(df, model_tau1=model_tau1, model_tau2=model_tau2, training_variables=training_variables)
+        calculate_fake_factors_ungrouped(df, model_tau1=model_tau1, model_tau2=model_tau2, training_variables=training_variables, DR=DR)
         logger.warning("Grouping variable, grouping definition, or output suffix is None. Calculating ungrouped fake factors instead.")
         return
 
@@ -283,215 +283,115 @@ def calculate_fake_factor_dnn(
 
 # ----- tau inclusive FF -----
 
-def calculate_fake_factors_incl(
+def calculate_fake_factors_incl_ungrouped(
     df,
     incl,
     model: t.nn.Module = None,
     training_variables=None,
+    DR: bool = False
+):
+    if model is None:
+        logger.error("model is None. No fake factors will be calculated.")
+        return
+
+    if DR:
+        ratio = _compute_ratio(model, df.AR_like, training_variables)
+    else:
+        ratio = _compute_ratio(model, df.AR, training_variables)
+ 
+    norm = (
+        np.sum(df.data.SR_like.weight_qcd)
+        / np.sum(df.data.AR_like.weight_qcd)
+    )
+
+    fake_factor = (norm * ratio)
+    print(f"norm (global FF) = {norm:.4f}")
+
+    # ----- number of FF over 3 -----
+    _FF_over_3(fake_factor, f'tau incl {incl}')
+
+    # ----- clipping + output assignment -----
+    if fake_factor is None:
+        logger.error("FF is None")
+
+    if DR:
+        df.AR_like[f"ff_DR_unclipped_dnn_incl_{incl}"] = fake_factor
+        fake_factor = np.clip(fake_factor, 0, 3)
+        df.AR_like[f"ff_DR_dnn_incl_{incl}"] = fake_factor 
+    else:
+        df.AR[f"ff_unclipped_dnn_incl_{incl}"] = fake_factor
+        fake_factor = np.clip(fake_factor, 0, 3)
+        df.AR[f"ff_dnn_incl_{incl}"] = fake_factor           
+
+    
+def calculate_fake_factors_incl_grouped(
+    df,
+    incl,
+    model: t.nn.Module = None,
+    training_variables=None,
+    DR: bool = False,
     grouping_variable=None,
     grouping_definition=None,
     output_suffix=None,
 ):
+    if output_suffix is None or grouping_variable is None or grouping_definition is None:
+        calculate_fake_factors_incl_ungrouped(df, incl, model, training_variables, DR)
+        logger.warning("Grouping variable, grouping definition, or output suffix is None. Calculating ungrouped fake factors instead.")
+        return
+    
+    if model is None:
+        logger.error("model is None. No fake factors will be calculated.")
+        return
 
-    X_tau = test_data(df.AR, training_variables)
-    X_tensor = t.from_numpy(X_tau.X).float()
-
-    eps = 1e-6
-    suffix = f"_{output_suffix}" if output_suffix else ""
-
-    # ------------------------------------------------------------------
-    # Helper to run inference only if model exists
-    # ------------------------------------------------------------------
-    def _compute_ratio(model):
-        if model is None:
-            return None
-
-        X_prepared = _prepare_input_tensor(model, X_tensor, df.AR)
-
-        with t.no_grad():
-            f = model(X_prepared).cpu().numpy().flatten()
-
-        f_ = np.clip(f, eps, 1 - eps)
-
-        return f_ / (1.0 - f_)
-
-    ratio = _compute_ratio(model)
-
-    # ------------------------------------------------------------------
-    # Allocate outputs only for existing models
-    # ------------------------------------------------------------------
-    fake_factor = (
-        np.zeros_like(ratio) if ratio is not None else None
-    )
-
-    if grouping_variable is None:
-        ar_group_values = np.asarray(df.AR)
+    if DR:
+        ratio = _compute_ratio(model, df.AR_like, training_variables)
+        ar_group_values = np.asarray(df.AR_like[grouping_variable])
     else:
+        ratio = _compute_ratio(model, df.AR, training_variables)
         ar_group_values = np.asarray(df.AR[grouping_variable])
 
+    group_masks = _build_group_masks(ar_group_values, grouping_definition)
     
-    group_masks = _build_group_masks(
-        ar_group_values,
-        grouping_definition,
+    sr_masks = dict(
+        _build_group_masks(np.asarray(df.data.SR_like[grouping_variable]), grouping_definition)
+    )
+    ar_masks = dict(
+        _build_group_masks(np.asarray(df.data.AR_like[grouping_variable]), grouping_definition)
     )
 
-    # ------------------------------------------------------------------
-    # Build masks once outside the loop
-    # ------------------------------------------------------------------
-    
-    if model is not None and grouping_definition is not None:
-        sr_masks = dict(
-            _build_group_masks(
-                np.asarray(df.data.SR_like[grouping_variable]),
-                grouping_definition,
-            )
-        )
+    # ----- Main Loop -----
+    fake_factor = np.zeros_like(ratio) if ratio is not None else None
 
-        ar_masks = dict(
-            _build_group_masks(
-                np.asarray(df.data.AR_like[grouping_variable]),
-                grouping_definition,
-            )
-        )
-
-        # ----- Main Loop -----
-        for group_name, ar_mask in group_masks:
-
-                sr_mask = sr_masks[group_name]
-                ar_mask_ = ar_masks[group_name]
-
-                norm = (
-                    np.sum(df.data.SR_like.weight_qcd[sr_mask])
-                    / np.sum(df.data.AR_like.weight_qcd[ar_mask_])
-                )
-
-                fake_factor[ar_mask] = (
-                    norm * ratio[ar_mask]
-                )
-
-                print(f"norm (global FF) = {norm:.4f}")
-    
-    elif grouping_variable is None and model is not None:
+    for group_name, ar_mask in group_masks:
+        sr_mask = sr_masks[group_name]
+        ar_mask_ = ar_masks[group_name]
 
         norm = (
-            np.sum(df.data.SR_like.weight_qcd)
-            / np.sum(df.data.AR_like.weight_qcd)
+            np.sum(df.data.SR_like.weight_qcd[sr_mask])
+            / np.sum(df.data.AR_like.weight_qcd[ar_mask_])
         )
 
-        fake_factor = (norm * ratio)        
+        fake_factor[ar_mask] = (norm * ratio[ar_mask])
 
         print(f"norm (global FF) = {norm:.4f}")
-
         
 
     # ----- number of FF over 3 -----
-    number = 0
-    highest = 0
-    print('FF over 3.0')
-    for x in fake_factor:
-        if x > 3.0:
-            number += 1
-            highest = max(highest, x)
-    print(f"Number of tau incl FF over 3.0: {number}, highest: {highest:.4f}")
+    _FF_over_3(fake_factor, f'tau incl {incl}')
 
-    # ------------------------------------------------------------------
-    # Optional clipping + output assignment
-    # ------------------------------------------------------------------
-    if fake_factor is not None:
-        df.AR[f"ff_unclipped_dnn_incl_{incl}{suffix}"] = fake_factor
-        fake_factor = np.clip(fake_factor, 0, 3)
-        df.AR[f"ff_dnn_incl_{incl}{suffix}"] = fake_factor           
-    else:
+    # ----- clipping + output assignment -----
+    suffix = f"_{output_suffix}"
+    if fake_factor is None:
         print("FF is None")
 
-def calculate_fake_factors_in_DR_incl(
-    df,
-    incl,
-    model: t.nn.Module,
-    training_variables,
-    grouping_variable=None,
-    grouping_definition=None,
-    output_suffix=None,
-):
-
-    suffix = f"_{output_suffix}" if output_suffix else ""
-
-    Xx = test_data(df.AR_like, training_variables)
-    X_tensor = t.from_numpy(Xx.X).float()
-    Xx = _prepare_input_tensor(model, X_tensor, df.AR_like)
-
-    with t.no_grad():
-        f = model(Xx).cpu().numpy().flatten()
-
-    eps = 1e-6
-
-    f = np.clip(f, eps, 1 - eps)
-
-    ratio = f / (1.0 - f)
-
-
-    fake_factor = np.zeros_like(ratio)
-
-    if grouping_variable is None:
-        ar_group_values = np.asarray(df.AR_like)
-    else:
-        ar_group_values = np.asarray(df.AR_like[grouping_variable])
-
-    group_masks = _build_group_masks(
-        ar_group_values,
-        grouping_definition,
-    )
-
-    if group_masks is None:
-        norm = (
-            np.sum(df.data.SR_like.weight_qcd)
-            / np.sum(df.data.AR_like.weight_qcd)
-        )
-
-        fake_factor = (norm * ratio)
-
-        print(f"Tau incl norm (global FF) = {norm:.4f}, ")
-
-    else:
-        for group_name, ar_mask in group_masks: 
-            sr_mask = _build_group_masks(
-                np.asarray(df.data.SR_like[grouping_variable]),
-                grouping_definition,
-            )
-
-            ar_mask_incl = _build_group_masks(
-                np.asarray(df.data.AR_like[grouping_variable]),
-                grouping_definition,
-            )
-
-            # get corresponding mask
-            sr_mask = dict(sr_mask)[group_name]
-            ar_mask_incl = dict(ar_mask_incl)[group_name]
-
-            norm = (
-                np.sum(df.data.SR_like.weight_qcd[sr_mask])
-                / np.sum(df.data.AR_like.weight_qcd[ar_mask_incl])
-            )
-
-            fake_factor[ar_mask] = (
-                norm * ratio[ar_mask]
-            )
-
-            print(
-                f"[{group_name}] "
-                f"Tau incl norm (global FF) = {norm:.4f}, "
-            )
-
-    # optional clipping
-    if fake_factor is not None:
+    if DR:
         df.AR_like[f"ff_DR_unclipped_dnn_incl_{incl}{suffix}"] = fake_factor
         fake_factor = np.clip(fake_factor, 0, 3)
         df.AR_like[f"ff_DR_dnn_incl_{incl}{suffix}"] = fake_factor           
     else:
-        print("FF is None")
-
-
-
+        df.AR[f"ff_unclipped_dnn_incl_{incl}{suffix}"] = fake_factor
+        fake_factor = np.clip(fake_factor, 0, 3)
+        df.AR[f"ff_dnn_incl_{incl}{suffix}"] = fake_factor
 
 # -------------- classic fake factor determination -------------
 

@@ -12,7 +12,7 @@ import torch as t
 from classes.NeuralNetworks import load_fold_combined_model
 from classes.Loading import load_config, load_variables, load_data
 from classes.FF_calculation import calculate_fake_factors_ungrouped, calculate_fake_factors_grouped
-from classes.FF_calculation import calculate_fake_factors_incl, calculate_fake_factors_in_DR_incl
+from classes.FF_calculation import calculate_fake_factors_incl_ungrouped, calculate_fake_factors_incl_grouped
 from classes.FF_calculation import calculate_fake_factor_classic
 
 SEED = 42
@@ -28,7 +28,7 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
     
-    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
     dnn_grouped: bool = True
     classic: bool = False
@@ -222,7 +222,7 @@ def main():
         df = load_data(DATA_PATH, MASKS_PATH_INCL[incl])
         
         logger.info("Calculating fake factors inclusive...")
-        calculate_fake_factors_incl(
+        calculate_fake_factors_incl_grouped(
             df=df,
             incl = args.incl,
             model=model_incl_njets,
@@ -234,11 +234,12 @@ def main():
 
         # ----- calculate fake factors in DR -----
         logger.info("Calculating incusive fake factors in DR...")
-        calculate_fake_factors_in_DR_incl(
+        calculate_fake_factors_incl_grouped(
             df=df,
             incl=args.incl,
             model=model_incl_njets,
             training_variables=training_variables,
+            DR = True,
             grouping_variable = 'njets',
             grouping_definition = grouping_njets,
             output_suffix = 'njets',
@@ -255,7 +256,7 @@ def main():
         df = load_data(DATA_PATH, MASKS_PATH_INCL[incl])
 
         logger.info("Calculating fake factors inclusive...")
-        calculate_fake_factors_incl(
+        calculate_fake_factors_incl_ungrouped(
             df=df,
             incl = args.incl,
             model=model_incl,
@@ -264,11 +265,12 @@ def main():
 
         # ----- calculate fake factors in DR -----
         logger.info("Calculating incusive fake factors in DR...")
-        calculate_fake_factors_in_DR_incl(
+        calculate_fake_factors_incl_ungrouped(
             df=df,
             incl=args.incl,
             model=model_incl,
-            training_variables=training_variables
+            training_variables=training_variables,
+            DR = True
         )
     
 
