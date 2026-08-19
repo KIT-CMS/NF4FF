@@ -136,15 +136,13 @@ def main():
 
     # set class weights for process
     combined_data['class_weights'] = get_class_weights(weights = combined_data.weight, Y = combined_data.Label, classes = (0, 1), class_weighted=True)
-    #print(combined_data['class_weights'].value_counts())
-    print(sum(combined_data['id_tau_vsJet_VLoose_1'] < 0.5))
-    exit()
     
     if args.classic:
         out_classic = Path(cfg['output_dir'][args.loc] + "classic")
         out_classic.mkdir(parents=True, exist_ok=True)
         combined_data.to_feather(out_classic / "combined_data_sgiappic.feather")
     else:
+        logger.info(f"Saving combined data to {cfg['output_dir'][args.loc] + args.embedding}/combined_data.feather")
         combined_data.to_feather(cfg['output_dir'][args.loc] + args.embedding + "/combined_data.feather")
 
 if __name__ == "__main__":

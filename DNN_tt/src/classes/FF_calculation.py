@@ -612,61 +612,6 @@ def calculate_fake_factors_in_DR_incl(
 
 
 
-def evaluate_compound_ff_correction(correction_set, compound_name: str, df: pd.DataFrame, short) -> np.ndarray:
-    compound_correction = correction_set.compound[compound_name]
-    expected_inputs = [input_spec.name for input_spec in compound_correction.inputs]
-
-    if short == 'sg':
-        input_values = {
-            'tau_decaymode_1': df.tau_decaymode_1,
-            'tau_decaymode_2': df.tau_decaymode_2,
-            'eta_1': df.eta_1,
-            'eta_2': df.eta_2,
-            'jeta_1': df.jeta_1,
-            'jeta_2': df.jeta_2,
-            'jpt_1': df.jpt_1,
-            'jpt_2': df.jpt_2,
-            'deltaR_ditaupair': df.deltaR_ditaupair,
-            'deltaR_1j1': df.deltaR_1j1,
-            'deltaR_12j1': df.deltaR_12j1,
-            'pt_ttjj': df.pt_ttjj,
-            'mass_1': df.mass_1,
-            'mass_2': df.mass_2,
-            'mt_tot': df.mt_tot,
-            'm_vis': df.m_vis,
-            'iso_1': df.iso_1,
-            'njets': df.njets,
-            'syst': 'nominal',
-        }
-    elif short == 'jv':
-        input_values = {
-            'tau_decaymode_1': df.tau_decaymode_1,
-            'tau_decaymode_2': df.tau_decaymode_2,
-            'jeta_1': df.jeta_1,
-            'jeta_2': df.jeta_2,
-            'jpt_1': df.jpt_1,
-            'jpt_2': df.jpt_2,
-            'met': df.met,
-            'deltaR_ditaupair': df.deltaR_ditaupair,
-            'mass_1': df.mass_1,
-            'mass_2': df.mass_2,
-            'mt_tot': df.mt_tot,
-            'm_vis': df.m_vis,
-            'iso_1': df.iso_1,
-            'njets': df.njets,
-            'pt_1': df.pt_1,
-            'pt_2': df.pt_2,
-            'pt_vis': df.pt_vis,
-            'syst': 'nominal',
-        }
-
-    missing_inputs = [name for name in expected_inputs if name not in input_values]
-    if missing_inputs:
-        raise KeyError(f'Missing input mapping for correction {compound_name}: {missing_inputs}')
-
-    ordered_inputs = [input_values[name] for name in expected_inputs]
-    return compound_correction.evaluate(*ordered_inputs)
-
 #used todo: add fraction I calculate
 def calculate_fake_factor_dnn(
         df1,
@@ -689,9 +634,12 @@ def calculate_fake_factor_dnn(
         _df2['ff_dnn_njets'] = (0.5 * _df2['ff_dnn_tau2_njets'])
         df2['ff_dnn_njets'] = _df2['ff_dnn_njets']
 
+
+
+
+
 # -------------- classic fake factor determination -------------
 
-#used
 def calculate_fake_factor_classic(
         df,
         short,
@@ -814,3 +762,59 @@ def calculate_fake_factor_classic(
         df.AR_tau2_sgiappic[f'ff_corr_classic_tau2_{short}'] = _df2['corrected_classic_ff_tau2']
     else:
         print(f'short = {short} is not implmented. Use either jv or sg')
+
+
+def evaluate_compound_ff_correction(correction_set, compound_name: str, df: pd.DataFrame, short) -> np.ndarray:
+    compound_correction = correction_set.compound[compound_name]
+    expected_inputs = [input_spec.name for input_spec in compound_correction.inputs]
+
+    if short == 'sg':
+        input_values = {
+            'tau_decaymode_1': df.tau_decaymode_1,
+            'tau_decaymode_2': df.tau_decaymode_2,
+            'eta_1': df.eta_1,
+            'eta_2': df.eta_2,
+            'jeta_1': df.jeta_1,
+            'jeta_2': df.jeta_2,
+            'jpt_1': df.jpt_1,
+            'jpt_2': df.jpt_2,
+            'deltaR_ditaupair': df.deltaR_ditaupair,
+            'deltaR_1j1': df.deltaR_1j1,
+            'deltaR_12j1': df.deltaR_12j1,
+            'pt_ttjj': df.pt_ttjj,
+            'mass_1': df.mass_1,
+            'mass_2': df.mass_2,
+            'mt_tot': df.mt_tot,
+            'm_vis': df.m_vis,
+            'iso_1': df.iso_1,
+            'njets': df.njets,
+            'syst': 'nominal',
+        }
+    elif short == 'jv':
+        input_values = {
+            'tau_decaymode_1': df.tau_decaymode_1,
+            'tau_decaymode_2': df.tau_decaymode_2,
+            'jeta_1': df.jeta_1,
+            'jeta_2': df.jeta_2,
+            'jpt_1': df.jpt_1,
+            'jpt_2': df.jpt_2,
+            'met': df.met,
+            'deltaR_ditaupair': df.deltaR_ditaupair,
+            'mass_1': df.mass_1,
+            'mass_2': df.mass_2,
+            'mt_tot': df.mt_tot,
+            'm_vis': df.m_vis,
+            'iso_1': df.iso_1,
+            'njets': df.njets,
+            'pt_1': df.pt_1,
+            'pt_2': df.pt_2,
+            'pt_vis': df.pt_vis,
+            'syst': 'nominal',
+        }
+
+    missing_inputs = [name for name in expected_inputs if name not in input_values]
+    if missing_inputs:
+        raise KeyError(f'Missing input mapping for correction {compound_name}: {missing_inputs}')
+
+    ordered_inputs = [input_values[name] for name in expected_inputs]
+    return compound_correction.evaluate(*ordered_inputs)

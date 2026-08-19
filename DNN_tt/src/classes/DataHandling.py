@@ -491,7 +491,7 @@ def training_data(
             w_sig_scaled = w_sig.copy()
 
             for group in balance_groups:
-                print(f"Balancing group: {group}")
+                print(f"Balancing group: {group} for column: {balance_column}")
                 if len(group) == 1:
                     sig_mask = values_sig == group[0]
                     bkg_mask = values_bkg == group[0]

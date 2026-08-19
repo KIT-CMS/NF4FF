@@ -685,7 +685,7 @@ def main():
     # --- load data 
 
     data_complete = pd.read_feather(cfg["paths"]["input_dir"][args.loc] + args.embedding + "/combined_data.feather")
-    print(data_complete["Label"].value_counts())
+    #print(data_complete.columns)
     #exit()
     data_DR = mask_DR(data_complete)
 
