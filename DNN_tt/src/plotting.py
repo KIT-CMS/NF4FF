@@ -14,7 +14,7 @@ import uproot
 from classes.Plotting import plot_fake_factors, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
 from classes.Loading import load_config, load_labels, load_data
 from classes.Plotting import FF_closure_in_DR_tau1, FF_closure_in_DR_tau2, FF_closure_in_DR_incl, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl, plot_fake_factors_combTaus, plot_fake_factors_grouped_incl
-
+from classes.Plotting import plot_fractions
 
 
 SEED = 42
@@ -30,9 +30,10 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
-    incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
-    dnn_grouped: bool = True
+    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    incl: Literal['and', 'or'] = 'and' # Combine tau1 and tau2 AR with and or or
+    frac: Literal['global', 'pt_bins'] = 'pt_bins'
+    dnn_grouped: bool = False
     classic: bool = False
 
     closure_DR: bool = True
@@ -62,6 +63,7 @@ PLOT_GROUPINGS = ('njets', 'tau_decaymode', 'ungrouped', 'classic')
 PLOT_SUBDIRS = ('closure_in_DR', 'FF_distribution_AR', 'FF_distribution_DR', 'closure_plots')
 for subdir in PLOT_SUBDIRS:
     for grouping in PLOT_GROUPINGS:
+        (PLOTS_DIR / 'tau_split' / 'Fraction_factors' / grouping).mkdir(parents=True, exist_ok=True)
         (PLOTS_DIR / 'tau_split' / subdir / grouping).mkdir(parents=True, exist_ok=True)
         (PLOTS_DIR / f'tau_incl_{args.incl}' / subdir / grouping).mkdir(parents=True, exist_ok=True)
 
@@ -336,6 +338,21 @@ def main():
             plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / 'ungrouped' / f'plot_ff_combTaus.pdf', dpi=150, bbox_inches='tight')
             plt.close(fig_ar_ct)
             logger.info(f'Saved FF distributions in AR for combined Taus for ungrouped')
+
+            if args.frac == 'pt_bins':
+                fig, ax = plot_fractions(df.AR_like_tau1, df.AR_like_tau2, 'DR')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_DR.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_DR.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig)
+
+                fig, ax = plot_fractions(df.AR_tau1, df.AR_tau2, 'SR')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_SR.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_SR.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig)
+
+                logger.info(f'Saved Fraction Factors for ungrouped')
+
+
 
         # ----- FF closure in AR -----
         if args.closure_AR:

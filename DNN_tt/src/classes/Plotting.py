@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import mplhep as hep
 from collections.abc import Iterable
 
+from classes.Fraction_factor import fraction_in_bins
+
 def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
     if isinstance(ax, Iterable):
         ax = ax[0]
@@ -74,7 +76,7 @@ def estimate_jet_fakes(
     jet_fakes_tau2 = counts_tau2['data'] - counts_tau2['diboson'] - counts_tau2['DYjets'] - counts_tau2['ST'] - counts_tau2['embedding'] - counts_tau2['ttbar'] - counts_tau2['wjets']
     var_jet_fakes_tau2 = variance_tau2['data'] + variance_tau2['diboson'] + variance_tau2['DYjets'] + variance_tau2['ST'] + variance_tau2['embedding'] + variance_tau2['ttbar'] + variance_tau2['wjets']
 
-    jet_fakes = 0.5 * (jet_fakes_tau1 + jet_fakes_tau2)
+    jet_fakes = jet_fakes_tau1 + jet_fakes_tau2 #0.5 * (jet_fakes_tau1 + jet_fakes_tau2)
     var_jet_fakes  = var_jet_fakes_tau1 + var_jet_fakes_tau2
 
     return jet_fakes, var_jet_fakes
@@ -1474,3 +1476,74 @@ def plot_fake_factors_ungrouped_splitAndincl(
     ax.legend()
     return fig, ax
 
+def plot_fractions(df_tau1, df_tau2, title):
+    frac, pt1_edges, pt2_edges = fraction_in_bins(df_tau1, df_tau2, plotting=True)
+
+    n_pt1, n_pt2 = frac.shape
+
+    fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+
+    CMS_LABEL(ax)
+    CMS_CATEGORY_TITLE(ax, title=title)
+    CMS_LUMI_TITLE(ax)
+    CMS_CHANNEL_TITLE(ax)
+
+    image = ax.imshow(
+        frac.T,
+        origin="lower",
+        aspect="equal",
+        interpolation="none",
+        cmap="viridis",
+        extent=(-0.5, n_pt1 - 0.5, -0.5, n_pt2 - 0.5),
+        vmin=np.nanmin(frac.T),
+        vmax=np.nanmax(frac.T),
+    )
+
+    for pt2_bin in range(n_pt2):
+        for pt1_bin in range(n_pt1):
+            value = frac.T[pt2_bin, pt1_bin]
+
+            if np.isfinite(value):
+                ax.text(
+                    pt1_bin,
+                    pt2_bin,
+                    f"{value:.2f}",
+                    ha="center",
+                    va="center",
+                    color="black" if value > 0.42 else "white",
+                    fontsize=8,
+                )
+
+    # Positions of bin boundaries.
+    x_boundaries = np.arange(n_pt1 + 1) - 0.5
+    y_boundaries = np.arange(n_pt2 + 1) - 0.5
+
+    # Format the actual pT bin edges.
+    edge_labels_x = [
+        f"{edge:g}" if np.isfinite(edge) else "∞"
+        for edge in pt1_edges
+    ]
+    edge_labels_y = [
+            f"{edge:g}" if np.isfinite(edge) else "∞"
+            for edge in pt2_edges
+        ]
+
+    ax.set_xticks(x_boundaries)
+    ax.set_yticks(y_boundaries)
+    ax.set_xticklabels(edge_labels_x)#, rotation=45, ha="right")
+    ax.set_yticklabels(edge_labels_y)
+
+    # Draw lines along the square boundaries.
+    ax.grid(
+        which="major",
+        color="white",
+        linewidth=0.6,
+        alpha=0.6,
+    )
+
+    ax.set_xlabel(r"$p_{T,1}$ [GeV]")
+    ax.set_ylabel(r"$p_{T,2}$ [GeV]")
+
+    fig.colorbar(image, ax=ax, label="Fraction factor")
+    fig.tight_layout()
+    return fig, ax

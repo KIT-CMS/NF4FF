@@ -8,6 +8,8 @@ import pandas as pd
 
 from .NeuralNetworks import FoldCombinedDNN
 from .DataHandling import test_data
+from classes.Fraction_factor import fraction_in_bins, fractions_for_events
+
 
 logger = logging.getLogger(__name__)
 
@@ -259,26 +261,43 @@ def calculate_fake_factors_grouped(
         df.AR_tau2[f"ff_dnn_tau2{suffix}"] = fake_factor_tau2
 
 #used todo: add fraction I calculate
-def calculate_fake_factor_dnn(
+def calculate_fake_factor_frac(
+        df,
         df1,
         df2,
-        grouping,
+        grouping = None,
+        fraction = "global",
 ):
+    '''
+    Applying fraction factor to FF for tau split.
+
+    :fraction: either "global" (every FF gets a factorized with 1/2) or "pt_bins"
+    '''
+    _df = df.copy()
     _df1 = df1.copy()
     _df2 = df2.copy()
 
-    # factor 0.5 here globally since FF only used for QCD, not Wjets and ttbar
-    if grouping == 'tau_decaymode':
-        _df1['ff_dnn_tau_dm'] = (0.5 * _df1['ff_dnn_tau1_tau_dm'])
-        df1['ff_dnn_tau_dm'] = _df1['ff_dnn_tau_dm']
-        _df2['ff_dnn_tau_dm'] = (0.5 * _df2['ff_dnn_tau2_tau_dm'])
-        df2['ff_dnn_tau_dm'] = _df2['ff_dnn_tau_dm']
-
+    if grouping is None:
+        ff_tau1 = "ff_dnn_tau1"
+        ff_tau2 = "ff_dnn_tau2"
+    elif grouping == 'tau_dm':
+        ff_tau1 = "ff_dnn_tau1_tau_dm"
+        ff_tau2 = "ff_dnn_tau2_tau_dm"
     elif grouping == 'njets':
-        _df1['ff_dnn_njets'] = (0.5 * _df1['ff_dnn_tau1_njets'])
-        df1['ff_dnn_njets'] = _df1['ff_dnn_njets']
-        _df2['ff_dnn_njets'] = (0.5 * _df2['ff_dnn_tau2_njets'])
-        df2['ff_dnn_njets'] = _df2['ff_dnn_njets']
+        ff_tau1 = "ff_dnn_tau1_njets"
+        ff_tau2 = "ff_dnn_tau2_njets"
+
+    if fraction == "global":
+        df1[ff_tau1] = 0.5 * _df1[ff_tau1]
+        df2[ff_tau2] = 0.5 * _df2[ff_tau2]
+    elif fraction == "pt_bins":
+        frac, pt1_edges, pt2_edges = fraction_in_bins(df.AR_like_tau1, df.AR_like_tau2)
+        frac_tau1 = fractions_for_events(_df1, frac, pt1_edges, pt2_edges)
+        frac_tau2 = fractions_for_events(_df2, frac, pt1_edges, pt2_edges)
+        df1[ff_tau1] = frac_tau1 * _df1[ff_tau1]
+        df2[ff_tau2] = (1.0 - frac_tau2) * _df2[ff_tau2]
+
+    
 
 
 # ----- tau inclusive FF -----

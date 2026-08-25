@@ -13,7 +13,7 @@ from classes.NeuralNetworks import load_fold_combined_model
 from classes.Loading import load_config, load_variables, load_data
 from classes.FF_calculation import calculate_fake_factors_ungrouped, calculate_fake_factors_grouped
 from classes.FF_calculation import calculate_fake_factors_incl_ungrouped, calculate_fake_factors_incl_grouped
-from classes.FF_calculation import calculate_fake_factor_classic
+from classes.FF_calculation import calculate_fake_factor_classic, calculate_fake_factor_frac
 
 SEED = 42
 logger = logging.getLogger(__name__)
@@ -28,9 +28,10 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
     
-    taus: Literal['split', 'incl'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
-    incl: Literal['and', 'or'] = 'or' # Combine tau1 and tau2 AR with and or or
-    dnn_grouped: bool = True
+    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    incl: Literal['and', 'or'] = 'and' # Combine tau1 and tau2 AR with and or or
+    frac: Literal['global', 'pt_bins'] = 'pt_bins'
+    dnn_grouped: bool = False
     classic: bool = False
 
 args = Args().parse_args()
@@ -141,54 +142,41 @@ def main():
         logger.info("Loading data...")
         df = load_data(DATA_PATH, MASKS_PATH)
 
-        # tau decay mode
-        logger.info("Calculating fake factors for tau decay mode...")
-        calculate_fake_factors_grouped(
-            df=df,
-            model_tau1=model_tau1_tdm,
-            model_tau2=model_tau2_tdm,
-            training_variables=training_variables,
-            grouping_variable = ['tau_decaymode_1', 'tau_decaymode_2'],
-            grouping_definition = grouping_tdm,
-            output_suffix = 'tau_dm',
-        )
+        for group_var, group_def, name in zip([['tau_decaymode_1', 'tau_decaymode_2'], 'njets'], [grouping_tdm, grouping_njets], ['tau_dm', 'njets']):
 
-        # njets
-        logger.info("Calculating fake factors for njets...")
-        calculate_fake_factors_grouped(
-            df=df,
-            model_tau1=model_tau1_njets,
-            model_tau2=model_tau2_njets,
-            training_variables=training_variables,
-            grouping_variable = 'njets',
-            grouping_definition = grouping_njets,
-            output_suffix = 'njets',
-        )
-        
-        # ----- calculate fake factors in DR -----
-        logger.info("Calculating fake factors in DR for tau decay mode...")
-        calculate_fake_factors_grouped(
-            df=df,
-            model_tau1=model_tau1_tdm,
-            model_tau2=model_tau2_tdm,
-            training_variables=training_variables,
-            DR = True,
-            grouping_variable = ['tau_decaymode_1', 'tau_decaymode_2'],
-            grouping_definition = grouping_tdm,
-            output_suffix = 'tau_dm',
-        )
+            logger.info(f"Calculating fake factors for {name} with grouping variable {group_var} and grouping definition {group_def}...")
+            calculate_fake_factors_grouped(
+                df=df,
+                model_tau1=model_tau1_tdm,
+                model_tau2=model_tau2_tdm,
+                training_variables=training_variables,
+                grouping_variable = group_var,
+                grouping_definition = group_def,
+                output_suffix = name,
+            )
 
-        logger.info("Calculating fake factors in DR for njets...")
-        calculate_fake_factors_grouped(
-            df=df,
-            model_tau1=model_tau1_njets,
-            model_tau2=model_tau2_njets,
-            training_variables=training_variables,
-            DR = True,
-            grouping_variable = 'njets',
-            grouping_definition = grouping_njets,
-            output_suffix = 'njets',
-        )
+            # ----- calculate fake factors in DR -----
+            logger.info("Calculating fake factors in DR...")
+            calculate_fake_factors_grouped(
+                df=df,
+                model_tau1=model_tau1_tdm,
+                model_tau2=model_tau2_tdm,
+                training_variables=training_variables,
+                DR = True,
+                grouping_variable = group_var,
+                grouping_definition = group_def,
+                output_suffix = name,
+            )
+
+            logger.info("Applying fake factor fractions...")
+            calculate_fake_factor_frac(
+                df=df,
+                df1=df.AR_tau1,
+                df2=df.AR_tau2,
+                grouping=name,
+                fraction=args.frac
+            )
+
 
     elif args.taus == 'split' and not args.dnn_grouped:
         logger.info("Loading data...")
@@ -209,6 +197,15 @@ def main():
             model_tau2=model_tau2,
             training_variables=training_variables,
             DR = True,
+        )
+
+        logger.info("Applying fake factor fractions...")
+        calculate_fake_factor_frac(
+            df=df,
+            df1=df.AR_tau1,
+            df2=df.AR_tau2,
+            grouping=None,
+            fraction=args.frac
         )
 
     elif args.taus == 'incl' and args.dnn_grouped:
