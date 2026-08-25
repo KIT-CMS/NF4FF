@@ -719,10 +719,10 @@ def plot_fake_factors_incl(
     if clipped:
 
         ff_dnn = f'ff_dnn_incl_{incl}'    
-        bins = np.linspace(0, 0.5, 51)
+        bins = np.linspace(0, 0.8, 51)
     else:
         ff_dnn = f'ff_unclipped_dnn_incl_{incl}'    
-        bins = np.linspace(0, 0.5, 51)
+        bins = np.linspace(0, 0.8, 51)
     
 
     fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
@@ -1221,7 +1221,7 @@ def plot_fake_factors_grouped_incl(df, incl, category_title, grouping='tau_decay
     hep.style.use(hep.style.CMS)
 
     if clipped:
-        bins = np.linspace(0, 0.5, 51)
+        bins = np.linspace(0, 0.8, 51)
 
         if grouping == 'tau_decaymode':
             ff = f'ff_dnn_incl_{incl}_tau_dm'
@@ -1231,7 +1231,7 @@ def plot_fake_factors_grouped_incl(df, incl, category_title, grouping='tau_decay
         else:
             raise ValueError(f'Unsupported grouping: {grouping}')
     else:
-        bins = np.linspace(0, 0.5, 51)
+        bins = np.linspace(0, 0.8, 51)
 
         if grouping == 'tau_decaymode':
             ff = f'ff_unclipped_dnn_incl_{incl}_tau_dm'
@@ -1477,7 +1477,7 @@ def plot_fake_factors_ungrouped_splitAndincl(
     return fig, ax
 
 def plot_fractions(df_tau1, df_tau2, title):
-    frac, pt1_edges, pt2_edges = fraction_in_bins(df_tau1, df_tau2, plotting=True)
+    frac, pt1_edges, pt2_edges = fraction_in_bins(df_tau1, df_tau2, plotting=True, region=title)
 
     n_pt1, n_pt2 = frac.shape
 
@@ -1495,8 +1495,8 @@ def plot_fractions(df_tau1, df_tau2, title):
         interpolation="none",
         cmap="viridis",
         extent=(-0.5, n_pt1 - 0.5, -0.5, n_pt2 - 0.5),
-        vmin=np.nanmin(frac.T),
-        vmax=np.nanmax(frac.T),
+        vmin=0.25, #np.nanmin(frac.T),
+        vmax=0.65, #np.nanmax(frac.T),
     )
 
     for pt2_bin in range(n_pt2):

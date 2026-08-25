@@ -199,7 +199,7 @@ def main():
             DR = True,
         )
 
-        logger.info("Applying fake factor fractions...")
+        logger.info(f"Applying fake factor {args.frac} fractions...")
         calculate_fake_factor_frac(
             df=df,
             df1=df.AR_tau1,
@@ -207,6 +207,7 @@ def main():
             grouping=None,
             fraction=args.frac
         )
+        
 
     elif args.taus == 'incl' and args.dnn_grouped:
         if args.incl=='and': incl = 0

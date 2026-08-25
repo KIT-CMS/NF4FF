@@ -291,7 +291,7 @@ def calculate_fake_factor_frac(
         df1[ff_tau1] = 0.5 * _df1[ff_tau1]
         df2[ff_tau2] = 0.5 * _df2[ff_tau2]
     elif fraction == "pt_bins":
-        frac, pt1_edges, pt2_edges = fraction_in_bins(df.AR_like_tau1, df.AR_like_tau2)
+        frac, pt1_edges, pt2_edges = fraction_in_bins(df.data.AR_like_tau1, df.data.AR_like_tau2)
         frac_tau1 = fractions_for_events(_df1, frac, pt1_edges, pt2_edges)
         frac_tau2 = fractions_for_events(_df2, frac, pt1_edges, pt2_edges)
         df1[ff_tau1] = frac_tau1 * _df1[ff_tau1]

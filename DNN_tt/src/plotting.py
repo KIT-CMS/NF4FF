@@ -340,12 +340,12 @@ def main():
             logger.info(f'Saved FF distributions in AR for combined Taus for ungrouped')
 
             if args.frac == 'pt_bins':
-                fig, ax = plot_fractions(df.AR_like_tau1, df.AR_like_tau2, 'DR')
+                fig, ax = plot_fractions(df.data.AR_like_tau1, df.data.AR_like_tau2, 'DR')
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_DR.png', dpi=150, bbox_inches='tight')
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_DR.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig)
 
-                fig, ax = plot_fractions(df.AR_tau1, df.AR_tau2, 'SR')
+                fig, ax = plot_fractions(df.data.AR_tau1, df.data.AR_tau2, 'SR')
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_SR.png', dpi=150, bbox_inches='tight')
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_SR.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig)
