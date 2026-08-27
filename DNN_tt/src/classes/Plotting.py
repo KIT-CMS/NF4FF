@@ -1495,8 +1495,8 @@ def plot_fractions(df_tau1, df_tau2, title):
         interpolation="none",
         cmap="viridis",
         extent=(-0.5, n_pt1 - 0.5, -0.5, n_pt2 - 0.5),
-        vmin=0.25, #np.nanmin(frac.T),
-        vmax=0.65, #np.nanmax(frac.T),
+        vmin=0.35, #np.nanmin(frac.T),
+        vmax=0.55, #np.nanmax(frac.T),
     )
 
     for pt2_bin in range(n_pt2):

@@ -2,6 +2,7 @@ datasets: /work/tapp/TauFF/NF4FF/Data/datasets
 masks: /work/tapp/TauFF/NF4FF/DNN_tt/configs/masks.yaml
 masks_incl_and: /work/tapp/TauFF/NF4FF/DNN_tt/configs/masks_incl_and.yaml
 masks_incl_or: /work/tapp/TauFF/NF4FF/DNN_tt/configs/masks_incl_or.yaml
+masks_incl_andor: /work/tapp/TauFF/NF4FF/DNN_tt/configs/masks_incl_andor.yaml
 train_var: /work/tapp/TauFF/NF4FF/DNN_tt/configs/training_variables.yaml
 DNN: /work/tapp/TauFF/NF4FF/DNN_tt/configs/DNN.yaml
 traininfg_results: /work/tapp/TauFF/NF4FF/DNN_tt/Training_results

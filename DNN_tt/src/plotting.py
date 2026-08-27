@@ -31,7 +31,7 @@ class Args(Tap):
     var = "variables"
 
     taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
-    incl: Literal['and', 'or'] = 'and' # Combine tau1 and tau2 AR with and or or
+    incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_bins'] = 'pt_bins'
     dnn_grouped: bool = False
     classic: bool = False
@@ -48,7 +48,7 @@ DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feat
 DATA_CLASSIC_JV_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_jvoss.feather"
 DATA_CLASSIC_SG_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_sgiappic.feather"
 MASKS_PATH = cfg_path["masks"]
-MASKS_PATH_INCL = [cfg_path["masks_incl_and"], cfg_path["masks_incl_or"]]
+MASKS_PATH_INCL = [cfg_path["masks_incl_and"], cfg_path["masks_incl_or"], cfg_path["masks_incl_andor"]]
 TRAINING_VAR_PATH = cfg_path["train_var"]
 NN_CONFIG_PATH = cfg_path["DNN"]
 CHECKPOINT_DIR = cfg_path["traininfg_results"]
@@ -385,6 +385,7 @@ def main():
 
         if args.incl=='and': incl = 0
         elif args.incl=='or': incl = 1
+        elif args.incl=='andor': incl = 2
         else:
             logger.error(f'Value Error: args.incl = {args.incl}, but only accepts "and or "or".')
             exit()
@@ -453,6 +454,7 @@ def main():
 
         if args.incl=='and': incl = 0
         elif args.incl=='or': incl = 1
+        elif args.incl=='andor': incl = 2
         else:
             logger.error(f'Value Error: args.incl = {args.incl}, but only accepts "and or "or".')
             exit()
