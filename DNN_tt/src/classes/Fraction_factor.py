@@ -3,30 +3,10 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
-def equal_count_bin_edges(values, events_per_bin=1000):
-    values = np.asarray(values)
-    values = np.sort(values[np.isfinite(values)])
-
-    if values.size == 0:
-        raise ValueError("Cannot calculate bin edges from an empty sample.")
-
-    edges = values[::events_per_bin]
-    edges = np.unique(np.concatenate(([values[0]], edges, [np.inf])))
-
-    return edges
-
 def fraction_in_bins(df_tau1, df_tau2, plotting=False, region='DR'):
     '''
     df_taun = df.data.AR_like_taun
     '''
-
-    pt1_values = np.concatenate([df_tau1["pt_1"].to_numpy(), df_tau2["pt_1"].to_numpy()])
-
-    if plotting:
-        pt1_bin_edges = np.array([40, 45, 50 , 55, 60, 65, 70, 75, 80, 90, 100, 120, 200, np.inf])
-    else:
-        pt1_bin_edges = equal_count_bin_edges(pt1_values, events_per_bin=1000)
-    pt2_bin_edges = pt1_bin_edges
 
     if region == 'DR':
         weights_tau1 = df_tau1["weight_qcd"]
@@ -34,6 +14,22 @@ def fraction_in_bins(df_tau1, df_tau2, plotting=False, region='DR'):
     elif region == 'SR':
         weights_tau1 = df_tau1["weight"]
         weights_tau2 = df_tau2["weight"]
+    else:
+        raise ValueError(f"Unknown region: {region!r}. Expected 'DR' or 'SR'.")
+
+    pt2_values = np.concatenate([df_tau1["pt_2"].to_numpy(), df_tau2["pt_2"].to_numpy()])
+    weights = np.concatenate([weights_tau1.to_numpy(), weights_tau2.to_numpy()])
+
+    if plotting:
+        pt2_bin_edges = np.array([40, 41, 42 , 43, 44, 45, 46, 48, 50, 55, 60, 65, 70, np.inf])
+        #pt2_bin_edges = np.array([40, 45, 50 , 55, 60, 65, 70, 75, 80, 90, 100, 120, 200, np.inf])
+    else:
+        pt2_bin_edges = _equal_weight_bin_edges(
+            pt2_values,
+            weights,
+            events_per_bin=5000,
+        )
+    pt1_bin_edges = pt2_bin_edges
     
     f1_t2, pt1_edges, pt2_edges = np.histogram2d(
         df_tau1["pt_1"],
@@ -52,17 +48,13 @@ def fraction_in_bins(df_tau1, df_tau2, plotting=False, region='DR'):
     numerator = f1_t2
     denominator = f1_t2 + t1_f2
 
-    #print("Numerator:\n", numerator)
-    #print("Denominator:\n", denominator)
-
-
     fraction = np.divide(
         numerator,
         denominator,
         out=np.full_like(numerator, np.nan),
         where=denominator != 0,
     )
-    #print(fraction)
+
     h = fraction.flatten()
     h = h[~np.isnan(h)]
     global_frac = np.sum(h)/len(h)
@@ -110,63 +102,50 @@ def pt_mask(df):
 
     return masks
 
-def fraction_in_bins_old(df_tau1, df_tau2, plotting=False):
-    f1_t2_mask = ((df_tau1["id_tau_vsJet_Tight_1"] < 0.5) & (df_tau1["id_tau_vsJet_Tight_2"] > 0.5))
-    t1_f2_mask = ((df_tau2["id_tau_vsJet_Tight_1"] > 0.5)  & (df_tau2["id_tau_vsJet_Tight_2"] < 0.5))
-    numerator_mask = f1_t2_mask
+def _equal_count_bin_edges(values, events_per_bin=1000):
+    values = np.asarray(values)
+    values = np.sort(values[np.isfinite(values)])
 
-    pt1_values = np.concatenate([
-        df_tau1.loc[f1_t2_mask, "pt_1"].to_numpy(),
-        df_tau2.loc[t1_f2_mask, "pt_1"].to_numpy(),
-    ])
+    if values.size == 0:
+        raise ValueError("Cannot calculate bin edges from an empty sample.")
 
-    pt2_values = np.concatenate([
-        df_tau1.loc[f1_t2_mask, "pt_2"].to_numpy(),
-        df_tau2.loc[t1_f2_mask, "pt_2"].to_numpy(),
-    ])
+    edges = values[::events_per_bin]
+    edges = np.unique(np.concatenate(([values[0]], edges, [np.inf])))
 
-    if plotting:
-        pt1_bin_edges = np.array([40, 45, 50 , 55, 60, 65, 70, 75, 80, 90, 100, 120, 200, np.inf])
-    else:
-        pt1_bin_edges = equal_count_bin_edges(pt1_values, events_per_bin=1000)
-    pt2_bin_edges = pt1_bin_edges
-    #print(pt1_bin_edges)
-    #print(len(pt1_bin_edges))
-    #print(pt2_bin_edges)
-    #print(len(pt2_bin_edges))
+    return edges
 
-    f1_t2, pt1_edges, pt2_edges = np.histogram2d(
-        df_tau1.loc[numerator_mask, "pt_1"],
-        df_tau1.loc[numerator_mask, "pt_2"],
-        bins=(pt1_bin_edges, pt2_bin_edges),
-        #weights=(df_tau1.loc[f1_t2_mask, "weight_qcd"], df_tau1.loc[f1_t2_mask, "weight_qcd"]),
-    )
+def _equal_weight_bin_edges(values, weights, events_per_bin=1000):
+    """Return edges whose bins contain approximately equal absolute weight.
 
-    t1_f2, _, _ = np.histogram2d(
-        df_tau2.loc[t1_f2_mask, "pt_1"],
-        df_tau2.loc[t1_f2_mask, "pt_2"],
-        bins=(pt1_bin_edges, pt2_bin_edges),
-        #weights=(df_tau2.loc[t1_f2_mask, "weight_qcd"], df_tau2.loc[t1_f2_mask, "weight_qcd"]),
-    )
+    ``events_per_bin`` determines the target number of bins, as in
+    :func:`equal_count_bin_edges`.  Absolute weights are used because QCD
+    subtraction weights can be signed and a signed cumulative distribution is
+    not suitable for defining quantiles.
+    """
+    values = np.asarray(values)
+    weights = np.asarray(weights)
 
-    numerator = f1_t2
-    denominator = f1_t2 + t1_f2
+    if values.shape != weights.shape:
+        raise ValueError("Values and weights must have the same shape.")
+    if events_per_bin <= 0:
+        raise ValueError("events_per_bin must be positive.")
 
-    #print("Numerator:\n", numerator)
-    #print("Denominator:\n", denominator)
+    finite = np.isfinite(values) & np.isfinite(weights)
+    values = values[finite]
+    weights = np.abs(weights[finite])
 
+    if values.size == 0:
+        raise ValueError("Cannot calculate bin edges from an empty sample.")
+    if not np.any(weights > 0):
+        raise ValueError("Cannot calculate weighted bin edges from zero weights.")
 
-    fraction = np.divide(
-        numerator,
-        denominator,
-        out=np.full_like(numerator, np.nan),
-        where=denominator != 0,
-    )
-    #print(fraction)
-    h = fraction.flatten()
-    h = h[~np.isnan(h)]
-    global_frac = np.sum(h)/len(h)
-    print('Global fraction:', global_frac)
+    order = np.argsort(values)
+    values = values[order]
+    weights = weights[order]
 
+    n_bins = max(1, int(np.ceil(values.size / events_per_bin)))
+    cumulative_weight = np.cumsum(weights)
+    targets = cumulative_weight[-1] * np.arange(1, n_bins) / n_bins
+    internal_edges = values[np.searchsorted(cumulative_weight, targets, side="left")]
 
-    return fraction, pt1_edges, pt2_edges
+    return np.unique(np.concatenate(([values[0]], internal_edges, [np.inf])))
