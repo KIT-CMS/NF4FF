@@ -5,6 +5,7 @@ import random
 import time
 from typing import Literal, Union
 
+import matplotlib.pyplot as plt
 import numpy as np
 from tap import Tap
 import torch as t
@@ -14,6 +15,7 @@ from classes.Loading import load_config, load_variables, load_data
 from classes.FF_calculation import calculate_fake_factors_ungrouped, calculate_fake_factors_grouped
 from classes.FF_calculation import calculate_fake_factors_incl_ungrouped, calculate_fake_factors_incl_grouped
 from classes.FF_calculation import calculate_fake_factor_classic, calculate_fake_factor_frac
+from classes.Plotting import plot_fractions
 
 SEED = 42
 logger = logging.getLogger(__name__)
@@ -47,6 +49,19 @@ MASKS_PATH_INCL = [cfg_path["masks_incl_and"], cfg_path["masks_incl_or"], cfg_pa
 
 TRAINING_VAR_PATH = cfg_path["train_var"]
 CHECKPOINT_DIR = cfg_path["traininfg_results"]
+
+PLOTS_DIR = Path(cfg_path["plots"])
+PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+
+PLOT_GROUPINGS = ('njets', 'tau_decaymode', 'ungrouped', 'classic')
+PLOT_SUBDIRS = ('closure_in_DR', 'FF_distribution_AR', 'FF_distribution_DR', 'closure_plots')
+for subdir in PLOT_SUBDIRS:
+    for grouping in PLOT_GROUPINGS:
+        (PLOTS_DIR / 'tau_split' / 'Fraction_factors' / grouping).mkdir(parents=True, exist_ok=True)
+        (PLOTS_DIR / 'tau_split' / subdir / grouping).mkdir(parents=True, exist_ok=True)
+        (PLOTS_DIR / f'tau_incl_{args.incl}' / subdir / grouping).mkdir(parents=True, exist_ok=True)
+
+PLOT_GROUPINGS = ('njets', 'tau_decaymode')
 
 
 
@@ -200,13 +215,27 @@ def main():
         )
 
         logger.info(f"Applying fake factor {args.frac} fractions...")
-        calculate_fake_factor_frac(
+        frac, pt1_edges, pt2_edges = calculate_fake_factor_frac(
             df=df,
             df1=df.AR_tau1,
             df2=df.AR_tau2,
             grouping=None,
             fraction=args.frac
         )
+
+        if args.frac == 'pt_bins':
+            fig, ax = plot_fractions(df.data.AR_like_tau1, df.data.AR_like_tau2, 'DR', frac=frac, pt1_edges=pt1_edges, pt2_edges=pt2_edges)
+            plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_DR.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_DR.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig)
+
+            fig, ax = plot_fractions(df.data.AR_tau1, df.data.AR_tau2, 'SR', pt1_edges=pt1_edges, pt2_edges=pt2_edges)
+            plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_SR.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_SR.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig)
+
+            logger.info(f'Saved plots of Fraction Factors for ungrouped')
+    
         
 
     elif args.taus == 'incl' and args.dnn_grouped:

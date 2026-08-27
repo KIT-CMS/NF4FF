@@ -1,35 +1,119 @@
+import logging
+
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
-def fraction_in_bins(df_tau1, df_tau2, plotting=False, region='DR'):
+logger = logging.getLogger(__name__)
+#pt2_bin_edges = np.array([40, 41, 42 , 43, 44, 45, 46, 48, 50, 55, 60, 65, 70, np.inf])
+#pt2_bin_edges = np.array([40, 45, 50 , 55, 60, 65, 70, 75, 80, 90, 100, 120, 200, np.inf])
+
+def fraction_in_bins(df_tau1, df_tau2, region='DR', pt1_bin_edges=None, pt2_bin_edges=None):
     '''
     df_taun = df.data.AR_like_taun
     '''
 
     if region == 'DR':
-        weights_tau1 = df_tau1["weight_qcd"]
-        weights_tau2 = df_tau2["weight_qcd"]
+        weights_tau1 = df_tau1["weight_qcd"] * df_tau1["ff_DR_dnn_tau1"]
+        weights_tau2 = df_tau2["weight_qcd"] * df_tau2["ff_DR_dnn_tau2"]
     elif region == 'SR':
-        weights_tau1 = df_tau1["weight"]
-        weights_tau2 = df_tau2["weight"]
+        weights_tau1 = df_tau1["weight"] * df_tau1["ff_dnn_tau1"]
+        weights_tau2 = df_tau2["weight"] * df_tau2["ff_dnn_tau2"]
     else:
         raise ValueError(f"Unknown region: {region!r}. Expected 'DR' or 'SR'.")
 
     pt2_values = np.concatenate([df_tau1["pt_2"].to_numpy(), df_tau2["pt_2"].to_numpy()])
     weights = np.concatenate([weights_tau1.to_numpy(), weights_tau2.to_numpy()])
 
-    if plotting:
-        pt2_bin_edges = np.array([40, 41, 42 , 43, 44, 45, 46, 48, 50, 55, 60, 65, 70, np.inf])
-        #pt2_bin_edges = np.array([40, 45, 50 , 55, 60, 65, 70, 75, 80, 90, 100, 120, 200, np.inf])
+    if pt2_bin_edges is not None or pt1_bin_edges is not None:
+        pt1_bin_edges = pt1_bin_edges
+        pt2_bin_edges = pt2_bin_edges
     else:
         pt2_bin_edges = _equal_weight_bin_edges(
             pt2_values,
             weights,
             events_per_bin=5000,
         )
-    pt1_bin_edges = pt2_bin_edges
+        pt1_bin_edges = pt2_bin_edges
+    
+    f1_t2, pt1_edges, pt2_edges = np.histogram2d(
+        df_tau1["pt_1"],
+        df_tau1["pt_2"],
+        bins=(pt1_bin_edges, pt2_bin_edges),
+        weights=weights_tau1,
+    )
+
+    t1_f2, _, _ = np.histogram2d(
+        df_tau2["pt_1"],
+        df_tau2["pt_2"],
+        bins=(pt1_bin_edges, pt2_bin_edges),
+        weights=weights_tau2,
+    )
+
+    numerator = f1_t2
+    denominator = f1_t2 + t1_f2
+
+    fraction = np.divide(
+        numerator,
+        denominator,
+        out=np.full_like(numerator, np.nan),
+        where=denominator != 0,
+    )
+
+    h = fraction.flatten()
+    h = h[~np.isnan(h)]
+    global_frac = np.sum(h)/len(h)
+    print('Global fraction:', global_frac)
+
+
+    return fraction, pt1_edges, pt2_edges
+
+def fraction_in_bins_grouped(
+        df_tau1, 
+        df_tau2, 
+        region='DR', 
+        pt1_bin_edges=None, pt2_bin_edges=None,
+        grouping_variable=None, grouping_definition=None,):
+    '''
+    df_taun = df.data.AR_like_taun
+    '''
+
+    if grouping_variable is None or grouping_definition is None:
+            fraction_in_bins(df_tau1, df_tau2, region, pt1_bin_edges, pt2_bin_edges)
+            logger.warning("Grouping variable, grouping definition, or output suffix is None. Calculating ungrouped fake factors instead.")
+            return
+
+    # ----- grouping variable handling -----
+    if isinstance(grouping_variable, list):
+        grouping_var_1 = grouping_variable[0]
+        grouping_var_2 = grouping_variable[1]
+    else:
+        grouping_var_1 = grouping_variable
+        grouping_var_2 = grouping_variable    
+
+    if region == 'DR':
+        weights_tau1 = df_tau1["weight_qcd"] * df_tau1["ff_DR_dnn_tau1"]
+        weights_tau2 = df_tau2["weight_qcd"] * df_tau2["ff_DR_dnn_tau2"]
+    elif region == 'SR':
+        weights_tau1 = df_tau1["weight"] * df_tau1["ff_dnn_tau1"]
+        weights_tau2 = df_tau2["weight"] * df_tau2["ff_dnn_tau2"]
+    else:
+        raise ValueError(f"Unknown region: {region!r}. Expected 'DR' or 'SR'.")
+
+    pt2_values = np.concatenate([df_tau1["pt_2"].to_numpy(), df_tau2["pt_2"].to_numpy()])
+    weights = np.concatenate([weights_tau1.to_numpy(), weights_tau2.to_numpy()])
+
+    if pt2_bin_edges is not None or pt1_bin_edges is not None:
+        pt1_bin_edges = pt1_bin_edges
+        pt2_bin_edges = pt2_bin_edges
+    else:
+        pt2_bin_edges = _equal_weight_bin_edges(
+            pt2_values,
+            weights,
+            events_per_bin=5000,
+        )
+        pt1_bin_edges = pt2_bin_edges
     
     f1_t2, pt1_edges, pt2_edges = np.histogram2d(
         df_tau1["pt_1"],

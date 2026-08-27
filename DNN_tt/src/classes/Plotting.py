@@ -1476,8 +1476,11 @@ def plot_fake_factors_ungrouped_splitAndincl(
     ax.legend()
     return fig, ax
 
-def plot_fractions(df_tau1, df_tau2, title):
-    frac, pt1_edges, pt2_edges = fraction_in_bins(df_tau1, df_tau2, plotting=True, region=title)
+def plot_fractions(df_tau1, df_tau2, title, frac=None, pt1_edges=None, pt2_edges=None):
+    if frac is None and pt1_edges is None and pt2_edges is None:
+        frac, pt1_edges, pt2_edges = fraction_in_bins(df_tau1, df_tau2, region=title)
+    elif frac is None:
+        frac, pt1_edges, pt2_edges = fraction_in_bins(df_tau1, df_tau2, region=title, pt1_bin_edges=pt1_edges, pt2_bin_edges=pt2_edges)
 
     n_pt1, n_pt2 = frac.shape
 
@@ -1496,7 +1499,7 @@ def plot_fractions(df_tau1, df_tau2, title):
         cmap="viridis",
         extent=(-0.5, n_pt1 - 0.5, -0.5, n_pt2 - 0.5),
         vmin=0.35, #np.nanmin(frac.T),
-        vmax=0.55, #np.nanmax(frac.T),
+        vmax=0.6, #np.nanmax(frac.T),
     )
 
     for pt2_bin in range(n_pt2):
@@ -1520,17 +1523,17 @@ def plot_fractions(df_tau1, df_tau2, title):
 
     # Format the actual pT bin edges.
     edge_labels_x = [
-        f"{edge:g}" if np.isfinite(edge) else "∞"
+        f"{edge:.1f}" if np.isfinite(edge) else "∞"
         for edge in pt1_edges
     ]
     edge_labels_y = [
-            f"{edge:g}" if np.isfinite(edge) else "∞"
+            f"{edge:.1f}" if np.isfinite(edge) else "∞"
             for edge in pt2_edges
         ]
 
     ax.set_xticks(x_boundaries)
     ax.set_yticks(y_boundaries)
-    ax.set_xticklabels(edge_labels_x)#, rotation=45, ha="right")
+    ax.set_xticklabels(edge_labels_x, rotation=45, ha="right")
     ax.set_yticklabels(edge_labels_y)
 
     # Draw lines along the square boundaries.
