@@ -8,7 +8,12 @@ import pandas as pd
 
 from .NeuralNetworks import FoldCombinedDNN
 from .DataHandling import test_data
-from classes.Fraction_factor import fraction_in_bins, fractions_for_events
+from classes.Fraction_factor import (
+    fraction_for_events_grouped,
+    fraction_in_bins,
+    fraction_in_bins_grouped,
+    fractions_for_events,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -266,6 +271,8 @@ def calculate_fake_factor_frac(
         df1,
         df2,
         grouping = None,
+        grouping_variable = None,
+        grouping_definition = None,
         fraction = "global",
 ):
     '''
@@ -292,14 +299,53 @@ def calculate_fake_factor_frac(
         df2[ff_tau2] = 0.5 * _df2[ff_tau2]
         return None, None, None
     elif fraction == "pt_bins":
-        frac, pt1_edges, pt2_edges = fraction_in_bins(df.data.AR_like_tau1, df.data.AR_like_tau2)
-        frac_tau1 = fractions_for_events(_df1, frac, pt1_edges, pt2_edges)
-        frac_tau2 = fractions_for_events(_df2, frac, pt1_edges, pt2_edges)
-        df1[ff_tau1] = frac_tau1 * _df1[ff_tau1]
-        df2[ff_tau2] = (1.0 - frac_tau2) * _df2[ff_tau2]
-        logger.info(f'Saved Fraction Factors for ungrouped')
-        return frac, pt1_edges, pt2_edges
+        if grouping is None:
+            frac, pt1_edges, pt2_edges = fraction_in_bins(df.data.AR_like_tau1, df.data.AR_like_tau2)
+            frac_tau1 = fractions_for_events(_df1, frac, pt1_edges, pt2_edges)
+            frac_tau2 = fractions_for_events(_df2, frac, pt1_edges, pt2_edges)
+            df1[ff_tau1] = frac_tau1 * _df1[ff_tau1]
+            df2[ff_tau2] = (1.0 - frac_tau2) * _df2[ff_tau2]
+            logger.info(f'Saved Fraction Factors for ungrouped')
+            return frac, pt1_edges, pt2_edges
+        else:
+            if grouping_variable is None or grouping_definition is None:
+                raise ValueError(
+                    "grouping_variable and grouping_definition are required "
+                    "for grouped fraction factors."
+                )
 
+            if isinstance(grouping_variable, list):
+                if len(grouping_variable) != 2:
+                    raise ValueError(
+                        "grouping_variable must contain exactly two column "
+                        "names when supplied as a list."
+                    )
+                grouping_var_1, grouping_var_2 = grouping_variable
+            else:
+                grouping_var_1 = grouping_var_2 = grouping_variable
+
+            grouped_frac = fraction_in_bins_grouped(
+                df.data.AR_like_tau1,
+                df.data.AR_like_tau2,
+                grouping_variable=grouping_variable,
+                grouping_definition=grouping_definition,
+            )
+            frac_tau1 = fraction_for_events_grouped(
+                _df1,
+                grouped_frac,
+                grouping_variable=grouping_var_1,
+                grouping_definition=grouping_definition,
+            )
+            frac_tau2 = fraction_for_events_grouped(
+                _df2,
+                grouped_frac,
+                grouping_variable=grouping_var_2,
+                grouping_definition=grouping_definition,
+            )
+            df1[ff_tau1] = frac_tau1 * _df1[ff_tau1]
+            df2[ff_tau2] = (1.0 - frac_tau2) * _df2[ff_tau2]
+            logger.info("Saved Fraction Factors for grouping %s", grouping)
+            return grouped_frac
     
 
 
