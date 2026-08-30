@@ -9,3 +9,4 @@ traininfg_results: /work/tapp/TauFF/NF4FF/DNN_tt/Training_results
 cfg_plotting: /work/tapp/TauFF/NF4FF/DNN_tt/configs/plotting.yaml
 labels: /work/tapp/TauFF/NF4FF/DNN_tt/configs/labels.yaml
 plots: /work/tapp/TauFF/NF4FF/DNN_tt/plots
+fractions: /work/tapp/TauFF/NF4FF/DNN_tt/configs/fractions.yaml

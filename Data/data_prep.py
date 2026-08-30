@@ -87,7 +87,7 @@ def main():
 
     data_process = dict(zip(names, process_num))
 
-    write_yaml_to_file(data_process, cfg["process_dir"][args.loc] + "/data_process_mapping_" + args.embedding)
+    write_yaml_to_file(data_process, cfg["process_dir"][args.loc] + "/data_process_mapping_" + args.embedding + ".yaml")
     #exit()
 
     

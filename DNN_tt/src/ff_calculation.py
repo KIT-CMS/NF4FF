@@ -15,7 +15,7 @@ from classes.Loading import load_config, load_variables, load_data
 from classes.FF_calculation import calculate_fake_factors_ungrouped, calculate_fake_factors_grouped
 from classes.FF_calculation import calculate_fake_factors_incl_ungrouped, calculate_fake_factors_incl_grouped
 from classes.FF_calculation import calculate_fake_factor_classic, calculate_fake_factor_frac
-from classes.Plotting import plot_fractions
+
 
 SEED = 42
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ class Args(Tap):
     taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_bins'] = 'pt_bins'
-    dnn_grouped: bool = True
+    dnn_grouped: bool = False
     classic: bool = False
 
 args = Args().parse_args()
@@ -47,22 +47,9 @@ DATA_CLASSIC_SG_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_da
 MASKS_PATH = cfg_path["masks"]
 MASKS_PATH_INCL = [cfg_path["masks_incl_and"], cfg_path["masks_incl_or"], cfg_path["masks_incl_andor"]]
 
+
 TRAINING_VAR_PATH = cfg_path["train_var"]
 CHECKPOINT_DIR = cfg_path["traininfg_results"]
-
-PLOTS_DIR = Path(cfg_path["plots"])
-PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-
-PLOT_GROUPINGS = ('njets', 'tau_decaymode', 'ungrouped', 'classic')
-PLOT_SUBDIRS = ('closure_in_DR', 'FF_distribution_AR', 'FF_distribution_DR', 'closure_plots')
-for subdir in PLOT_SUBDIRS:
-    for grouping in PLOT_GROUPINGS:
-        (PLOTS_DIR / 'tau_split' / 'Fraction_factors' / grouping).mkdir(parents=True, exist_ok=True)
-        (PLOTS_DIR / 'tau_split' / subdir / grouping).mkdir(parents=True, exist_ok=True)
-        (PLOTS_DIR / f'tau_incl_{args.incl}' / subdir / grouping).mkdir(parents=True, exist_ok=True)
-
-PLOT_GROUPINGS = ('njets', 'tau_decaymode')
-
 
 
 
@@ -128,8 +115,19 @@ def main():
     )    
   
     training_variables = load_variables(TRAINING_VAR_PATH, args.var)
+    if args.taus == 'split':
+        try:
+            with open(cfg_path['fractions'], 'x') as file:
+                file.write('# saved values of fraction factors for ungrouped, njets and tauDM \n')
+                file.write('ungrouped: "" \n')
+                file.write('njets: "" \n')
+                file.write('tau_dm: "" \n')
+            logger.info(f'Created {cfg_path['fractions']}')
+        except FileExistsError:
+            logger.info(f'{cfg_path['fractions']} already exists')
+    
 
-   
+    #exit()
 
     # ----- calculate fake factors -----
     # classic: at the moment from jvoss smhtt ul v12
@@ -188,6 +186,7 @@ def main():
                 df=df,
                 df1=df.AR_tau1,
                 df2=df.AR_tau2,
+                frac_file=cfg_path['fractions'],
                 grouping=name,
                 grouping_variable = group_var,
                 grouping_definition = group_def,
@@ -218,26 +217,17 @@ def main():
         )
 
         logger.info(f"Applying fake factor {args.frac} fractions...")
-        frac, pt1_edges, pt2_edges = calculate_fake_factor_frac(
+        #frac, pt1_edges, pt2_edges = 
+        calculate_fake_factor_frac(
             df=df,
             df1=df.AR_tau1,
             df2=df.AR_tau2,
-            grouping=None,
+            frac_file=cfg_path['fractions'],
             fraction=args.frac
         )
+        exit()
 
-        if args.frac == 'pt_bins':
-            fig, ax = plot_fractions(df.data.AR_like_tau1, df.data.AR_like_tau2, 'DR', frac=frac, pt1_edges=pt1_edges, pt2_edges=pt2_edges)
-            plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_DR.png', dpi=150, bbox_inches='tight')
-            plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_DR.pdf', dpi=150, bbox_inches='tight')
-            plt.close(fig)
-
-            fig, ax = plot_fractions(df.data.AR_tau1, df.data.AR_tau2, 'SR', pt1_edges=pt1_edges, pt2_edges=pt2_edges)
-            plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_SR.png', dpi=150, bbox_inches='tight')
-            plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_SR.pdf', dpi=150, bbox_inches='tight')
-            plt.close(fig)
-
-            logger.info(f'Saved plots of Fraction Factors for ungrouped')
+        
     
         
 

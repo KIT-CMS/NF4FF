@@ -271,3 +271,4 @@ def _equal_weight_bin_edges(values, weights, events_per_bin=1000):
     internal_edges = values[np.searchsorted(cumulative_weight, targets, side="left")]
 
     return np.unique(np.concatenate(([values[0]], internal_edges, [np.inf])))
+

@@ -1,6 +1,7 @@
 from dataclasses import is_dataclass, fields
 from typing import Tuple
 
+import numpy as np
 import pandas as pd
 import uproot
 import yaml
@@ -11,6 +12,21 @@ def load_root_file_as_pd(file_path):
     with uproot.open(file_path) as file:
         data = file["ntuple"].arrays(file["ntuple"].keys(), library="pd")
     return data
+
+def _to_yaml_safe(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, dict):
+        return {key: _to_yaml_safe(value) for key, value in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_yaml_safe(value) for value in obj]
+    return obj
+
+def write_yaml_to_file(py_obj, filename):
+    with open(f'{filename}', 'w',) as f :
+        yaml.safe_dump(_to_yaml_safe(py_obj), f, sort_keys=False, default_flow_style=False) 
 
 def load_data(feather_file, config_file):
 

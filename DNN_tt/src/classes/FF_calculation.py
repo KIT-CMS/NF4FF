@@ -14,6 +14,7 @@ from classes.Fraction_factor import (
     fraction_in_bins_grouped,
     fractions_for_events,
 )
+from classes.Loading import write_yaml_to_file, load_config
 
 
 logger = logging.getLogger(__name__)
@@ -270,6 +271,7 @@ def calculate_fake_factor_frac(
         df,
         df1,
         df2,
+        frac_file,
         grouping = None,
         grouping_variable = None,
         grouping_definition = None,
@@ -297,29 +299,30 @@ def calculate_fake_factor_frac(
     if fraction == "global":
         df1[ff_tau1] = 0.5 * _df1[ff_tau1]
         df2[ff_tau2] = 0.5 * _df2[ff_tau2]
-        return None, None, None
+
     elif fraction == "pt_bins":
         if grouping is None:
             frac, pt1_edges, pt2_edges = fraction_in_bins(df.data.AR_like_tau1, df.data.AR_like_tau2)
+
             frac_tau1 = fractions_for_events(_df1, frac, pt1_edges, pt2_edges)
             frac_tau2 = fractions_for_events(_df2, frac, pt1_edges, pt2_edges)
+
             df1[ff_tau1] = frac_tau1 * _df1[ff_tau1]
             df2[ff_tau2] = (1.0 - frac_tau2) * _df2[ff_tau2]
             logger.info(f'Saved Fraction Factors for ungrouped')
-            return frac, pt1_edges, pt2_edges
+
+            # ----- save fraction in yaml for plotting -----
+            all_frac = load_config(frac_file)
+            all_frac['ungrouped'] = dict(zip(['fraction', 'pt1_edges', 'pt2_edges'],[frac, pt1_edges, pt2_edges]))
+            write_yaml_to_file(all_frac, frac_file)
+            
         else:
             if grouping_variable is None or grouping_definition is None:
-                raise ValueError(
-                    "grouping_variable and grouping_definition are required "
-                    "for grouped fraction factors."
-                )
+                raise ValueError("grouping_variable and grouping_definition are required for grouped fraction factors.")
 
             if isinstance(grouping_variable, list):
                 if len(grouping_variable) != 2:
-                    raise ValueError(
-                        "grouping_variable must contain exactly two column "
-                        "names when supplied as a list."
-                    )
+                    raise ValueError("grouping_variable must contain exactly two column names when supplied as a list.")
                 grouping_var_1, grouping_var_2 = grouping_variable
             else:
                 grouping_var_1 = grouping_var_2 = grouping_variable
