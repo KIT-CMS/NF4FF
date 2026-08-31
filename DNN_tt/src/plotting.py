@@ -11,8 +11,9 @@ import torch as t
 from typing import Literal
 import uproot
 
-from classes.Plotting import plot_fake_factors, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
 from classes.Loading import load_config, load_labels, load_data
+from classes.Fraction_factor import fraction_in_bins
+from classes.Plotting import plot_fake_factors, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
 from classes.Plotting import FF_closure_in_DR_tau1, FF_closure_in_DR_tau2, FF_closure_in_DR_incl, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl, plot_fake_factors_combTaus, plot_fake_factors_grouped_incl
 from classes.Plotting import plot_fractions
 
@@ -33,12 +34,12 @@ class Args(Tap):
     taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_bins'] = 'pt_bins'
-    dnn_grouped: bool = True
+    dnn_grouped: bool = False
     classic: bool = False
 
-    closure_DR: bool = True
+    closure_DR: bool = False
     FF_dist: bool = True
-    closure_AR: bool = True
+    closure_AR: bool = False
 
 args = Args().parse_args()
 
@@ -311,8 +312,8 @@ def main():
                     label=label,
                     grouping=None,
                 )
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / 'ungrouped' / f'FF_closure_DR_tau1_{var}.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / 'ungrouped' / f'FF_closure_DR_tau1_{var}.pdf', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / 'ungrouped' / f'FF_closure_DR_tau2_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / 'ungrouped' / f'FF_closure_DR_tau2_{var}.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig_q)
 
             logger.info(f'Saved closure plots in DR for ungrouped')
@@ -340,14 +341,42 @@ def main():
             logger.info(f'Saved FF distributions in AR for combined Taus for ungrouped')
 
             if args.frac == 'pt_bins':
-                fig, ax = plot_fractions(df.data.AR_like_tau1, df.data.AR_like_tau2, 'DR', frac=frac, pt1_edges=pt1_edges, pt2_edges=pt2_edges)
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_DR.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_DR.pdf', dpi=150, bbox_inches='tight')
+                # ----- get fraction and bins -----
+                cfg_frac = load_config(cfg_path['fractions'])
+                # ----- Ar-like
+                frac_arlike = cfg_frac['AR_like']['ungrouped']
+                frac, pt1_edges, pt2_edges = frac_arlike['fraction'], frac_arlike['pt1_edges'], frac_arlike['pt2_edges']
+                mean, std = frac_arlike['global_frac'], frac_arlike['global_std']
+                
+                fig, ax = plot_fractions('AR_like', frac=frac, pt1_edges=pt1_edges, pt2_edges=pt2_edges, global_frac=mean, global_std=std)
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_ARlike.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_ARlike.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig)
-    
-                fig, ax = plot_fractions(df.data.AR_tau1, df.data.AR_tau2, 'SR', pt1_edges=pt1_edges, pt2_edges=pt2_edges)
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_SR.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_SR.pdf', dpi=150, bbox_inches='tight')
+
+                # ----- AR
+                # ----- calculate fraction in AR -----
+                fraction_in_bins(df.data.AR_tau1, df.data.AR_tau2, cfg_path['fractions'], region='AR', pt1_bin_edges=pt1_edges, pt2_bin_edges=pt2_edges)
+
+                cfg_frac = load_config(cfg_path['fractions'])
+                frac_ar = cfg_frac['AR']['ungrouped']
+                fraction_ar, pt1_edges_ar, pt2_edges_ar = frac_ar['fraction'], frac_ar['pt1_edges'], frac_ar['pt2_edges']
+                mean_ar = frac_ar['global_frac']
+                std_ar = frac_ar['global_std']
+                
+                fig, ax = plot_fractions('AR', frac=fraction_ar, pt1_edges=pt1_edges_ar, pt2_edges=pt2_edges_ar, global_frac=mean_ar, global_std=std_ar)
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_AR.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_AR.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig)
+
+                # ----- plot diff -----
+                frac_diff = np.array(frac) - np.array(fraction_ar)
+                h = frac_diff.flatten()
+                h = h[~np.isnan(h)]
+                mean_diff, std_diff = np.mean(h), np.std(h)
+
+                fig, ax = plot_fractions('AR_like - AR', frac=frac_diff, pt1_edges=pt1_edges_ar, pt2_edges=pt2_edges_ar, global_frac=mean_diff, global_std=std_diff)
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_diff.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / 'plot_fractions_diff.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig)
     
                 logger.info(f'Saved plots of Fraction Factors for ungrouped')

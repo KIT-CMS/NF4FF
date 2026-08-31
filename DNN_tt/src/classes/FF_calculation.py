@@ -302,7 +302,7 @@ def calculate_fake_factor_frac(
 
     elif fraction == "pt_bins":
         if grouping is None:
-            frac, pt1_edges, pt2_edges = fraction_in_bins(df.data.AR_like_tau1, df.data.AR_like_tau2)
+            frac, pt1_edges, pt2_edges = fraction_in_bins(df.data.AR_like_tau1, df.data.AR_like_tau2, frac_file)
 
             frac_tau1 = fractions_for_events(_df1, frac, pt1_edges, pt2_edges)
             frac_tau2 = fractions_for_events(_df2, frac, pt1_edges, pt2_edges)
@@ -310,11 +310,6 @@ def calculate_fake_factor_frac(
             df1[ff_tau1] = frac_tau1 * _df1[ff_tau1]
             df2[ff_tau2] = (1.0 - frac_tau2) * _df2[ff_tau2]
             logger.info(f'Saved Fraction Factors for ungrouped')
-
-            # ----- save fraction in yaml for plotting -----
-            all_frac = load_config(frac_file)
-            all_frac['ungrouped'] = dict(zip(['fraction', 'pt1_edges', 'pt2_edges'],[frac, pt1_edges, pt2_edges]))
-            write_yaml_to_file(all_frac, frac_file)
             
         else:
             if grouping_variable is None or grouping_definition is None:

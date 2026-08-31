@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tap import Tap
 import torch as t
+import yaml
 
 from classes.NeuralNetworks import load_fold_combined_model
 from classes.Loading import load_config, load_variables, load_data
@@ -118,10 +119,11 @@ def main():
     if args.taus == 'split':
         try:
             with open(cfg_path['fractions'], 'x') as file:
+                dict_arlike = {'AR_like': {'ungrouped': '', 'njets': '', 'tau_dm': ''}}
+                dict_ar = {'AR': {'ungrouped': '', 'njets': '', 'tau_dm': ''}}
                 file.write('# saved values of fraction factors for ungrouped, njets and tauDM \n')
-                file.write('ungrouped: "" \n')
-                file.write('njets: "" \n')
-                file.write('tau_dm: "" \n')
+                yaml.safe_dump(dict_arlike, file)
+                yaml.safe_dump(dict_ar, file)
             logger.info(f'Created {cfg_path['fractions']}')
         except FileExistsError:
             logger.info(f'{cfg_path['fractions']} already exists')
@@ -224,10 +226,7 @@ def main():
             df2=df.AR_tau2,
             frac_file=cfg_path['fractions'],
             fraction=args.frac
-        )
-        exit()
-
-        
+        )       
     
         
 

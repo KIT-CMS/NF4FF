@@ -1476,12 +1476,8 @@ def plot_fake_factors_ungrouped_splitAndincl(
     ax.legend()
     return fig, ax
 
-def plot_fractions(df_tau1, df_tau2, title, frac=None, pt1_edges=None, pt2_edges=None):
-    if frac is None and pt1_edges is None and pt2_edges is None:
-        frac, pt1_edges, pt2_edges = fraction_in_bins(df_tau1, df_tau2, region=title)
-    elif frac is None:
-        frac, pt1_edges, pt2_edges = fraction_in_bins(df_tau1, df_tau2, region=title, pt1_bin_edges=pt1_edges, pt2_bin_edges=pt2_edges)
-
+def plot_fractions(title, frac, pt1_edges, pt2_edges, global_frac, global_std):
+    frac = np.array(frac)
     n_pt1, n_pt2 = frac.shape
 
     fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
@@ -1498,8 +1494,8 @@ def plot_fractions(df_tau1, df_tau2, title, frac=None, pt1_edges=None, pt2_edges
         interpolation="none",
         cmap="viridis",
         extent=(-0.5, n_pt1 - 0.5, -0.5, n_pt2 - 0.5),
-        vmin=0.35, #np.nanmin(frac.T),
-        vmax=0.6, #np.nanmax(frac.T),
+        vmin=0.35 if title=='AR' or title=='AR_like' else np.nanmin(frac.T),
+        vmax=0.6 if title=='AR' or title=='AR_like' else np.nanmax(frac.T),
     )
 
     for pt2_bin in range(n_pt2):
@@ -1513,9 +1509,21 @@ def plot_fractions(df_tau1, df_tau2, title, frac=None, pt1_edges=None, pt2_edges
                     f"{value:.2f}",
                     ha="center",
                     va="center",
-                    color="black" if value > 0.42 else "white",
+                    color="black" if value > (0.42 if title=='AR' or title=='AR_like' else -0.03) else "white",
                     fontsize=8,
                 )
+
+            # Values outside of range get outlined red
+            if (value < 0.35 or value > 0.609) and (title=='AR' or title=='AR_like'):
+                rectangle = plt.Rectangle(
+                    (pt1_bin - 0.5, pt2_bin - 0.5),
+                    1,
+                    1,
+                    fill=False,
+                    edgecolor="red",
+                    linewidth=2,
+                )
+                ax.add_patch(rectangle)
 
     # Positions of bin boundaries.
     x_boundaries = np.arange(n_pt1 + 1) - 0.5
@@ -1531,10 +1539,16 @@ def plot_fractions(df_tau1, df_tau2, title, frac=None, pt1_edges=None, pt2_edges
             for edge in pt2_edges
         ]
 
+    
+
     ax.set_xticks(x_boundaries)
     ax.set_yticks(y_boundaries)
-    ax.set_xticklabels(edge_labels_x, rotation=45, ha="right")
-    ax.set_yticklabels(edge_labels_y)
+    ax.set_xticklabels(edge_labels_x, rotation=45, ha="right", fontsize=15)
+    ax.set_yticklabels(edge_labels_y, fontsize=15)
+
+    ax.text(0.04, 0.85, 
+            f"Mean = {global_frac:.3f} \nStd = {global_std:.3f}", 
+            fontsize=20,  ha='left', va='top', transform=ax.transAxes, ma='left')
 
     # Draw lines along the square boundaries.
     ax.grid(

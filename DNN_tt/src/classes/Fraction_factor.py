@@ -1,28 +1,28 @@
 import logging
 
 import numpy as np
-import matplotlib.pyplot as plt
-import pandas as pd
-import seaborn as sns
+
+from classes.Loading import write_yaml_to_file, load_config
 
 logger = logging.getLogger(__name__)
 #pt2_bin_edges = np.array([40, 41, 42 , 43, 44, 45, 46, 48, 50, 55, 60, 65, 70, np.inf])
 #pt2_bin_edges = np.array([40, 45, 50 , 55, 60, 65, 70, 75, 80, 90, 100, 120, 200, np.inf])
 
-def fraction_in_bins(df_tau1, df_tau2, region='DR', pt1_bin_edges=None, pt2_bin_edges=None):
+def fraction_in_bins(df_tau1, df_tau2, frac_file, region='AR_like', pt1_bin_edges=None, pt2_bin_edges=None):
     '''
     df_taun = df.data.AR_like_taun
     '''
-
-    if region == 'DR':
+    # ----- weights -----
+    if region == 'AR_like':
         weights_tau1 = df_tau1["weight_qcd"] * df_tau1["ff_DR_dnn_tau1"]
         weights_tau2 = df_tau2["weight_qcd"] * df_tau2["ff_DR_dnn_tau2"]
-    elif region == 'SR':
+    elif region == 'AR':
         weights_tau1 = df_tau1["weight"] * df_tau1["ff_dnn_tau1"]
         weights_tau2 = df_tau2["weight"] * df_tau2["ff_dnn_tau2"]
     else:
-        raise ValueError(f"Unknown region: {region!r}. Expected 'DR' or 'SR'.")
+        raise ValueError(f"Unknown region: {region!r}. Expected 'AR_like' or 'AR'.")
 
+    # ----- bins -----
     pt2_values = np.concatenate([df_tau1["pt_2"].to_numpy(), df_tau2["pt_2"].to_numpy()])
     weights = np.concatenate([weights_tau1.to_numpy(), weights_tau2.to_numpy()])
 
@@ -36,7 +36,8 @@ def fraction_in_bins(df_tau1, df_tau2, region='DR', pt1_bin_edges=None, pt2_bin_
             events_per_bin=5000,
         )
         pt1_bin_edges = pt2_bin_edges
-    
+
+    # ----- counts -----
     f1_t2, pt1_edges, pt2_edges = np.histogram2d(
         df_tau1["pt_1"],
         df_tau1["pt_2"],
@@ -61,18 +62,23 @@ def fraction_in_bins(df_tau1, df_tau2, region='DR', pt1_bin_edges=None, pt2_bin_
         where=denominator != 0,
     )
 
+    # ----- global -----
     h = fraction.flatten()
     h = h[~np.isnan(h)]
-    global_frac = np.sum(h)/len(h)
-    print('Global fraction:', global_frac)
+    global_frac = np.mean(h)
+    std = np.std(h)
 
+    # ----- save fraction in yaml for plotting -----
+    all_frac = load_config(frac_file)
+    all_frac[region]['ungrouped'] = dict(zip(['fraction', 'pt1_edges', 'pt2_edges', 'global_frac', 'global_std'],[fraction, pt1_edges, pt2_edges, global_frac, std]))
+    write_yaml_to_file(all_frac, frac_file)
 
     return fraction, pt1_edges, pt2_edges
 
 def fraction_in_bins_grouped(
         df_tau1, 
         df_tau2, 
-        region='DR', 
+        region='AR_like', 
         pt1_bin_edges=None, pt2_bin_edges=None,
         grouping_variable=None, grouping_definition=None,):
     '''
@@ -99,8 +105,8 @@ def fraction_in_bins_grouped(
         grouping_var_1 = grouping_variable
         grouping_var_2 = grouping_variable    
 
-    if region not in {'DR', 'SR'}:
-        raise ValueError(f"Unknown region: {region!r}. Expected 'DR' or 'SR'.")
+    if region not in {'AR_like', 'AR'}:
+        raise ValueError(f"Unknown region: {region!r}. Expected 'AR_like' or 'AR'.")
 
     group_tau1_masks = _build_group_masks(
         np.asarray(df_tau1[grouping_var_1]), grouping_definition
