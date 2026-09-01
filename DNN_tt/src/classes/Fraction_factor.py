@@ -80,8 +80,8 @@ def fraction_in_bins_grouped(
         df_tau2,
         frac_file: str,
         region='AR_like', 
-        pt1_bin_edges=None, pt2_bin_edges=None,
-        grouping=None, grouping_variable=None, grouping_definition=None,):
+        ar_file=None,
+        grouping=None, grouping_variable=None, grouping_definition=None):
     '''
     Calculate the tau-1 fraction independently for every requested group.
 
@@ -92,8 +92,8 @@ def fraction_in_bins_grouped(
     ``(fraction, pt1_edges, pt2_edges)`` tuple.
     '''
 
-    if grouping_variable is None or grouping_definition is None:
-        logger.warning("Grouping variable or grouping definition is None. Calculating ungrouped fractions instead.")
+    if grouping_variable is None or grouping_definition is None or grouping is None:
+        logger.warning("Grouping variable or grouping definition or grouping is None. Calculating ungrouped fractions instead.")
         return fraction_in_bins(df_tau1, df_tau2, region, pt1_bin_edges, pt2_bin_edges)
 
     # ----- grouping variable handling -----
@@ -117,6 +117,7 @@ def fraction_in_bins_grouped(
     ))
 
     grouped_fractions = {}
+    all_frac = load_config(frac_file)
     for group_name, tau1_mask in group_tau1_masks:
         tau2_mask = group_tau2_masks[group_name]
         if not np.any(tau1_mask) and not np.any(tau2_mask):
@@ -139,10 +140,10 @@ def fraction_in_bins_grouped(
         # ----- bins -----
         pt2_values = np.concatenate([df1["pt_2"].to_numpy(), df2["pt_2"].to_numpy()])
         weights = np.concatenate([weights_tau1.to_numpy(), weights_tau2.to_numpy()])
-    
-        if pt2_bin_edges is not None or pt1_bin_edges is not None:
-            pt1_bin_edges = pt1_bin_edges
-            pt2_bin_edges = pt2_bin_edges
+
+        if region == 'AR' and ar_file is not None:
+            pt1_bin_edges = ar_file[grouping][group_name]['pt1_edges']
+            pt2_bin_edges = ar_file[grouping][group_name]['pt2_edges']
         else:
             pt2_bin_edges = _equal_weight_bin_edges(
                 pt2_values,
@@ -176,18 +177,31 @@ def fraction_in_bins_grouped(
             where=denominator != 0,
         )
 
-        grouped_fractions[group_name] = fraction, pt1_edges, pt2_edges
-    
         # ----- global -----
         h = fraction.flatten()
         h = h[~np.isnan(h)]
         global_frac = np.mean(h)
         std = np.std(h)
 
+        grouped_fractions[group_name] = fraction, pt1_edges, pt2_edges, global_frac, std
+        all_frac[region][grouping][group_name] = {
+            'fraction': fraction,
+            'pt1_edges': pt1_edges,
+            'pt2_edges': pt2_edges,
+            'global_frac': global_frac,
+            'global_std': std,
+            }
+
+        
+
+    #print(grouping)
+    #print('-----------------------------------')
+    #print(grouped_fractions['0'])
+    #print('--------------------------------------')
     #print(grouped_fractions)
+    #exit()
     # ----- save fraction in yaml for plotting -----
-    all_frac = load_config(frac_file)
-    all_frac[region][f'{grouping}'] = dict(zip(['fraction', 'pt1_edges', 'pt2_edges', 'global_frac', 'global_std'],[grouped_fractions, pt1_edges, pt2_edges, global_frac, std]))
+    
     write_yaml_to_file(all_frac, frac_file)
 
     logger.info("Calculated fraction factors for group %s", group_name)
@@ -256,7 +270,7 @@ def fraction_for_events_grouped(
         if not np.any(group_mask):
             continue
 
-        group_frac, pt1_edges, pt2_edges = grouped_fractions[group_name]
+        group_frac, pt1_edges, pt2_edges, _, _ = grouped_fractions[group_name]
         event_fractions[group_mask] = fractions_for_events(
             frame.loc[group_mask], group_frac, pt1_edges, pt2_edges
         )
@@ -271,26 +285,6 @@ def fraction_for_events_grouped(
 
     return event_fractions
 
-def pt_mask(df):
-    bin_edges = [40, 45, 50 , 55, 60, 65, 70, 75, 80, 90, 100, 120, 200]
-    n_bins = len(bin_edges) -1
-
-    masks = np.empty((n_bins, n_bins))
-    for i in range(n_bins):
-        if i == np.max(range(n_bins)):
-            mask_pt2 = ((bin_edges[i] <= df["pt_2"]))
-        else:
-            mask_pt2 = ((bin_edges[i] <= df["pt_2"]) & (df["pt_2"] < bin_edges[i + 1]))        
-
-        for j in range(n_bins):
-            if j == np.max(range(n_bins)):
-                mask_pt1 = ((bin_edges[j] <= df["pt_1"]))
-            else:
-                mask_pt1 = ((bin_edges[j] <= df["pt_1"]) & (df["pt_1"] < bin_edges[j + 1]))
-
-            masks[i, j] = mask_pt1 & mask_pt2
-
-    return masks
 
 def _equal_count_bin_edges(values, events_per_bin=1000):
     values = np.asarray(values)

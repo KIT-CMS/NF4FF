@@ -119,8 +119,8 @@ def main():
     if args.taus == 'split':
         try:
             with open(cfg_path['fractions'], 'x') as file:
-                dict_arlike = {'AR_like': {'ungrouped': '', 'njets': '', 'tau_dm': ''}}
-                dict_ar = {'AR': {'ungrouped': '', 'njets': '', 'tau_dm': ''}}
+                dict_arlike = {'AR_like': {'ungrouped': '', 'njets': {}, 'tau_dm': {}}}
+                dict_ar = {'AR': {'ungrouped': '', 'njets': {}, 'tau_dm': {}}}
                 file.write('# saved values of fraction factors for ungrouped, njets and tauDM \n')
                 yaml.safe_dump(dict_arlike, file)
                 yaml.safe_dump(dict_ar, file)

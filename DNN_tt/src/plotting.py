@@ -12,10 +12,10 @@ from typing import Literal
 import uproot
 
 from classes.Loading import load_config, load_labels, load_data
-from classes.Fraction_factor import fraction_in_bins
+from classes.Fraction_factor import fraction_in_bins, fraction_in_bins_grouped
 from classes.Plotting import plot_fake_factors, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
 from classes.Plotting import FF_closure_in_DR_tau1, FF_closure_in_DR_tau2, FF_closure_in_DR_incl, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl, plot_fake_factors_combTaus, plot_fake_factors_grouped_incl
-from classes.Plotting import plot_fractions
+from classes.Plotting import plot_fractions, plot_fractions_grouped
 
 
 SEED = 42
@@ -119,6 +119,20 @@ def get_bins_and_label(variable, channel='et'):
 def main():
     labels_cfg = load_config(LABELS_CONFIG_PATH)
 
+    # ----- grouping definitions -----    
+    grouping_njets = (
+        (0,),
+        (1,),
+        (2, 1000),
+    )
+
+    grouping_tdm = (
+        (0,),
+        (1,),
+        (10,),
+        (11,),
+    )    
+
     if args.classic:
         logger.info('Initialize plotting for classic FF...')
 
@@ -192,7 +206,7 @@ def main():
         # ----- Fake-factor distributions -----
         if args.FF_dist:
             
-            for grouping in PLOT_GROUPINGS:
+            for grouping, group_name, group_var, group_def in zip(PLOT_GROUPINGS, ['njets', 'tau_dm'], ['njets', ['tau_decaymode_1', 'tau_decaymode_2']], [grouping_njets, grouping_tdm]):
                 # ----- clipped FF -----
                 fig_ar, ax_ar = plot_fake_factors_grouped(
                     df=df,
@@ -238,6 +252,35 @@ def main():
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'plot_ff_unclipped_splitTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig_ar)
                 logger.info(f'Saved FF distributions in AR for {grouping}')
+
+                if args.frac == 'pt_bins':
+                    # ----- get fraction and bins -----
+                    cfg_frac = load_config(cfg_path['fractions'])
+                    safe_path = PLOTS_DIR / 'tau_split' / 'Fraction_factors' / grouping
+                    # ----- Ar-like
+                    frac_arlike = cfg_frac['AR_like'][f'{group_name}']
+
+                    plot_fractions_grouped('AR_like', grouped_frac=frac_arlike, grouping=grouping, safe_path=safe_path)
+                        
+                    # ----- AR
+                    # ----- calculate fraction in AR -----
+                    
+                    fraction_in_bins_grouped(df.data.AR_tau1, df.data.AR_tau2, cfg_path['fractions'], region='AR', ar_file=cfg_frac['AR_like'], grouping=group_name, grouping_variable=group_var, grouping_definition=group_def)
+                
+
+                    cfg_frac = load_config(cfg_path['fractions'])
+                    frac_ar = cfg_frac['AR'][f'{group_name}']
+
+                    plot_fractions_grouped('AR', grouped_frac=frac_ar, grouping=grouping, safe_path=safe_path)
+    
+                    # ----- plot diff -----
+                    #frac_diff = np.array(frac) - np.array(fraction_ar)
+                    #h = frac_diff.flatten()
+                    #h = h[~np.isnan(h)]
+                    #mean_diff, std_diff = np.mean(h), np.std(h)
+    
+                    #fig, ax = plot_fractions('AR_like - AR', frac=frac_diff, pt1_edges=pt1_edges_ar, pt2_edges=pt2_edges_ar, global_frac=mean_diff, global_std=std_diff)
+                   # logger.info(f'Saved plots of Fraction Factors for ungrouped')
 
         # ----- FF closure in AR -----
         if args.closure_AR:
