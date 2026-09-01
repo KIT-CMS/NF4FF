@@ -34,7 +34,7 @@ class Args(Tap):
     taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_bins'] = 'pt_bins'
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
     classic: bool = False
 
 args = Args().parse_args()
@@ -157,13 +157,13 @@ def main():
         logger.info("Loading data...")
         df = load_data(DATA_PATH, MASKS_PATH)
 
-        for group_var, group_def, name in zip([['tau_decaymode_1', 'tau_decaymode_2'], 'njets'], [grouping_tdm, grouping_njets], ['tau_dm', 'njets']):
+        for group_var, group_def, name, model1, model2 in zip([['tau_decaymode_1', 'tau_decaymode_2'], 'njets'], [grouping_tdm, grouping_njets], ['tau_dm', 'njets'], [model_tau1_tdm, model_tau1_njets], [model_tau2_tdm, model_tau2_njets]):
 
             logger.info(f"Calculating fake factors for {name} with grouping variable {group_var} and grouping definition {group_def}...")
             calculate_fake_factors_grouped(
                 df=df,
-                model_tau1=model_tau1_tdm,
-                model_tau2=model_tau2_tdm,
+                model_tau1=model1,
+                model_tau2=model2,
                 training_variables=training_variables,
                 grouping_variable = group_var,
                 grouping_definition = group_def,
@@ -174,8 +174,8 @@ def main():
             logger.info("Calculating fake factors in DR...")
             calculate_fake_factors_grouped(
                 df=df,
-                model_tau1=model_tau1_tdm,
-                model_tau2=model_tau2_tdm,
+                model_tau1=model1,
+                model_tau2=model2,
                 training_variables=training_variables,
                 DR = True,
                 grouping_variable = group_var,

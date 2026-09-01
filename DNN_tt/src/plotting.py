@@ -34,12 +34,12 @@ class Args(Tap):
     taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_bins'] = 'pt_bins'
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
     classic: bool = False
 
-    closure_DR: bool = False
+    closure_DR: bool = True
     FF_dist: bool = True
-    closure_AR: bool = False
+    closure_AR: bool = True
 
 args = Args().parse_args()
 

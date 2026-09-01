@@ -246,7 +246,7 @@ def calculate_fake_factors_grouped(
     # ----- clipping + output assignment -----
     suffix = f"_{output_suffix}"
 
-    if fake_factor_tau1 is None or fake_factor_tau2 is not None:
+    if fake_factor_tau1 is None or fake_factor_tau2 is None:
         print("FF for tau 1 is None or FF for tau 2 is None")
 
     if DR:
@@ -325,6 +325,8 @@ def calculate_fake_factor_frac(
             grouped_frac = fraction_in_bins_grouped(
                 df.data.AR_like_tau1,
                 df.data.AR_like_tau2,
+                frac_file=frac_file,
+                grouping=grouping,
                 grouping_variable=grouping_variable,
                 grouping_definition=grouping_definition,
             )
