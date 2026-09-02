@@ -238,6 +238,9 @@ class AnalysisDataFrame:
         self.ensure_column(name)
 
         return self._df[name]
+
+    def copy(self):
+        return AnalysisDataFrame(self._df.copy(), self._manager)
     
 
     def __getitem__(self, key):

@@ -101,6 +101,47 @@ def estimate_jet_fakes_incl(
 
     return jet_fakes, var_jet_fakes
 
+def estimate_jet_fakes_3split(
+	df,
+	bins,
+	var,
+	ff1,
+    ff2,
+    ff3,
+):
+    counts_tau1 = {}
+    counts_tau2 = {}
+    counts_3 = {}
+
+    variance_tau1 = {}
+    variance_tau2 = {}
+    variance_3 = {}
+
+    list_processes = ['data', 'diboson', 'DYjets', 'ST', 'embedding', 'ttbar', 'wjets']
+    for proc in list_processes:
+        counts_tau1[proc], _ = np.histogram(df[proc].AR_1[var], weights = df[proc].AR_1.weight * df[proc].AR_1[ff1], bins = bins)
+        variance_tau1[proc], _ = np.histogram(df[proc].AR_1[var], weights = (df[proc].AR_1.weight * df[proc].AR_1[ff1])**2, bins = bins)
+        
+        counts_tau2[proc], _ = np.histogram(df[proc].AR_2[var], weights = df[proc].AR_2.weight * df[proc].AR_2[ff2], bins = bins)
+        variance_tau2[proc], _ = np.histogram(df[proc].AR_2[var], weights = (df[proc].AR_2.weight * df[proc].AR_2[ff2])**2, bins = bins)
+
+        counts_3[proc], _ = np.histogram(df[proc].AR_3[var], weights = df[proc].AR_3.weight * df[proc].AR_3[ff3], bins = bins)
+        variance_3[proc], _ = np.histogram(df[proc].AR_3[var], weights = (df[proc].AR_3.weight * df[proc].AR_3[ff3])**2, bins = bins)
+
+    jet_fakes_tau1 = counts_tau1['data'] - counts_tau1['diboson'] - counts_tau1['DYjets'] - counts_tau1['ST'] - counts_tau1['embedding'] - counts_tau1['ttbar'] - counts_tau1['wjets']
+    var_jet_fakes_tau1 = variance_tau1['data'] + variance_tau1['diboson'] + variance_tau1['DYjets'] + variance_tau1['ST'] + variance_tau1['embedding'] + variance_tau1['ttbar'] + variance_tau1['wjets']
+
+    jet_fakes_tau2 = counts_tau2['data'] - counts_tau2['diboson'] - counts_tau2['DYjets'] - counts_tau2['ST'] - counts_tau2['embedding'] - counts_tau2['ttbar'] - counts_tau2['wjets']
+    var_jet_fakes_tau2 = variance_tau2['data'] + variance_tau2['diboson'] + variance_tau2['DYjets'] + variance_tau2['ST'] + variance_tau2['embedding'] + variance_tau2['ttbar'] + variance_tau2['wjets']
+
+    jet_fakes_3 = counts_3['data'] - counts_3['diboson'] - counts_3['DYjets'] - counts_3['ST'] - counts_3['embedding'] - counts_3['ttbar'] - counts_3['wjets']
+    var_jet_fakes_3 = variance_3['data'] + variance_3['diboson'] + variance_3['DYjets'] + variance_3['ST'] + variance_3['embedding'] + variance_3['ttbar'] + variance_3['wjets']
+
+    jet_fakes = jet_fakes_tau1 + jet_fakes_tau2 + jet_fakes_3 #0.5 * (jet_fakes_tau1 + jet_fakes_tau2)
+    var_jet_fakes  = var_jet_fakes_tau1 + var_jet_fakes_tau2 + var_jet_fakes_3
+
+    return jet_fakes, var_jet_fakes
+
 def _reorder_for_rowwise_legend(handles, labels, ncol, reverse=False):
     if reverse:
         handles = handles[::-1]
@@ -621,6 +662,229 @@ def plot_closure_incl(
     ax[1].tick_params(direction='in', top=True, right=True)
     ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
 
+    ax[1].set_xlabel(label)
+
+    return fig, ax, histograms
+
+def plot_closure_3split(
+    df,
+    var: str,
+    bins: np.ndarray,
+    label: str,
+    grouping = None,
+    corr_emb_ff = 1.0,
+    plot_corr_hline = False,
+):
+    hep.style.use(hep.style.CMS)
+
+    if grouping == 'tau_decaymode':
+        ff1 = 'ff_dnn_1_tau_dm'
+        ff2 = 'ff_dnn_2_tau_dm'
+        ff3 = 'ff_dnn_3_tau_dm'
+        cat_title = r'$\tau$ DM: inclusive'
+    elif grouping == 'njets':
+        ff1 = 'ff_dnn_1_njets'
+        ff2 = 'ff_dnn_2_njets'
+        ff3 = 'ff_dnn_3_njets'
+        cat_title = r'$N_{jets}$: inclusive'
+    else:
+        ff1 = 'ff_dnn_1'
+        ff2 = 'ff_dnn_2'
+        ff3 = 'ff_dnn_3'
+        cat_title = 'inclusive'
+
+    histograms = {}
+
+    list_processes = [
+        'data',
+        'diboson',
+        'DYjets',
+        'ST',
+        'ttbar',
+        'embedding',
+        'wjets',
+    ]
+
+
+    for proc in list_processes:
+
+        proc_counts, proc_variance, bin_edges = weighted_histogram(
+            values=df[proc].SR[var],
+            weights=df[proc].SR.weight,
+            bins=bins,
+        )
+
+        histograms[proc] = {
+            'counts': proc_counts,
+            'variance': proc_variance,
+        }
+
+    jet_fakes_dnn, var_jet_fakes_dnn = estimate_jet_fakes_3split(
+        df,
+        bins,
+        var,
+        ff1,
+        ff2,
+        ff3,
+    )
+
+    histograms['jet_fakes_dnn'] = {
+        'counts': jet_fakes_dnn,
+        'variance': var_jet_fakes_dnn,
+    }
+
+    background_dnn = (
+        histograms['diboson']['counts']
+        + histograms['DYjets']['counts']
+        + histograms['ST']['counts']
+        + histograms['ttbar']['counts']
+        + histograms['embedding']['counts']
+        + histograms['wjets']['counts']
+        + histograms['jet_fakes_dnn']['counts']
+    )
+
+    variance_background_dnn = (
+        histograms['diboson']['variance']
+        + histograms['DYjets']['variance']
+        + histograms['ST']['variance']
+        + histograms['ttbar']['variance']
+        + histograms['embedding']['variance']
+        + histograms['wjets']['variance']
+        + histograms['jet_fakes_dnn']['variance']
+    )
+
+    histograms['background_dnn'] = {
+        'counts': background_dnn,
+        'variance': variance_background_dnn,
+    }
+
+
+    bin_widths = np.diff(bin_edges)
+    bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+    err_bin = 0.5 * bin_widths
+
+
+    err_data = np.sqrt(histograms['data']['variance'])
+
+
+    err_stat_dnn = np.sqrt(
+        histograms['background_dnn']['variance']
+    )
+
+
+    err_stat_rel_dnn = np.divide(
+        err_stat_dnn,
+        histograms['background_dnn']['counts'],
+        out=np.zeros_like(err_stat_dnn),
+        where=histograms['background_dnn']['counts'] > 0,
+    )
+
+    fig, ax = plt.subplots(
+        2,
+        1,
+        figsize=(11.7, 9.1),
+        sharex=True,
+        gridspec_kw={
+            'height_ratios': [3, 1],
+            'hspace': 0.05,
+        },
+        constrained_layout=True,
+    )    
+
+    stack_components = [
+        (histograms['diboson']['counts'], "#94a4a2", 'Diboson'),
+        (histograms['ttbar']['counts'], '#832db6', r'$t\bar{t} \to \tau$'),
+        (histograms['ST']['counts'], "#717581", r"Single t"),
+        (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
+        (histograms['wjets']['counts'], '#e76300', r"W+jets"),
+        (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
+        (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
+    ]
+
+    counts_stack_total = draw_stacked_stepfill(
+        ax[0],
+        bin_edges,
+        stack_components,
+    )
+
+
+    ax[0].stairs(
+        counts_stack_total,
+        bin_edges,
+        color='black',
+        linewidth=0.7,
+    )
+
+    ax[0].errorbar(
+        bin_centers,
+        histograms['data']['counts'],
+        yerr=err_data,
+        xerr=err_bin,
+        fmt='o',
+        color='black',
+        label='Data',
+        markersize=6,
+        elinewidth=1.2,
+        capsize=0,
+    )
+
+    ax[0].set_ylabel("Events")
+    handles, labels = ax[0].get_legend_handles_labels()
+    handles = handles[::-1]
+    labels = labels[::-1]
+    handles, labels = _reorder_for_rowwise_legend(handles, labels, ncol=4)
+    ax[0].legend(handles, labels, title=' ', title_fontsize=20, loc='upper left', ncol=4, frameon=False)
+    adjust_ylim_for_legend(ax[0])
+    ax[0].tick_params(direction='in', top=True, right=True)
+
+    CMS_LABEL(ax)
+    CMS_CATEGORY_TITLE(ax, title=cat_title)
+    CMS_LUMI_TITLE(ax)
+    CMS_CHANNEL_TITLE(ax)
+
+    ratio_dnn = np.divide(
+        histograms['data']['counts'],
+        histograms['background_dnn']['counts'],
+        out=np.zeros_like(histograms['data']['counts'], dtype=float),
+        where=histograms['background_dnn']['counts'] > 0,
+    )
+
+    ratio_err_dnn = np.divide(
+        err_data,
+        histograms['background_dnn']['counts'],
+        out=np.zeros_like(err_data),
+        where=histograms['background_dnn']['counts'] > 0,
+    )
+
+    ax[1].errorbar(
+        bin_centers,
+        ratio_dnn,
+        xerr=err_bin,
+        yerr=ratio_err_dnn,
+        fmt='o',
+        color='black',
+        markersize=6,
+        label=r'DNN $F_\mathrm{F}$',
+    )
+
+    ax[1].fill_between(
+        bin_centers,
+        1 - err_stat_rel_dnn,
+        1 + err_stat_rel_dnn,
+        color='gray',
+        alpha=0.3,
+        step='mid',
+        label='Stat. Unc.',
+    )
+    if plot_corr_hline:
+        ax[1].axhline(1/corr_emb_ff, color='blue', linestyle='--', linewidth=1.5)
+    ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
+    
+    ax[1].set_ylabel("Data / Model", loc='center')
+    ax[1].set_ylim([0.75, 1.25])
+    ax[1].grid(True, linestyle=':', alpha=0.7)
+    ax[1].tick_params(direction='in', top=True, right=True)
+    ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
     ax[1].set_xlabel(label)
 
     return fig, ax, histograms

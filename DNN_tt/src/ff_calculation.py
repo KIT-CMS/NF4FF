@@ -15,7 +15,7 @@ from classes.NeuralNetworks import load_fold_combined_model
 from classes.Loading import load_config, load_variables, load_data
 from classes.FF_calculation import calculate_fake_factors_ungrouped, calculate_fake_factors_grouped
 from classes.FF_calculation import calculate_fake_factors_incl_ungrouped, calculate_fake_factors_incl_grouped
-from classes.FF_calculation import calculate_fake_factors_3split_ungrouped
+from classes.FF_calculation import calculate_fake_factors_3split_ungrouped, calculate_fake_factor_frac_3split
 from classes.FF_calculation import calculate_fake_factor_classic, calculate_fake_factor_frac
 
 
@@ -32,7 +32,7 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
     
-    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_binned'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction
     dnn_grouped: bool = False
@@ -315,12 +315,14 @@ def main():
         )
 
         logger.info(f"Applying fake factor {args.frac} fractions...")
-        calculate_fake_factor_frac(
+        calculate_fake_factor_frac_3split(
             df=df,
-            df1=df.AR_tau1,
-            df2=df.AR_tau2,
+            df1=df.AR_1,
+            df2=df.AR_2,
+            df3=df.AR_3,
             frac_file=cfg_path['fractions'],
-            fraction=args.frac
+            fraction=args.frac,
+            where_calc_frac = 'AR_like',
         )       
     
 

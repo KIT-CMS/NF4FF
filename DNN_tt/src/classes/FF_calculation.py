@@ -266,7 +266,7 @@ def calculate_fake_factors_grouped(
         fake_factor_tau2 = np.clip(fake_factor_tau2, 0, 3)
         df.AR_tau2[f"ff_dnn_tau2{suffix}"] = fake_factor_tau2
 
-#used todo: add fraction I calculate
+
 def calculate_fake_factor_frac(
         df,
         df1,
@@ -546,6 +546,112 @@ def calculate_fake_factors_3split_ungrouped(
         df.AR_3[f"ff_unclipped_dnn_3"] = fake_factor_3
         fake_factor_3 = np.clip(fake_factor_3, 0, 3)
         df.AR_3[f"ff_dnn_3"] = fake_factor_3
+
+def calculate_fake_factor_frac_3split(
+        df,
+        df1,
+        df2,
+        df3,
+        frac_file,
+        grouping = None,
+        grouping_variable = None,
+        grouping_definition = None,
+        fraction = "global",
+        where_calc_frac = 'AR-like',
+):
+    '''
+    Applying fraction factor to FF for tau split.
+
+    :fraction: either "global" (every FF gets a factorized with 1/2) or "pt_bins"
+    '''
+    _df = df.copy()
+    _df1 = df1.copy()
+    _df2 = df2.copy()
+    _df3 = df3.copy()
+
+    if grouping is None:
+        ff_tau1 = "ff_dnn_1"
+        ff_tau2 = "ff_dnn_2"
+        ff_tau3 = "ff_dnn_3"
+    elif grouping == 'tau_dm':
+        ff_tau1 = "ff_dnn_t1_tau_dm"
+        ff_tau2 = "ff_dnn_t2_tau_dm"
+        ff_tau3 = "ff_dnn_t3_tau_dm"
+    elif grouping == 'njets':
+        ff_tau1 = "ff_dnn_t1_njets"
+        ff_tau2 = "ff_dnn_t2_njets"
+        ff_tau3 = "ff_dnn_t3_njets"
+
+    if fraction == "global":
+        if where_calc_frac == 'AR_like':
+            denominator = np.sum(_df.data.AR_like_1['weight_qcd']) + np.sum(_df.data.AR_like_2['weight_qcd']) + np.sum(_df.data.AR_like_3['weight_qcd'])
+            frac1 = np.sum(_df.data.AR_like_1['weight_qcd']) / denominator
+            frac2 = np.sum(_df.data.AR_like_2['weight_qcd']) / denominator
+            frac3 = np.sum(_df.data.AR_like_3['weight_qcd']) / denominator
+        elif where_calc_frac == 'AR':
+            denominator = np.sum(_df1['weight']) + np.sum(_df2['weight']) + np.sum(_df3['weight'])
+            frac1 = np.sum(_df1['weight']) / denominator
+            frac2 = np.sum(_df2['weight']) / denominator
+            frac3 = np.sum(_df3['weight']) / denominator
+        else:
+            raise ValueError(f"Invalid value for where_calc_frac: {where_calc_frac}. Must be 'AR_like' or 'AR'.")
+        
+        df1[ff_tau1] = 1/3 * _df1[ff_tau1]
+        df2[ff_tau2] = 1/3 * _df2[ff_tau2]
+        df3[ff_tau3] = 1/3 * _df3[ff_tau3]
+
+    elif fraction == "pt_binned":
+        #Todo
+        if grouping is None:
+            frac, pt1_edges, pt2_edges = fraction_in_bins(df.data.AR_like_tau1, df.data.AR_like_tau2, frac_file)
+
+            frac_tau1 = fractions_for_events(_df1, frac, pt1_edges, pt2_edges)
+            frac_tau2 = fractions_for_events(_df2, frac, pt1_edges, pt2_edges)
+            frac_tau3 = fractions_for_events(_df3, frac, pt1_edges, pt2_edges)
+
+            df1[ff_tau1] = frac_tau1 * _df1[ff_tau1]
+            df2[ff_tau2] = (1.0 - frac_tau2) * _df2[ff_tau2]
+            logger.info(f'Saved Fraction Factors for ungrouped')
+            
+        else:
+            if grouping_variable is None or grouping_definition is None:
+                raise ValueError("grouping_variable and grouping_definition are required for grouped fraction factors.")
+
+            if isinstance(grouping_variable, list):
+                if len(grouping_variable) != 2:
+                    raise ValueError("grouping_variable must contain exactly two column names when supplied as a list.")
+                grouping_var_1, grouping_var_2 = grouping_variable
+            else:
+                grouping_var_1 = grouping_var_2 = grouping_variable
+
+            grouped_frac = fraction_in_bins_grouped(
+                df.data.AR_like_tau1,
+                df.data.AR_like_tau2,
+                frac_file=frac_file,
+                grouping=grouping,
+                grouping_variable=grouping_variable,
+                grouping_definition=grouping_definition,
+            )
+            frac_tau1 = fraction_for_events_grouped(
+                _df1,
+                grouped_frac,
+                grouping_variable=grouping_var_1,
+                grouping_definition=grouping_definition,
+            )
+            frac_tau2 = fraction_for_events_grouped(
+                _df2,
+                grouped_frac,
+                grouping_variable=grouping_var_2,
+                grouping_definition=grouping_definition,
+            )
+            target_dtype = _df1[ff_tau1].dtype
+            df1[ff_tau1] = (frac_tau1 * _df1[ff_tau1]).astype(target_dtype)
+            target_dtype = _df2[ff_tau2].dtype
+            df2[ff_tau2] = (1.0 - frac_tau2) * _df2[ff_tau2].astype(target_dtype)
+            logger.info("Saved Fraction Factors for grouping %s", grouping)
+            return grouped_frac
+
+
 # -------------- classic fake factor determination -------------
 
 def calculate_fake_factor_classic(
