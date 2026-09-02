@@ -15,6 +15,7 @@ from classes.NeuralNetworks import load_fold_combined_model
 from classes.Loading import load_config, load_variables, load_data
 from classes.FF_calculation import calculate_fake_factors_ungrouped, calculate_fake_factors_grouped
 from classes.FF_calculation import calculate_fake_factors_incl_ungrouped, calculate_fake_factors_incl_grouped
+from classes.FF_calculation import calculate_fake_factors_3split_ungrouped
 from classes.FF_calculation import calculate_fake_factor_classic, calculate_fake_factor_frac
 
 
@@ -34,7 +35,7 @@ class Args(Tap):
     taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_binned'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction
-    dnn_grouped: bool = True
+    dnn_grouped: bool = False
     classic: bool = False
 
 args = Args().parse_args()
@@ -47,7 +48,7 @@ DATA_CLASSIC_SG_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_da
 
 MASKS_PATH = cfg_path["masks"]
 MASKS_PATH_INCL = [cfg_path["masks_incl_and"], cfg_path["masks_incl_or"], cfg_path["masks_incl_andor"]]
-
+MASKS_PATH_3SPLIT = cfg_path["masks_3split"]
 
 TRAINING_VAR_PATH = cfg_path["train_var"]
 CHECKPOINT_DIR = cfg_path["traininfg_results"]
@@ -275,8 +276,53 @@ def main():
             training_variables=training_variables,
             DR = True
         )
-    
 
+    elif args.taus == '3split' and not args.dnn_grouped:
+        logger.info("Loading data...")
+        df = load_data(DATA_PATH, MASKS_PATH_3SPLIT)
+
+        logger.info(f"Loading model for ungrouped 3 way split...")
+        model1 = load_fold_combined_model(
+                    even_model_path=Path(CHECKPOINT_DIR) / f'ungrouped' / '3split'/ 'tau1' / 'fold_even',
+                    odd_model_path=Path(CHECKPOINT_DIR) / f'ungrouped' / '3split' / 'tau1' / 'fold_odd',
+                )
+        model2 = load_fold_combined_model(
+            even_model_path=Path(CHECKPOINT_DIR) / f'ungrouped' / '3split' / 'tau2' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / f'ungrouped' / '3split' / 'tau2' / 'fold_odd',
+        )
+        model3 = load_fold_combined_model(
+            even_model_path=Path(CHECKPOINT_DIR) / f'ungrouped' / '3split' / 'tau1&tau2' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / f'ungrouped' / '3split' / 'tau1&tau2' / 'fold_odd',
+        )
+
+        logger.info("Calculating fake factors...")
+        calculate_fake_factors_3split_ungrouped(
+            df=df,
+            model1=model1,
+            model2=model2,
+            model3=model3,
+            training_variables=training_variables,
+        )
+
+        logger.info("Calculating fake factors in DR...")
+        calculate_fake_factors_3split_ungrouped(
+            df=df,
+            model1=model1,
+            model2=model2,
+            model3=model3,
+            training_variables=training_variables,
+            DR = True,
+        )
+
+        logger.info(f"Applying fake factor {args.frac} fractions...")
+        calculate_fake_factor_frac(
+            df=df,
+            df1=df.AR_tau1,
+            df2=df.AR_tau2,
+            frac_file=cfg_path['fractions'],
+            fraction=args.frac
+        )       
+    
 
     if args.taus == 'split' or args.taus == '3split':
         logger.info(f"Saving main dataframe to feather file: {DATA_PATH}")

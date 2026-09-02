@@ -463,6 +463,89 @@ def calculate_fake_factors_incl_grouped(
         fake_factor = np.clip(fake_factor, 0, 3)
         df.AR[f"ff_dnn_incl_{incl}{suffix}"] = fake_factor
 
+
+
+# ----- tau 3 way split FF -----
+def calculate_fake_factors_3split_ungrouped(
+    df,
+    model1: t.nn.Module = None,
+    model2: t.nn.Module = None,
+    model3: t.nn.Module = None,
+    training_variables=None,
+    DR: bool = False,
+):
+    if model1 is None or model2 is None or model3 is None:
+        logger.error("One or more models are None. No fake factors will be calculated.")
+        return
+
+    # ----- FF calculation specifics in DR or SR -----
+    if DR:
+        ratio_tau1 = _compute_ratio(model1, df.AR_like_1, training_variables)
+        ratio_tau2 = _compute_ratio(model2, df.AR_like_2, training_variables)
+        ratio_tau3 = _compute_ratio(model3, df.AR_like_3, training_variables)
+    else:
+        ratio_tau1 = _compute_ratio(model1, df.AR_1, training_variables)
+        ratio_tau2 = _compute_ratio(model2, df.AR_2, training_variables)
+        ratio_tau3 = _compute_ratio(model3, df.AR_3, training_variables)
+
+    # ----- FF calculation -----
+    norm_tau1 = (
+        np.sum(df.data.SR_like.weight_qcd)
+        / np.sum(df.data.AR_like_1.weight_qcd)
+    )    
+
+    norm_tau2 = (
+        np.sum(df.data.SR_like.weight_qcd)
+        / np.sum(df.data.AR_like_2.weight_qcd)
+    )    
+
+    norm_tau3 = (
+        np.sum(df.data.SR_like.weight_qcd)
+        / np.sum(df.data.AR_like_3.weight_qcd)
+    )
+
+    fake_factor_1 = (norm_tau1 * ratio_tau1) if ratio_tau1 is not None else None
+    fake_factor_2 = (norm_tau2 * ratio_tau2) if ratio_tau2 is not None else None
+    fake_factor_3 = (norm_tau3 * ratio_tau3) if ratio_tau3 is not None else None
+
+    print(f"tau1 norm = {norm_tau1:.4f}")
+    print(f"tau2 norm = {norm_tau2:.4f}")
+    print(f"tau3 norm = {norm_tau3:.4f}")
+
+    # ----- number of FF over 3 -----
+    _FF_over_3(fake_factor_1, "tau1")
+    _FF_over_3(fake_factor_2, "tau2")
+    _FF_over_3(fake_factor_3, "tau1&tau2")
+
+    # ----- clipping + output assignment -----
+
+    if fake_factor_1 is None or fake_factor_2 is None or fake_factor_3 is None:
+        logger.error("FF for tau 1 is None or FF for tau 2 is None or FF for tau1&tau2 is None")
+
+    if DR:
+        df.AR_like_1[f"ff_DR_unclipped_dnn_1"] = fake_factor_1
+        fake_factor_1 = np.clip(fake_factor_1, 0, 3)
+        df.AR_like_1[f"ff_DR_dnn_1"] = fake_factor_1            
+
+        df.AR_like_2[f"ff_DR_unclipped_dnn_2"] = fake_factor_2
+        fake_factor_2 = np.clip(fake_factor_2, 0, 3)
+        df.AR_like_2[f"ff_DR_dnn_2"] = fake_factor_2
+
+        df.AR_like_3[f"ff_DR_unclipped_dnn_3"] = fake_factor_3
+        fake_factor_3 = np.clip(fake_factor_3, 0, 3)
+        df.AR_like_3[f"ff_DR_dnn_3"] = fake_factor_3
+    else:
+        df.AR_1[f"ff_unclipped_dnn_1"] = fake_factor_1
+        fake_factor_1 = np.clip(fake_factor_1, 0, 3)
+        df.AR_1[f"ff_dnn_1"] = fake_factor_1            
+
+        df.AR_2[f"ff_unclipped_dnn_2"] = fake_factor_2
+        fake_factor_2 = np.clip(fake_factor_2, 0, 3)
+        df.AR_2[f"ff_dnn_2"] = fake_factor_2
+
+        df.AR_3[f"ff_unclipped_dnn_3"] = fake_factor_3
+        fake_factor_3 = np.clip(fake_factor_3, 0, 3)
+        df.AR_3[f"ff_dnn_3"] = fake_factor_3
 # -------------- classic fake factor determination -------------
 
 def calculate_fake_factor_classic(
@@ -587,7 +670,6 @@ def calculate_fake_factor_classic(
         df.AR_tau2_sgiappic[f'ff_corr_classic_tau2_{short}'] = _df2['corrected_classic_ff_tau2']
     else:
         print(f'short = {short} is not implmented. Use either jv or sg')
-
 
 def evaluate_compound_ff_correction(correction_set, compound_name: str, df: pd.DataFrame, short) -> np.ndarray:
     compound_correction = correction_set.compound[compound_name]

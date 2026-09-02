@@ -48,17 +48,17 @@ regions:
     - Anti_DR
     - SR
 
-  AR1:
+  AR_1:
     - preselection
     - Anti_DR
     - AR1
 
-  AR2:
+  AR_2:
     - preselection
     - Anti_DR
     - AR2
 
-  AR3:
+  AR_3:
     - preselection
     - Anti_DR
     - AR3
