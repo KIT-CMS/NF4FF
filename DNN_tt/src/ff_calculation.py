@@ -31,7 +31,7 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
     
-    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_binned'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction
     dnn_grouped: bool = True
@@ -56,52 +56,7 @@ CHECKPOINT_DIR = cfg_path["traininfg_results"]
 
 def main():
 
-    # ----- load models from training.py -----
-    if args.dnn_grouped:
-        logger.info("Loading models from training.py for grouped DNN...")
-
-        # tau decay mode
-        model_tau1_tdm = load_fold_combined_model(
-            even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau1' / 'fold_even',
-            odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau1' / 'fold_odd',
-        )
-        model_tau2_tdm = load_fold_combined_model(
-            even_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau2' / 'fold_even',
-            odd_model_path=Path(CHECKPOINT_DIR) / 'tau_decaymode' / 'tau2' / 'fold_odd',
-        )
-
-        # njets
-        model_tau1_njets = load_fold_combined_model(
-            even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau1' / 'fold_even',
-            odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau1' / 'fold_odd',
-        )
-        model_tau2_njets = load_fold_combined_model(
-            even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau2' / 'fold_even',
-            odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau2' / 'fold_odd',
-        )
-        model_incl_njets = load_fold_combined_model(
-            even_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau_incl' / 'fold_even',
-            odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / 'tau_incl' / 'fold_odd',
-        )
-    else:
-        logger.info("Loading models from training.py for ungrouped DNN...")
-
-        model_tau1 = load_fold_combined_model(
-            even_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau1' / 'fold_even',
-            odd_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau1' / 'fold_odd',
-        )
-        model_tau2 = load_fold_combined_model(
-            even_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau2' / 'fold_even',
-            odd_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau2' / 'fold_odd',
-        )
-        model_incl = load_fold_combined_model(
-            even_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau_incl' / 'fold_even',
-            odd_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau_incl' / 'fold_odd',
-        )
-
-
     # ----- grouping definitions -----
-
     grouping_njets = (
         (0,),
         (1,),
@@ -138,9 +93,6 @@ def main():
         df_classic_jv = load_data(DATA_CLASSIC_JV_PATH, MASKS_PATH)
         df_classic_sg = load_data(DATA_CLASSIC_SG_PATH, MASKS_PATH)
 
-        #print(df_classic_jv.columns)
-        #print(df_classic_sg.columns)
-        #exit()
         logger.info('Calculating classic FF from jvoss...')
         calculate_fake_factor_classic(df_classic_jv, 'jv')
         logger.info('Calculating classic FF from sgiappic...')
@@ -157,7 +109,18 @@ def main():
         logger.info("Loading data...")
         df = load_data(DATA_PATH, MASKS_PATH)
 
-        for group_var, group_def, name, model1, model2 in zip([['tau_decaymode_1', 'tau_decaymode_2'], 'njets'], [grouping_tdm, grouping_njets], ['tau_dm', 'njets'], [model_tau1_tdm, model_tau1_njets], [model_tau2_tdm, model_tau2_njets]):
+        for group_var, group_def, name, long_name in zip([['tau_decaymode_1', 'tau_decaymode_2'], 'njets'], [grouping_tdm, grouping_njets], ['tau_dm', 'njets'], ['tau_decaymode', 'njets']):
+
+            logger.info(f"Loading model for {long_name}...")
+            model1 = load_fold_combined_model(
+                        even_model_path=Path(CHECKPOINT_DIR) / f'{long_name}' / '2split'/ 'tau1' / 'fold_even',
+                        odd_model_path=Path(CHECKPOINT_DIR) / f'{long_name}' / '2split' / 'tau1' / 'fold_odd',
+                    )
+            model2 = load_fold_combined_model(
+                even_model_path=Path(CHECKPOINT_DIR) / f'{long_name}' / '2split' / 'tau2' / 'fold_even',
+                odd_model_path=Path(CHECKPOINT_DIR) / f'{long_name}' / '2split' / 'tau2' / 'fold_odd',
+            )
+
 
             logger.info(f"Calculating fake factors for {name} with grouping variable {group_var} and grouping definition {group_def}...")
             calculate_fake_factors_grouped(
@@ -195,30 +158,38 @@ def main():
                 fraction=args.frac
             )
 
-
     elif args.taus == 'split' and not args.dnn_grouped:
         logger.info("Loading data...")
         df = load_data(DATA_PATH, MASKS_PATH)
+
+        logger.info(f"Loading model for ungrouped...")
+        model1 = load_fold_combined_model(
+                    even_model_path=Path(CHECKPOINT_DIR) / f'ungrouped' / '2split'/ 'tau1' / 'fold_even',
+                    odd_model_path=Path(CHECKPOINT_DIR) / f'ungrouped' / '2split' / 'tau1' / 'fold_odd',
+                )
+        model2 = load_fold_combined_model(
+            even_model_path=Path(CHECKPOINT_DIR) / f'ungrouped' / '2split' / 'tau2' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / f'ungrouped' / '2split' / 'tau2' / 'fold_odd',
+        )
         
         logger.info("Calculating fake factors...")
         calculate_fake_factors_ungrouped(
             df=df,
-            model_tau1=model_tau1,
-            model_tau2=model_tau2,
+            model_tau1=model1,
+            model_tau2=model2,
             training_variables=training_variables,
         )
 
         logger.info("Calculating fake factors in DR...")
         calculate_fake_factors_ungrouped(
             df=df,
-            model_tau1=model_tau1,
-            model_tau2=model_tau2,
+            model_tau1=model1,
+            model_tau2=model2,
             training_variables=training_variables,
             DR = True,
         )
 
         logger.info(f"Applying fake factor {args.frac} fractions...")
-        #frac, pt1_edges, pt2_edges = 
         calculate_fake_factor_frac(
             df=df,
             df1=df.AR_tau1,
@@ -226,8 +197,7 @@ def main():
             frac_file=cfg_path['fractions'],
             fraction=args.frac
         )       
-    
-        
+            
 
     elif args.taus == 'incl' and args.dnn_grouped:
         if args.incl=='and': incl = 0
@@ -237,6 +207,12 @@ def main():
             logger.error(f'Value Error: args.incl = {args.incl}, but only accepts "and or "or".')
             exit()
 
+        logger.info("Loading model for inclusive split in njets...")
+        model = load_fold_combined_model(
+            even_model_path=Path(CHECKPOINT_DIR) / 'njets' / f'tau_incl_{args.incl}' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / 'njets' / f'tau_incl_{args.incl}' / 'fold_odd',
+        )
+
         logger.info("Loading data...")
         df = load_data(DATA_PATH, MASKS_PATH_INCL[incl])
         
@@ -244,7 +220,7 @@ def main():
         calculate_fake_factors_incl_grouped(
             df=df,
             incl = args.incl,
-            model=model_incl_njets,
+            model=model,
             training_variables=training_variables,
             grouping_variable = 'njets',
             grouping_definition = grouping_njets,
@@ -256,7 +232,7 @@ def main():
         calculate_fake_factors_incl_grouped(
             df=df,
             incl=args.incl,
-            model=model_incl_njets,
+            model=model,
             training_variables=training_variables,
             DR = True,
             grouping_variable = 'njets',
@@ -275,11 +251,18 @@ def main():
         logger.info("Loading data...")
         df = load_data(DATA_PATH, MASKS_PATH_INCL[incl])
 
+        logger.info("Loading model for inclusive grouped...")
+        model = load_fold_combined_model(
+            even_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / f'tau_incl_{args.incl}' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / 'ungrouped' / f'tau_incl_{args.incl}' / 'fold_odd',
+        )
+
+        
         logger.info("Calculating fake factors inclusive...")
         calculate_fake_factors_incl_ungrouped(
             df=df,
             incl = args.incl,
-            model=model_incl,
+            model=model,
             training_variables=training_variables,
         )
 
@@ -288,21 +271,21 @@ def main():
         calculate_fake_factors_incl_ungrouped(
             df=df,
             incl=args.incl,
-            model=model_incl,
+            model=model,
             training_variables=training_variables,
             DR = True
         )
     
 
 
-    if args.taus == 'split':
+    if args.taus == 'split' or args.taus == '3split':
         logger.info(f"Saving main dataframe to feather file: {DATA_PATH}")
         df.to_feather(DATA_PATH)
     elif args.taus == 'incl':
         logger.info(f"Saving tau inclusive dataframe to feather file: {DATA_PATH}")
         df.to_feather(DATA_PATH)
     else:
-        logger.warning(f'df could not be saved. taus = {args.taus}, but accepts only "split" and "incl"')
+        logger.warning(f'df could not be saved. taus = {args.taus}, but accepts only "split", "3split", and "incl"')
 
 
 if __name__ == '__main__':
