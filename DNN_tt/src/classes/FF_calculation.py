@@ -300,7 +300,7 @@ def calculate_fake_factor_frac(
         df1[ff_tau1] = 0.5 * _df1[ff_tau1]
         df2[ff_tau2] = 0.5 * _df2[ff_tau2]
 
-    elif fraction == "pt_bins":
+    elif fraction == "pt_binned":
         if grouping is None:
             frac, pt1_edges, pt2_edges = fraction_in_bins(df.data.AR_like_tau1, df.data.AR_like_tau2, frac_file)
 
@@ -342,8 +342,10 @@ def calculate_fake_factor_frac(
                 grouping_variable=grouping_var_2,
                 grouping_definition=grouping_definition,
             )
-            df1[ff_tau1] = frac_tau1 * _df1[ff_tau1]
-            df2[ff_tau2] = (1.0 - frac_tau2) * _df2[ff_tau2]
+            target_dtype = _df1[ff_tau1].dtype
+            df1[ff_tau1] = (frac_tau1 * _df1[ff_tau1]).astype(target_dtype)
+            target_dtype = _df2[ff_tau2].dtype
+            df2[ff_tau2] = (1.0 - frac_tau2) * _df2[ff_tau2].astype(target_dtype)
             logger.info("Saved Fraction Factors for grouping %s", grouping)
             return grouped_frac
     

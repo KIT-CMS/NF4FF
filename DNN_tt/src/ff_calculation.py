@@ -33,8 +33,8 @@ class Args(Tap):
     
     taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
-    frac: Literal['global', 'pt_bins'] = 'pt_bins'
-    dnn_grouped: bool = False
+    frac: Literal['global', 'pt_binned'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction
+    dnn_grouped: bool = True
     classic: bool = False
 
 args = Args().parse_args()
@@ -124,9 +124,9 @@ def main():
                 file.write('# saved values of fraction factors for ungrouped, njets and tauDM \n')
                 yaml.safe_dump(dict_arlike, file)
                 yaml.safe_dump(dict_ar, file)
-            logger.info(f'Created {cfg_path['fractions']}')
+            logger.info(f'Created {cfg_path["fractions"]}')
         except FileExistsError:
-            logger.info(f'{cfg_path['fractions']} already exists')
+            logger.info(f'{cfg_path["fractions"]} already exists')
     
 
     #exit()
@@ -194,7 +194,6 @@ def main():
                 grouping_definition = group_def,
                 fraction=args.frac
             )
-        exit()
 
 
     elif args.taus == 'split' and not args.dnn_grouped:

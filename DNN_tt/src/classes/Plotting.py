@@ -1332,12 +1332,12 @@ def plot_fake_factors_in_dr_grouped(df, category_title, grouping='tau_decaymode'
     hep.style.use(hep.style.CMS)
 
     if grouping == 'tau_decaymode':
-        ff_tau1 = 'ff_dnn_tau1_tau_dm'
-        ff_tau2 = 'ff_dnn_tau2_tau_dm'
+        ff_tau1 = 'ff_DR_dnn_tau1_tau_dm'
+        ff_tau2 = 'ff_DR_dnn_tau2_tau_dm'
         grouping = ['tau_decaymode_1', 'tau_decaymode_2']
     elif grouping == 'njets':
-        ff_tau1 = 'ff_dnn_tau1_njets'
-        ff_tau2 = 'ff_dnn_tau2_njets'
+        ff_tau1 = 'ff_DR_dnn_tau1_njets'
+        ff_tau2 = 'ff_DR_dnn_tau2_njets'
     else:
         raise ValueError(f'Unsupported grouping: {grouping}')
 

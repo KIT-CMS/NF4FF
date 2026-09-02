@@ -94,7 +94,7 @@ def fraction_in_bins_grouped(
 
     if grouping_variable is None or grouping_definition is None or grouping is None:
         logger.warning("Grouping variable or grouping definition or grouping is None. Calculating ungrouped fractions instead.")
-        return fraction_in_bins(df_tau1, df_tau2, region, pt1_bin_edges, pt2_bin_edges)
+        return fraction_in_bins(df_tau1, df_tau2, frac_file, region)
 
     # ----- grouping variable handling -----
     if isinstance(grouping_variable, list):
@@ -192,14 +192,6 @@ def fraction_in_bins_grouped(
             'global_std': std,
             }
 
-        
-
-    #print(grouping)
-    #print('-----------------------------------')
-    #print(grouped_fractions['0'])
-    #print('--------------------------------------')
-    #print(grouped_fractions)
-    #exit()
     # ----- save fraction in yaml for plotting -----
     
     write_yaml_to_file(all_frac, frac_file)

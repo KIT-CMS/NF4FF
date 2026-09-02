@@ -33,8 +33,8 @@ class Args(Tap):
 
     taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
-    frac: Literal['global', 'pt_binned', 'DNN'] = 'pt_binned'
-    dnn_grouped: bool = False
+    frac: Literal['global', 'pt_binned', 'DNN'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
+    dnn_grouped: bool = True
     classic: bool = False
 
     closure_DR: bool = True
