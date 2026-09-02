@@ -28,7 +28,7 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
     dnn_grouped: bool = False
 
@@ -39,6 +39,7 @@ cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
 DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'
 MASKS_PATH = cfg_path["masks"]
 MASKS_PATH_INCL = [cfg_path["masks_incl_and"], cfg_path["masks_incl_or"], cfg_path["masks_incl_andor"]]
+MASKS_PATH_3SPLIT = cfg_path["masks_3split"]
 TRAINING_VAR_PATH = cfg_path["train_var"]
 NN_CONFIG_PATH = cfg_path["DNN"]
 CHECKPOINT_DIR = cfg_path["traininfg_results"]
@@ -102,7 +103,7 @@ def _train_fold_model(
             dropout=cfg.model.dropout,
             input_names=training_var,
         )
-    elif taus == 'split':
+    elif taus == 'split' or taus == '3split':
         base_model = DNN(
             input_nodes=train.X.shape[1],
             hidden_nodes=cfg.model.hidden_nodes,
@@ -113,7 +114,7 @@ def _train_fold_model(
             input_names=training_var,
         )
     else:
-        logger.error(f'Value Error: args.taus = {taus}, but ony allows split or incl.')
+        logger.error(f'Value Error: args.taus = {taus}, but only allows split or incl or 3split.')
         exit()
 
     base_model.initialize_scaler(
@@ -150,8 +151,6 @@ def _train_fold_model(
 
 
 def main():
-    print('start')
-
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
 
     cfg = load_config(NN_CONFIG_PATH, Config)
@@ -165,8 +164,10 @@ def main():
             logger.error(f'Value Error: args.incl = {args.incl}, but only accepts "and or "or".')
             exit()
         df = load_data(DATA_PATH, MASKS_PATH_INCL[incl])
+    elif args.taus == '3split':
+        df = load_data(DATA_PATH, MASKS_PATH_3SPLIT)
     else:
-        logger.error(f'Value Error: args.taus = {args.taus}, but ony allows split or incl.')
+        logger.error(f'Value Error: args.taus = {args.taus}, but only allows split or incl or 3split.')
         exit()
 
     
@@ -285,7 +286,7 @@ def main():
                     fold_id_name='event',
                 )
 
-                base_path = Path(CHECKPOINT_DIR) / group_label / process
+                base_path = Path(CHECKPOINT_DIR) / group_label / '2split' / process
                 save_model(even_model, base_path / 'fold_even')
                 save_model(odd_model, base_path / 'fold_odd')
                 save_model(model, base_path)
@@ -364,7 +365,7 @@ def main():
                 fold_id_name='event',
             )
 
-            base_path = Path(CHECKPOINT_DIR) / 'ungrouped' / process
+            base_path = Path(CHECKPOINT_DIR) / 'ungrouped' / '2split' / process
             save_model(even_model, base_path / 'fold_even')
             save_model(odd_model, base_path / 'fold_odd')
             save_model(model, base_path)
@@ -439,7 +440,7 @@ def main():
                 fold_id_name='event',
             )
 
-            base_path = Path(CHECKPOINT_DIR) / group_label / 'tau_incl'
+            base_path = Path(CHECKPOINT_DIR) / group_label / f'tau_incl_{args.incl}'
             save_model(even_model, base_path / 'fold_even')
             save_model(odd_model, base_path / 'fold_odd')
             save_model(model, base_path)
@@ -507,11 +508,93 @@ def main():
             fold_id_name='event',
         )
 
-        base_path = Path(CHECKPOINT_DIR) / 'ungrouped' / 'tau_incl'
+        base_path = Path(CHECKPOINT_DIR) / 'ungrouped' / f'tau_incl_{args.incl}'
         save_model(even_model, base_path / 'fold_even')
         save_model(odd_model, base_path / 'fold_odd')
         save_model(model, base_path)
+
+    elif args.taus=='3split' and not args.dnn_grouped:
+            logger.info('Training uses the ungrouped DNN.')
+            for process in ['tau1', 'tau2', 'tau1&tau2']:
+                logger.info(f'Training process: {process}')
+                
+                if process == 'tau1':
+                    df_sig = df.data.SR_like
+                    df_bkg = df.data.AR_like_1
+                    weight_column = 'weight_qcd'
     
+                elif process == 'tau2':
+                    df_sig = df.data.SR_like
+                    df_bkg = df.data.AR_like_2
+                    weight_column = 'weight_qcd'
+    
+                elif process == 'tau1&tau2':
+                    df_sig = df.data.SR_like
+                    df_bkg = df.data.AR_like_3
+                    weight_column = 'weight_qcd'
+
+                # changed till here
+                df_sig_plain = df_sig.events
+                df_bkg_plain = df_bkg.events
+                df_sig_even = df_sig_plain[df_sig_plain['event']%2 == 0]
+                df_sig_odd  = df_sig_plain[df_sig_plain['event']%2 == 1]
+                df_bkg_even = df_bkg_plain[df_bkg_plain['event']%2 == 0]
+                df_bkg_odd  = df_bkg_plain[df_bkg_plain['event']%2 == 1]
+    
+                logger.info(
+                    "%s fold sizes: even=%d (sig=%d, bkg=%d), odd=%d (sig=%d, bkg=%d)",
+                    process,
+                    len(df_sig_even) + len(df_bkg_even),
+                    len(df_sig_even),
+                    len(df_bkg_even),
+                    len(df_sig_odd) + len(df_bkg_odd),
+                    len(df_sig_odd),
+                    len(df_bkg_odd),
+                )
+    
+                # even_model: trained on odd events, applied to even events
+                even_model = _train_fold_model(
+                    cfg=cfg,
+                    grouping=None,
+                    training_var=training_var,
+                    df_sig=df_sig_odd,
+                    df_bkg=df_bkg_odd,
+                    weight_column=weight_column,
+                    device=device,
+                    checkpoint_dir=CHECKPOINT_DIR,
+                    taus=args.taus,
+                    fold_label='fold_odd',
+                    balance_column=None,
+                    balance_groups=None,
+                )
+    
+                # odd_model: trained on even events, applied to odd events
+                odd_model = _train_fold_model(
+                    cfg=cfg,
+                    grouping=None,
+                    training_var=training_var,
+                    df_sig=df_sig_even,
+                    df_bkg=df_bkg_even,
+                    weight_column=weight_column,
+                    device=device,
+                    checkpoint_dir=CHECKPOINT_DIR,
+                    taus=args.taus,
+                    fold_label='fold_even',
+                    balance_column=None,
+                    balance_groups=None,
+                )
+    
+                model = FoldCombinedDNN(
+                    even_model=even_model,
+                    odd_model=odd_model,
+                    fold_id_name='event',
+                )
+    
+                base_path = Path(CHECKPOINT_DIR) / 'ungrouped' / '3split' / process
+                save_model(even_model, base_path / 'fold_even')
+                save_model(odd_model, base_path / 'fold_odd')
+                save_model(model, base_path)
+
     else:
         logger.error(f'Value Error: args.taus = {args.taus}, but ony allows split or incl.')
 
