@@ -1487,15 +1487,17 @@ def plot_fractions(title, frac, pt1_edges, pt2_edges, global_frac, global_std):
     CMS_LUMI_TITLE(ax)
     CMS_CHANNEL_TITLE(ax)
 
+    diff = np.abs(np.nanmin(frac.T)) if np.abs(np.nanmin(frac.T))> np.abs(np.nanmax(frac.T)) else np.abs(np.nanmax(frac.T))
+
     image = ax.imshow(
         frac.T,
         origin="lower",
         aspect="equal",
         interpolation="none",
-        cmap="Blues" if title=='AR' or title=='AR_like' else "RdBu",
+        cmap="RdBu",
         extent=(-0.5, n_pt1 - 0.5, -0.5, n_pt2 - 0.5),
-        vmin=0.35 if title=='AR' or title=='AR_like' else np.nanmin(frac.T),
-        vmax=0.6 if title=='AR' or title=='AR_like' else np.nanmax(frac.T),
+        vmin=0.4 if title=='AR' or title=='AR_like' else -diff,
+        vmax=0.6 if title=='AR' or title=='AR_like' else diff,
     )
 
     for pt2_bin in range(n_pt2):
@@ -1509,12 +1511,12 @@ def plot_fractions(title, frac, pt1_edges, pt2_edges, global_frac, global_std):
                     f"{value:.2f}",
                     ha="center",
                     va="center",
-                    color="black" if value > (0.42 if title=='AR' or title=='AR_like' else -0.03) else "white",
+                    color="black" if value > (0.43 if title=='AR' or title=='AR_like' else -0.06) and value < (0.57 if title=='AR' or title=='AR_like' else 0.06) else "white",
                     fontsize=8,
                 )
 
             # Values outside of range get outlined red
-            if (value < 0.35 or value > 0.609) and (title=='AR' or title=='AR_like'):
+            if (value < 0.4 or value > 0.609) and (title=='AR' or title=='AR_like'):
                 rectangle = plt.Rectangle(
                     (pt1_bin - 0.5, pt2_bin - 0.5),
                     1,
@@ -1595,15 +1597,17 @@ def plot_fractions_grouped(title, grouped_frac, grouping, safe_path):
         CMS_LUMI_TITLE(ax)
         CMS_CHANNEL_TITLE(ax)
 
+        diff = np.abs(np.nanmin(frac.T)) if np.abs(np.nanmin(frac.T))> np.abs(np.nanmax(frac.T)) else np.abs(np.nanmax(frac.T))
+
         image = ax.imshow(
             frac.T,
             origin="lower",
             aspect="equal",
             interpolation="none",
-            cmap="Blues" if title=='AR' or title=='AR_like' else "RdBu",
+            cmap="RdBu",
             extent=(-0.5, n_pt1 - 0.5, -0.5, n_pt2 - 0.5),
-            vmin=0.35 if title=='AR' or title=='AR_like' else np.nanmin(frac.T),
-            vmax=0.6 if title=='AR' or title=='AR_like' else np.nanmax(frac.T),
+            vmin=0.4 if title=='AR' or title=='AR_like' else -diff,
+            vmax=0.6 if title=='AR' or title=='AR_like' else diff,
         )
 
         for pt2_bin in range(n_pt2):
@@ -1617,18 +1621,18 @@ def plot_fractions_grouped(title, grouped_frac, grouping, safe_path):
                         f"{value:.2f}",
                         ha="center",
                         va="center",
-                        color="black" if value < (0.53 if title=='AR' or title=='AR_like' else -0.03) else "white",
+                        color="black" if value < 0.57 and value > 0.43 else "white",
                         fontsize=8,
                     )
 
                 # Values outside of range get outlined red
-                if (value < 0.35 or value > 0.609) and (title=='AR' or title=='AR_like'):
+                if (value < 0.4 or value > 0.609) and (title=='AR' or title=='AR_like'):
                     rectangle = plt.Rectangle(
                         (pt1_bin - 0.5, pt2_bin - 0.5),
                         1,
                         1,
                         fill=False,
-                        edgecolor="red",
+                        edgecolor="black",
                         linewidth=2,
                     )
                     ax.add_patch(rectangle)
