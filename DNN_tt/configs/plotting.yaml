@@ -38,11 +38,11 @@ bins_by_variable:
     deltaEta_12j1: [-6, 6, 31]
     deltaEta_12j2: [-6, 6, 31]
     nbtag: [-0.5, 4.5, 6]
-    iso_1: [0, 0.15, 31]
+    iso_1: [0.6, 1.2, 31]
     iso_2: [0.6, 1.2, 31]
     tau_decaymode_1: [-0.5, 12.5, 14]
     tau_decaymode_2: [-0.5, 12.5, 14]
-    mass_1: [0, 0.1, 31]
+    mass_1: [0, 2.0, 31]
     mass_2: [0, 2.0, 31]
 
 variables_set_small:
@@ -72,7 +72,7 @@ variables_set_large:
     - pt_tt
     - pt_vis
     - mjj
-    - pt_dijet
+    #- pt_dijet
     - pt_ttjj
     - deltaEta_jj
     - deltaR_jj

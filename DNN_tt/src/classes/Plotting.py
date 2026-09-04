@@ -1008,23 +1008,26 @@ def plot_fake_factors_3split(
         df,
         category_title = None,
         clipped = True,
+        grouping = None,
         in_one_plot = False
 ) -> None:
     hep.style.use(hep.style.CMS)
-	
+
+    if grouping is None: suffix = ''
+    else: suffix = f'_{grouping}'
     if clipped:
-        ff_dnn_1 = 'ff_dnn_1'
-        ff_dnn_2 = 'ff_dnn_2'
-        ff_dnn_3 = 'ff_dnn_3'
-    
+        ff_dnn_1 = f'ff_dnn_1{suffix}'
+        ff_dnn_2 = f'ff_dnn_2{suffix}'
+        ff_dnn_3 = f'ff_dnn_3{suffix}'
+
         bins_tau1 = np.linspace(0, 0.5, 51)
         bins_tau2 = np.linspace(0, 0.5, 51)
         bins_tau3 = np.linspace(0, 0.5, 51)
     else:
-        ff_dnn_1 = 'ff_unclipped_dnn_1'
-        ff_dnn_2 = 'ff_unclipped_dnn_2'
-        ff_dnn_3 = 'ff_unclipped_dnn_3'
-    
+        ff_dnn_1 = f'ff_unclipped_dnn_1{suffix}'
+        ff_dnn_2 = f'ff_unclipped_dnn_2{suffix}'
+        ff_dnn_3 = f'ff_unclipped_dnn_3{suffix}'
+
         bins_tau1 = np.linspace(0, 2., 51)
         bins_tau2 = np.linspace(0, 2., 51)
         bins_tau3 = np.linspace(0, 2., 51)
@@ -1732,6 +1735,89 @@ def plot_fake_factors_grouped_incl(df, incl, category_title, grouping='tau_decay
 
     return fig, ax
 
+def plot_fake_factors_grouped_3split(
+    df, category_title, grouping='tau_decaymode', clipped = True
+    ):
+    hep.style.use(hep.style.CMS)
+
+    if clipped:
+        bins_tau1 = np.linspace(0, 0.5, 51)
+        bins_tau2 = np.linspace(0, 0.5, 51)
+        bins_tau3 = np.linspace(0, 0.5, 51)
+
+        if grouping == 'tau_decaymode':
+            ff_tau1 = 'ff_dnn_1_tau_dm'
+            ff_tau2 = 'ff_dnn_2_tau_dm'
+            ff_tau3 = 'ff_dnn_3_tau_dm'
+            grouping = ['tau_decaymode_1', 'tau_decaymode_2']
+        elif grouping == 'njets':
+            ff_tau1 = 'ff_dnn_1_njets'
+            ff_tau2 = 'ff_dnn_2_njets'
+            ff_tau3 = 'ff_dnn_3_njets'
+        else:
+            raise ValueError(f'Unsupported grouping: {grouping}')
+    else:
+        bins_tau1 = np.linspace(0, 2., 51)
+        bins_tau2 = np.linspace(0, 2., 51)
+        bins_tau3 = np.linspace(0, 2., 51)
+
+        if grouping == 'tau_decaymode':
+            ff_tau1 = 'ff_unclipped_dnn_1_tau_dm'
+            ff_tau2 = 'ff_unclipped_dnn_2_tau_dm'
+            ff_tau3 = 'ff_unclipped_dnn_3_tau_dm'
+            grouping = ['tau_decaymode_1', 'tau_decaymode_2']
+        elif grouping == 'njets':
+            ff_tau1 = 'ff_unclipped_dnn_1_njets'
+            ff_tau2 = 'ff_unclipped_dnn_2_njets'
+            ff_tau3 = 'ff_unclipped_dnn_3_njets'
+        else:
+            raise ValueError(f'Unsupported grouping: {grouping}')
+
+
+    frame_tau1 = df.data.AR_1
+    frame_tau2 = df.data.AR_2
+    frame_tau3 = df.data.AR_3
+
+    if isinstance(grouping, list):
+        group_mask_tau1 = _grouping_masks(frame_tau1, grouping[0])
+        group_mask_tau2 = _grouping_masks(frame_tau2, grouping[1])
+        group_mask_tau3 = _grouping_masks(frame_tau3, grouping[2])
+    else:
+        group_mask_tau1 = _grouping_masks(frame_tau1, grouping)
+        group_mask_tau2 = _grouping_masks(frame_tau2, grouping)
+        group_mask_tau3 = _grouping_masks(frame_tau3, grouping)
+
+    fig, ax = plt.subplots(3, 1, figsize=(11.7, 9.1))
+
+
+    n1 = ax[0].hist(frame_tau1[ff_tau1], bins=bins_tau1, histtype='step', linewidth=2, label=r'AR 1: $N_{jets}$ incl')
+    for mask, mask_label in group_mask_tau1:
+        ax[0].hist(frame_tau1[ff_tau1][mask], bins=bins_tau1, histtype='step', ls='--', label=f'{mask_label}')
+    ax[0].set_ylabel('Events')
+    ax[0].legend(loc = 'upper right', prop={'size': 15})
+    ax[0].set_ylim(top=1.2 * np.max(n1[0]))
+
+
+    CMS_CHANNEL_TITLE([ax[0]])
+    CMS_LUMI_TITLE([ax[0]])
+    CMS_LABEL([ax[0]])
+    CMS_CATEGORY_TITLE([ax[0]], title=category_title)
+
+    n2 = ax[1].hist(frame_tau2[ff_tau2], bins=bins_tau2, histtype='step', linewidth=2, label=r'AR 2: $N_{jets}$ incl')
+    for mask, mask_label in group_mask_tau2:
+        ax[1].hist(frame_tau2[ff_tau2][mask], bins=bins_tau2, histtype='step', ls='--', label=f'{mask_label}')
+    ax[1].set_xlabel(r'$F_{\mathrm{F}}$ value')
+    ax[1].legend(loc = 'upper right', prop={'size': 15})
+
+    ax[2].set_ylabel('Events')
+    n3 = ax[2].hist(frame_tau3[ff_tau3], bins=bins_tau3, histtype='step', linewidth=2, label=r'AR 3: $N_{jets}$ incl')
+    for mask, mask_label in group_mask_tau3:
+        ax[2].hist(frame_tau3[ff_tau3][mask], bins=bins_tau3, histtype='step', ls='--', label=f'{mask_label}')
+    ax[2].set_xlabel(r'$F_{\mathrm{F}}$ value')
+    ax[2].legend(loc = 'upper right', prop={'size': 15})
+
+    return fig, ax
+
 def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymode'):
     hep.style.use(hep.style.CMS)
 
@@ -1785,6 +1871,82 @@ def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymo
     CMS_CATEGORY_TITLE(ax, title=category_title)
 
     ax.stairs(n, binedges, linewidth=2, label=r'Combined $\tau_h$: incl')
+
+    for x, (_, mask_label) in zip(n_split, group_mask_tau1):
+        ax.stairs(x, binedges, ls='--', label=f'{mask_label}')
+
+    ax.set_ylabel('Events')
+    ax.set_xlabel(r'$F_{\mathrm{F}}$ value')
+    ax.set_ylim(top=1.2*np.max(n))
+    ax.legend(loc = 'upper right', prop={'size': 20})
+
+    return fig, ax
+
+def plot_fake_factors_grouped_combTaus_3split(df, category_title, grouping='njets'):
+    hep.style.use(hep.style.CMS)
+
+    if grouping == 'tau_decaymode':
+        ff1 = 'ff_dnn_1_tau_dm'
+        ff2 = 'ff_dnn_2_tau_dm'
+        ff3 = 'ff_dnn_3_tau_dm'
+        grouping = ['tau_decaymode_1', 'tau_decaymode_2']
+    elif grouping == 'njets':
+        ff1 = 'ff_dnn_1_njets'
+        ff2 = 'ff_dnn_2_njets'
+        ff3 = 'ff_dnn_3_njets'
+    else:
+        raise ValueError(f'Unsupported grouping: {grouping}')
+
+    bins_tau1 = np.linspace(0, 0.5, 51)
+    bins_tau2 = np.linspace(0, 0.5, 51)
+    bins_tau3 = np.linspace(0, 0.5, 51)
+
+    frame_tau1 = df.data.AR_1
+    frame_tau2 = df.data.AR_2
+    frame_tau3 = df.data.AR_3
+
+    if isinstance(grouping, list):
+        group_mask_tau1 = _grouping_masks(frame_tau1, grouping[0])
+        group_mask_tau2 = _grouping_masks(frame_tau2, grouping[1])
+        group_mask_tau3 = _grouping_masks(frame_tau3, grouping[2])
+    else:
+        group_mask_tau1 = _grouping_masks(frame_tau1, grouping)
+        group_mask_tau2 = _grouping_masks(frame_tau2, grouping)
+        group_mask_tau3 = _grouping_masks(frame_tau3, grouping)
+
+    n1, binedges = np.histogram(frame_tau1[ff1], bins=bins_tau1)
+    n2, _ = np.histogram(frame_tau2[ff2], bins=bins_tau2)
+    n3, _ = np.histogram(frame_tau3[ff3], bins=bins_tau3)
+
+    n = n1 + n2 + n3
+
+    n1_split = []
+    n2_split = []
+    n3_split = []
+
+    for mask, mask_label in group_mask_tau1:
+        h,_ = np.histogram(frame_tau1[ff1][mask], bins=bins_tau1)
+        n1_split.append(h)
+
+    for mask, mask_label in group_mask_tau2:
+        h,_ = np.histogram(frame_tau2[ff2][mask], bins=bins_tau2)
+        n2_split.append(h)
+
+    for mask, mask_label in group_mask_tau3:
+        h,_ = np.histogram(frame_tau3[ff3][mask], bins=bins_tau3)
+        n3_split.append(h)
+
+    n_split = []
+    for i in range(len(n1_split)):
+        n_split.append(n1_split[i] + n2_split[i] + n3_split[i])
+
+    fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+    CMS_CHANNEL_TITLE(ax)
+    CMS_LUMI_TITLE(ax)
+    CMS_LABEL(ax)
+    CMS_CATEGORY_TITLE(ax, title=category_title)
+
+    ax.stairs(n, binedges, linewidth=2, label=r'Combined $F_F$: $N_{jets}$ incl')
 
     for x, (_, mask_label) in zip(n_split, group_mask_tau1):
         ax.stairs(x, binedges, ls='--', label=f'{mask_label}')

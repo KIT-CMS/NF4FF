@@ -15,7 +15,7 @@ from classes.Loading import load_config, load_labels, load_data
 from classes.Fraction_factor import fraction_in_bins, fraction_in_bins_grouped
 from classes.Plotting import plot_fake_factors, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
 from classes.Plotting import FF_closure_in_DR_tau1, FF_closure_in_DR_tau2, FF_closure_in_DR_incl, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl, plot_fake_factors_combTaus, plot_fake_factors_grouped_incl
-from classes.Plotting import plot_closure_3split, FF_closure_in_DR_3split, plot_fake_factors_3split, plot_fake_factors_combTaus_3split
+from classes.Plotting import plot_closure_3split, FF_closure_in_DR_3split, plot_fake_factors_3split, plot_fake_factors_combTaus_3split, plot_fake_factors_grouped_3split, plot_fake_factors_grouped_combTaus_3split
 from classes.Plotting import plot_fractions, plot_fractions_grouped
 
 
@@ -35,12 +35,12 @@ class Args(Tap):
     taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_binned', 'DNN'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
     classic: bool = False
 
     closure_DR: bool = False
-    FF_dist: bool = True
-    closure_AR: bool = False
+    FF_dist: bool = False
+    closure_AR: bool = True
 
 args = Args().parse_args()
 
@@ -192,8 +192,8 @@ def main():
                         label=label,
                         grouping=grouping,
                     )
-                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'FF_closure_DR_tau1_{var}.png', dpi=150, bbox_inches='tight')
-                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'FF_closure_DR_tau1_{var}.pdf', dpi=150, bbox_inches='tight')
+                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'{args.frac}_fraction'/ f'FF_closure_DR_tau1_{var}.png', dpi=150, bbox_inches='tight')
+                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'{args.frac}_fraction'/ f'FF_closure_DR_tau1_{var}.pdf', dpi=150, bbox_inches='tight')
                     plt.close(fig_q)
 
                     fig_q, _ = FF_closure_in_DR_tau2(
@@ -203,8 +203,8 @@ def main():
                         label=label,
                         grouping=grouping,
                     )
-                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'FF_closure_DR_tau1_{var}.png', dpi=150, bbox_inches='tight')
-                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'FF_closure_DR_tau1_{var}.pdf', dpi=150, bbox_inches='tight')
+                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'{args.frac}_fraction'/ f'FF_closure_DR_tau2_{var}.png', dpi=150, bbox_inches='tight')
+                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'{args.frac}_fraction'/ f'FF_closure_DR_tau2_{var}.pdf', dpi=150, bbox_inches='tight')
                     plt.close(fig_q)
 
                 logger.info(f'Saved closure plots in DR for {grouping}')
@@ -284,41 +284,41 @@ def main():
             bkgs = [it for it in x.keys() if "#q_1;" in it and "Nominal" in it and any(subit in it for subit in ["TT-TTL", "DY-ZL", "jetFakes#", "VV-VVL", "EMB#"])]
             corr_emb_ff = sum([x[it].to_numpy()[0] for it in bkgs]) / [x[next(it for it in x.keys() if "data" in it and "Nominal" in it and "#q_1" in it)].to_numpy()[0]]
     
-            if args.dnn_grouped and args.taus=='split':
-                for var in VARIABLES_SMALL:
-                    bins, label = get_bins_and_label(var)
-                    label = labels_cfg['tt'][var]
-                    fig, ax, _ = plot_closure(
-                            df = df,
-                            var = var,
-                            bins = bins,
-                            label = label,
-                            grouping = 'tau_decaymode'
-                        )
-                    
-                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_plots' / 'tau_decaymode' / f'{args.frac}_fraction' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
-                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_plots' / 'tau_decaymode' / f'{args.frac}_fraction' / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
-                    plt.close(fig)
-    
-                logger.info('Saved all closure plots in tau decaymode')
-    
-    
-                for var in VARIABLES_SMALL:
-                    bins, label = get_bins_and_label(var)
-                    label = labels_cfg['tt'][var]
-                    fig, ax, _ = plot_closure(
-                            df = df,
-                            var = var,
-                            bins = bins,
-                            label = label,
-                            grouping = 'njets'
-                        )
-                    
-                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_plots' / 'njets' / f'{args.frac}_fraction' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
-                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_plots' / 'njets' / f'{args.frac}_fraction' / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
-                    plt.close(fig)
-    
-                logger.info('Saved all closure plots in njets')
+            
+            for var in VARIABLES_SMALL:
+                bins, label = get_bins_and_label(var)
+                label = labels_cfg['tt'][var]
+                fig, ax, _ = plot_closure(
+                        df = df,
+                        var = var,
+                        bins = bins,
+                        label = label,
+                        grouping = 'tau_decaymode'
+                    )
+                
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_plots' / 'tau_decaymode' / f'{args.frac}_fraction' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_plots' / 'tau_decaymode' / f'{args.frac}_fraction' / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig)
+
+            logger.info('Saved all closure plots in tau decaymode')
+
+
+            for var in VARIABLES_SMALL:
+                bins, label = get_bins_and_label(var)
+                label = labels_cfg['tt'][var]
+                fig, ax, _ = plot_closure(
+                        df = df,
+                        var = var,
+                        bins = bins,
+                        label = label,
+                        grouping = 'njets'
+                    )
+                
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_plots' / 'njets' / f'{args.frac}_fraction' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_plots' / 'njets' / f'{args.frac}_fraction' / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig)
+
+            logger.info('Saved all closure plots in njets')
         
     elif args.taus=='split' and not args.dnn_grouped:
         logger.info('Initiaize plotting for tau split FF calculated through single DNN...')
@@ -581,105 +581,105 @@ def main():
     # ----- tau 3-split FF -----
 
     elif args.taus=='3split' and not args.dnn_grouped:
-            logger.info('Initiaize plotting for tau 3-split FF calculated through single DNN...')
+        logger.info('Initiaize plotting for tau 3-split FF calculated through single DNN...')
+
+        df = load_data(DATA_PATH, MASKS_PATH_3SPLIT)
+        # ----- Closure plots in DR -----
+        if args.closure_DR:
+            for num, split in zip(['1', '2', '3'], ['tau1', 'tau2', 'tau1&tau2']):
+                if split == 'tau1': df_arlike = df.data.AR_like_1
+                elif split == 'tau2': df_arlike = df.data.AR_like_2
+                elif split == 'tau1&tau2': df_arlike = df.data.AR_like_3                           
+            
+                for var in VARIABLES_SMALL:
+                    bins, label = get_bins_and_label(var)
+                    label = labels_cfg['tt'][var]
     
-            df = load_data(DATA_PATH, MASKS_PATH_3SPLIT)
-            # ----- Closure plots in DR -----
-            if args.closure_DR:
-                for num, split in zip(['1', '2', '3'], ['tau1', 'tau2', 'tau1&tau2']):
-                    if split == 'tau1': df_arlike = df.data.AR_like_1
-                    elif split == 'tau2': df_arlike = df.data.AR_like_2
-                    elif split == 'tau1&tau2': df_arlike = df.data.AR_like_3                           
+                    fig_q, _ = FF_closure_in_DR_3split(
+                        df_srlike=df.data.SR_like,
+                        df_arlike=df_arlike,
+                        var=var,
+                        bins=bins,
+                        label=label,
+                        split=num,
+                        grouping=None,
+                    )
+                    plt.savefig(PLOTS_DIR / 'tau_3split' / 'closure_in_DR' / 'ungrouped' / f'{args.frac}_fraction' / f'FF_closure_DR_{split}_{var}.png', dpi=150, bbox_inches='tight')
+                    plt.savefig(PLOTS_DIR / 'tau_3split' / 'closure_in_DR' / 'ungrouped' / f'{args.frac}_fraction' / f'FF_closure_DR_{split}_{var}.pdf', dpi=150, bbox_inches='tight')
+                    plt.close(fig_q)
+    
+        logger.info(f'Saved closure plots in DR for ungrouped')
+
+
+        # ----- Fake-factor distributions -----
+        if args.FF_dist:          
+
+            fig_ar, ax_ar = plot_fake_factors_3split(df=df, category_title='inclusive')
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_3splitTaus.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_3splitTaus.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar)
+            logger.info(f'Saved FF distributions in AR for ungrouped DNN')
+
+            fig_ar, ax_ar = plot_fake_factors_3split(df=df, clipped=False, category_title='inclusive')
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_unclipped_3splitTaus.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_unclipped_3splitTaus.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar)
+            logger.info(f'Saved unclipped FF distributions in AR for ungrouped DNN')
+
+            fig_ar, ax_ar = plot_fake_factors_3split(df=df, category_title='inclusive', in_one_plot=True)
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_3splitTaus_allin1.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_3splitTaus_allin1.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar)
+            logger.info(f'Saved FF distributions in AR for ungrouped DNN')
+            # ----- clipped combined FF -----
+            fig_ar_ct, ax_ar_ct = plot_fake_factors_combTaus_3split(df=df)
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_combTaus.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_combTaus.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar_ct)
+            logger.info(f'Saved FF distributions in AR for combined Taus for ungrouped')
+
+            if args.frac == 'pt_binned':
+                # ----- get fraction and bins -----
+                cfg_frac = load_config(cfg_path['fractions'])
+                # ----- Ar-like
+                frac_arlike = cfg_frac['AR_like']['ungrouped']
+                frac, pt1_edges, pt2_edges = frac_arlike['fraction'], frac_arlike['pt1_edges'], frac_arlike['pt2_edges']
+                mean, std = frac_arlike['global_frac'], frac_arlike['global_std']
                 
-                    for var in VARIABLES_SMALL:
-                        bins, label = get_bins_and_label(var)
-                        label = labels_cfg['tt'][var]
-        
-                        fig_q, _ = FF_closure_in_DR_3split(
-                            df_srlike=df.data.SR_like,
-                            df_arlike=df_arlike,
-                            var=var,
-                            bins=bins,
-                            label=label,
-                            split=num,
-                            grouping=None,
-                        )
-                        plt.savefig(PLOTS_DIR / 'tau_3split' / 'closure_in_DR' / 'ungrouped' / f'{args.frac}_fraction' / f'FF_closure_DR_{split}_{var}.png', dpi=150, bbox_inches='tight')
-                        plt.savefig(PLOTS_DIR / 'tau_3split' / 'closure_in_DR' / 'ungrouped' / f'{args.frac}_fraction' / f'FF_closure_DR_{split}_{var}.pdf', dpi=150, bbox_inches='tight')
-                        plt.close(fig_q)
-        
-                logger.info(f'Saved closure plots in DR for ungrouped')
+                fig, ax = plot_fractions('AR_like', frac=frac, pt1_edges=pt1_edges, pt2_edges=pt2_edges, global_frac=mean, global_std=std)
+                plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'plot_fractions_ARlike.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'plot_fractions_ARlike.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig)
 
-    
-            # ----- Fake-factor distributions -----
-            if args.FF_dist:          
-    
-                fig_ar, ax_ar = plot_fake_factors_3split(df=df, category_title='inclusive')
-                plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_3splitTaus.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_3splitTaus.pdf', dpi=150, bbox_inches='tight')
-                plt.close(fig_ar)
-                logger.info(f'Saved FF distributions in AR for ungrouped DNN')
-    
-                fig_ar, ax_ar = plot_fake_factors_3split(df=df, clipped=False, category_title='inclusive')
-                plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_unclipped_3splitTaus.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_unclipped_3splitTaus.pdf', dpi=150, bbox_inches='tight')
-                plt.close(fig_ar)
-                logger.info(f'Saved unclipped FF distributions in AR for ungrouped DNN')
+                # ----- AR
+                # ----- calculate fraction in AR -----
+                fraction_in_bins(df.data.AR_tau1, df.data.AR_tau2, cfg_path['fractions'], region='AR', pt1_bin_edges=pt1_edges, pt2_bin_edges=pt2_edges)
 
-                fig_ar, ax_ar = plot_fake_factors_3split(df=df, category_title='inclusive', in_one_plot=True)
-                plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_3splitTaus_allin1.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_3splitTaus_allin1.pdf', dpi=150, bbox_inches='tight')
-                plt.close(fig_ar)
-                logger.info(f'Saved FF distributions in AR for ungrouped DNN')
-                # ----- clipped combined FF -----
-                fig_ar_ct, ax_ar_ct = plot_fake_factors_combTaus_3split(df=df)
-                plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_combTaus.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_ff_combTaus.pdf', dpi=150, bbox_inches='tight')
-                plt.close(fig_ar_ct)
-                logger.info(f'Saved FF distributions in AR for combined Taus for ungrouped')
-    
-                if args.frac == 'pt_binned':
-                    # ----- get fraction and bins -----
-                    cfg_frac = load_config(cfg_path['fractions'])
-                    # ----- Ar-like
-                    frac_arlike = cfg_frac['AR_like']['ungrouped']
-                    frac, pt1_edges, pt2_edges = frac_arlike['fraction'], frac_arlike['pt1_edges'], frac_arlike['pt2_edges']
-                    mean, std = frac_arlike['global_frac'], frac_arlike['global_std']
-                    
-                    fig, ax = plot_fractions('AR_like', frac=frac, pt1_edges=pt1_edges, pt2_edges=pt2_edges, global_frac=mean, global_std=std)
-                    plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'plot_fractions_ARlike.png', dpi=150, bbox_inches='tight')
-                    plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'plot_fractions_ARlike.pdf', dpi=150, bbox_inches='tight')
-                    plt.close(fig)
-    
-                    # ----- AR
-                    # ----- calculate fraction in AR -----
-                    fraction_in_bins(df.data.AR_tau1, df.data.AR_tau2, cfg_path['fractions'], region='AR', pt1_bin_edges=pt1_edges, pt2_bin_edges=pt2_edges)
-    
-                    cfg_frac = load_config(cfg_path['fractions'])
-                    frac_ar = cfg_frac['AR']['ungrouped']
-                    fraction_ar, pt1_edges_ar, pt2_edges_ar = frac_ar['fraction'], frac_ar['pt1_edges'], frac_ar['pt2_edges']
-                    mean_ar, std_ar = frac_ar['global_frac'], frac_ar['global_std']
-    
-                    fig, ax = plot_fractions('AR', frac=fraction_ar, pt1_edges=pt1_edges_ar, pt2_edges=pt2_edges_ar, global_frac=mean_ar, global_std=std_ar)
-                    plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'plot_fractions_AR.png', dpi=150, bbox_inches='tight')
-                    plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'plot_fractions_AR.pdf', dpi=150, bbox_inches='tight')
-                    plt.close(fig)
-    
-                    # ----- plot diff -----
-                    frac_diff = np.array(frac) - np.array(fraction_ar)
-                    h = frac_diff.flatten()
-                    h = h[~np.isnan(h)]
-                    mean_diff, std_diff = np.mean(h), np.std(h)
-    
-                    fig, ax = plot_fractions('AR_like - AR', frac=frac_diff, pt1_edges=pt1_edges_ar, pt2_edges=pt2_edges_ar, global_frac=mean_diff, global_std=std_diff)
-                    plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'plot_fractions_diff.png', dpi=150, bbox_inches='tight')
-                    plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'plot_fractions_diff.pdf', dpi=150, bbox_inches='tight')
-                    plt.close(fig)
-        
-                    logger.info(f'Saved plots of Fraction Factors for ungrouped')
+                cfg_frac = load_config(cfg_path['fractions'])
+                frac_ar = cfg_frac['AR']['ungrouped']
+                fraction_ar, pt1_edges_ar, pt2_edges_ar = frac_ar['fraction'], frac_ar['pt1_edges'], frac_ar['pt2_edges']
+                mean_ar, std_ar = frac_ar['global_frac'], frac_ar['global_std']
 
-            # ----- FF closure in AR -----
-            if args.closure_AR:
+                fig, ax = plot_fractions('AR', frac=fraction_ar, pt1_edges=pt1_edges_ar, pt2_edges=pt2_edges_ar, global_frac=mean_ar, global_std=std_ar)
+                plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'plot_fractions_AR.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'plot_fractions_AR.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig)
+
+                # ----- plot diff -----
+                frac_diff = np.array(frac) - np.array(fraction_ar)
+                h = frac_diff.flatten()
+                h = h[~np.isnan(h)]
+                mean_diff, std_diff = np.mean(h), np.std(h)
+
+                fig, ax = plot_fractions('AR_like - AR', frac=frac_diff, pt1_edges=pt1_edges_ar, pt2_edges=pt2_edges_ar, global_frac=mean_diff, global_std=std_diff)
+                plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'plot_fractions_diff.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'plot_fractions_diff.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig)
+    
+                logger.info(f'Saved plots of Fraction Factors for ungrouped')
+
+        # ----- FF closure in AR -----
+        if args.closure_AR:
                 for var in VARIABLES_SMALL:
                     bins, label = get_bins_and_label(var)
                     label = labels_cfg['tt'][var]
@@ -696,6 +696,126 @@ def main():
                     plt.close(fig)
     
                 logger.info('Saved all closure plots for ungrouped DNN')
+
+    if args.taus=='3split' and args.dnn_grouped:
+        logger.info('Initiaize plotting for tau 3split FF calculated through grouped DNN...')
+
+        df = load_data(DATA_PATH, MASKS_PATH_3SPLIT)
+        grouping = 'njets'
+        # ----- Closure plots in DR -----
+        if args.closure_DR:
+            for num, split in zip(['1', '2', '3'], ['tau1', 'tau2', 'tau1&tau2']):
+                if split == 'tau1': df_arlike = df.data.AR_like_1
+                elif split == 'tau2': df_arlike = df.data.AR_like_2
+                elif split == 'tau1&tau2': df_arlike = df.data.AR_like_3
+
+                for var in VARIABLES_SMALL:
+                    bins, label = get_bins_and_label(var)
+                    label = labels_cfg['tt'][var]
+
+                    fig_q, _ = FF_closure_in_DR_3split(
+                        df_srlike=df.data.SR_like,
+                        df_arlike=df_arlike,
+                        var=var,
+                        bins=bins,
+                        label=label,
+                        split=num,
+                        grouping=grouping,
+                    )
+                    plt.savefig(PLOTS_DIR / 'tau_3split' / 'closure_in_DR' / grouping / f'{args.frac}_fraction'/ f'FF_closure_DR_{split}_{var}.png', dpi=150, bbox_inches='tight')
+                    plt.savefig(PLOTS_DIR / 'tau_3split' / 'closure_in_DR' / grouping / f'{args.frac}_fraction'/ f'FF_closure_DR_{split}_{var}.pdf', dpi=150, bbox_inches='tight')
+                    plt.close(fig_q)
+
+                logger.info(f'Saved closure plots in DR for {grouping}')
+
+        # ----- Fake-factor distributions -----
+        if args.FF_dist:
+            
+            # ----- clipped FF -----
+            fig_ar, ax_ar = plot_fake_factors_grouped_3split(
+                df=df,
+                category_title=f'split in {grouping}',
+                grouping=grouping,
+            )
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_3split_{grouping}.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_3split_{grouping}.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar)
+            logger.info(f'Saved FF distributions in AR for {grouping}')
+
+            fig_ar, ax_ar = plot_fake_factors_3split(df=df, category_title='inclusive', grouping=grouping, in_one_plot=True)
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction' / f'plot_ff_3splitTaus_allin1.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction' / f'plot_ff_3splitTaus_allin1.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar)
+
+            # ----- clipped combined FF -----
+            fig_ar_ct, ax_ar_ct = plot_fake_factors_grouped_combTaus_3split(
+                df=df,
+                category_title=f'split in {grouping}',
+                grouping=grouping,
+            )
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_combTaus_{grouping}.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_combTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar_ct)
+            logger.info(f'Saved FF distributions in AR for combined Taus for {grouping}')
+
+
+
+            # ----- unclipped FF -----
+            fig_ar, ax_ar = plot_fake_factors_grouped_3split(
+                df=df,
+                category_title=f'split in {grouping}',
+                grouping=grouping,
+                clipped=False
+            )
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_unclipped_3split_{grouping}.png', dpi=150, bbox_inches='tight')
+            plt.savefig(PLOTS_DIR / 'tau_3split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_unclipped_3split_{grouping}.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig_ar)
+            logger.info(f'Saved FF distributions in AR for {grouping}')
+
+            if args.frac == 'pt_binned':
+                # ----- get fraction and bins -----
+                cfg_frac = load_config(cfg_path['fractions'])
+                safe_path = PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / grouping / f'{args.frac}_fraction'
+                # ----- Ar-like
+                frac_arlike = cfg_frac['AR_like'][f'{group_name}']
+
+                plot_fractions_grouped('AR_like', grouped_frac=frac_arlike, grouping=grouping, safe_path=safe_path)
+                    
+                # ----- AR
+                # ----- calculate fraction in AR -----                    
+                fraction_in_bins_grouped(df.data.AR_tau1, df.data.AR_tau2, cfg_path['fractions'], region='AR', ar_file=cfg_frac['AR_like'], grouping=group_name, grouping_variable=group_var, grouping_definition=group_def)
+            
+                cfg_frac = load_config(cfg_path['fractions'])
+                frac_ar = cfg_frac['AR'][f'{group_name}']
+                plot_fractions_grouped('AR', grouped_frac=frac_ar, grouping=grouping, safe_path=safe_path)
+
+                logger.info(f'Saved plots of Fraction Factors for ungrouped')
+
+        # ----- FF closure in AR -----
+        if args.closure_AR:
+            x = uproot.open("/work/ptoedter/MA-Pascal/smhtt_ul/output/2018-et-2025-12_15_with_uncertainties_ntupels_v1-final_v3_2026_02_19/control_shapes-2018-et-2025-12_15_with_uncertainties_ntupels_v1-final_v3_2026_02_19.root")
+            bkgs = [it for it in x.keys() if "#q_1;" in it and "Nominal" in it and any(subit in it for subit in ["TT-TTL", "DY-ZL", "jetFakes#", "VV-VVL", "EMB#"])]
+            corr_emb_ff = sum([x[it].to_numpy()[0] for it in bkgs]) / [x[next(it for it in x.keys() if "data" in it and "Nominal" in it and "#q_1" in it)].to_numpy()[0]]
+
+            for var in VARIABLES_LARGE:
+                bins, label = get_bins_and_label(var)
+                label = labels_cfg['tt'][var]
+                fig, ax, _ = plot_closure_3split(
+                        df = df,
+                        var = var,
+                        bins = bins,
+                        label = label,
+                        grouping = 'njets'
+                    )
+                
+                plt.savefig(PLOTS_DIR / 'tau_3split' / 'closure_plots' / 'njets' / f'{args.frac}_fraction' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_3split' / 'closure_plots' / 'njets' / f'{args.frac}_fraction' / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
+                plt.close(fig)
+
+            logger.info('Saved all closure plots in njets')
+
+
+
 # -------------------------------------------
 
 if __name__ == '__main__':
