@@ -547,7 +547,7 @@ def calculate_fake_factors_3split_ungrouped(
         fake_factor_3 = np.clip(fake_factor_3, 0, 3)
         df.AR_3[f"ff_dnn_3"] = fake_factor_3
 
-def calculate_fake_factors_grouped(
+def calculate_fake_factors_grouped_3split(
     df,
     model1: t.nn.Module = None,
     model2: t.nn.Module = None,

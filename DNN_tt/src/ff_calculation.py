@@ -15,7 +15,7 @@ from classes.NeuralNetworks import load_fold_combined_model
 from classes.Loading import load_config, load_variables, load_data
 from classes.FF_calculation import calculate_fake_factors_ungrouped, calculate_fake_factors_grouped
 from classes.FF_calculation import calculate_fake_factors_incl_ungrouped, calculate_fake_factors_incl_grouped
-from classes.FF_calculation import calculate_fake_factors_3split_ungrouped, calculate_fake_factor_frac_3split
+from classes.FF_calculation import calculate_fake_factors_3split_ungrouped, calculate_fake_factor_frac_3split, calculate_fake_factors_grouped_3split
 from classes.FF_calculation import calculate_fake_factor_classic, calculate_fake_factor_frac
 
 
@@ -345,7 +345,7 @@ def main():
 
 
         logger.info(f"Calculating fake factors for njets and grouping definition {grouping_njets}...")
-        calculate_fake_factors_grouped(
+        calculate_fake_factors_grouped_3split(
             df=df,
             model1=model1,
             model2=model2,
@@ -358,7 +358,7 @@ def main():
 
         # ----- calculate fake factors in DR -----
         logger.info("Calculating fake factors in DR...")
-        calculate_fake_factors_grouped(
+        calculate_fake_factors_grouped_3split(
             df=df,
             model1=model1,
             model2=model2,
