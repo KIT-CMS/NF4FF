@@ -32,10 +32,10 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
     
-    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
-    incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
+    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_binned'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
     classic: bool = False
 
 args = Args().parse_args()
@@ -324,7 +324,64 @@ def main():
             fraction=args.frac,
             where_calc_frac = 'AR_like',
         )       
-    
+
+    elif args.taus=='3split' and args.dnn_grouped:
+        logger.info("Loading data...")
+        df = load_data(DATA_PATH, MASKS_PATH_3SPLIT)
+
+        logger.info(f"Loading model for njets...")
+        model1 = load_fold_combined_model(
+                    even_model_path=Path(CHECKPOINT_DIR) / f'njets' / '3split'/ 'tau1' / 'fold_even',
+                    odd_model_path=Path(CHECKPOINT_DIR) / f'njets' / '3split' / 'tau1' / 'fold_odd',
+                )
+        model2 = load_fold_combined_model(
+            even_model_path=Path(CHECKPOINT_DIR) / f'njets' / '3split' / 'tau2' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / f'njets' / '3split' / 'tau2' / 'fold_odd',
+        )
+        model3 = load_fold_combined_model(
+            even_model_path=Path(CHECKPOINT_DIR) / f'njets' / '3split' / 'tau1&tau2' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / f'njets' / '3split' / 'tau1&tau2' / 'fold_odd',
+        )
+
+
+        logger.info(f"Calculating fake factors for njets and grouping definition {grouping_njets}...")
+        calculate_fake_factors_grouped(
+            df=df,
+            model1=model1,
+            model2=model2,
+            model3=model3,
+            training_variables=training_variables,
+            grouping_variable = 'njets',
+            grouping_definition = grouping_njets,
+            output_suffix = 'njets',
+        )
+
+        # ----- calculate fake factors in DR -----
+        logger.info("Calculating fake factors in DR...")
+        calculate_fake_factors_grouped(
+            df=df,
+            model1=model1,
+            model2=model2,
+            model3=model3,
+            training_variables=training_variables,
+            DR = True,
+            grouping_variable = 'njets',
+            grouping_definition = grouping_njets,
+            output_suffix = 'njets',
+        )
+
+        logger.info("Applying fake factor fractions...")
+        calculate_fake_factor_frac_3split(
+            df=df,
+            df1=df.AR_1,
+            df2=df.AR_2,
+            df3=df.AR_3,
+            frac_file=cfg_path['fractions'],
+            grouping='njets',
+            grouping_variable = 'njets',
+            grouping_definition = grouping_njets,
+            fraction=args.frac
+        )
 
     if args.taus == 'split' or args.taus == '3split':
         logger.info(f"Saving main dataframe to feather file: {DATA_PATH}")

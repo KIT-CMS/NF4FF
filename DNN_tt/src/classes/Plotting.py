@@ -1004,6 +1004,115 @@ def plot_fake_factors_incl(
 
     return fig, ax
 
+def plot_fake_factors_3split(
+        df,
+        category_title = None,
+        clipped = True,
+        in_one_plot = False
+) -> None:
+    hep.style.use(hep.style.CMS)
+	
+    if clipped:
+        ff_dnn_1 = 'ff_dnn_1'
+        ff_dnn_2 = 'ff_dnn_2'
+        ff_dnn_3 = 'ff_dnn_3'
+    
+        bins_tau1 = np.linspace(0, 0.5, 51)
+        bins_tau2 = np.linspace(0, 0.5, 51)
+        bins_tau3 = np.linspace(0, 0.5, 51)
+    else:
+        ff_dnn_1 = 'ff_unclipped_dnn_1'
+        ff_dnn_2 = 'ff_unclipped_dnn_2'
+        ff_dnn_3 = 'ff_unclipped_dnn_3'
+    
+        bins_tau1 = np.linspace(0, 2., 51)
+        bins_tau2 = np.linspace(0, 2., 51)
+        bins_tau3 = np.linspace(0, 2., 51)
+
+    if in_one_plot:
+        fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+
+        n1 = ax.hist(df.data.AR_1[ff_dnn_1], bins=bins_tau1, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 1')
+        n2 = ax.hist(df.data.AR_2[ff_dnn_2], bins=bins_tau2, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 2')
+        n3 = ax.hist(df.data.AR_3[ff_dnn_3], bins=bins_tau3, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 3')
+        ax.set_ylabel("Events")
+        ax.set_xlabel("fake_factor")
+        ax.legend()
+        ax.set_ylim(top=1.2*np.max([np.max(n1[0]), np.max(n2[0]), np.max(n3[0])]))
+
+        CMS_CHANNEL_TITLE([ax])
+        CMS_LUMI_TITLE([ax])
+        CMS_LABEL([ax])
+        CMS_CATEGORY_TITLE([ax], title = category_title)
+    else:
+        fig, ax = plt.subplots(3, 1, figsize=(11.7, 9.1))
+
+        n = ax[0].hist(df.data.AR_1[ff_dnn_1], bins=bins_tau1, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 1')
+        ax[0].set_ylabel("Events")
+        ax[0].legend()
+        ax[0].set_ylim(top=1.2*np.max(n[0]))
+
+        CMS_CHANNEL_TITLE([ax[0]])
+        CMS_LUMI_TITLE([ax[0]])
+        CMS_LABEL([ax[0]])
+        CMS_CATEGORY_TITLE([ax[0]], title = category_title)
+
+        ax[1].set_ylabel('Events')
+        ax[1].hist(df.data.AR_2[ff_dnn_2], bins=bins_tau2, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 2')
+        ax[1].legend()
+
+        ax[2].hist(df.data.AR_3[ff_dnn_3], bins=bins_tau3, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 3')
+        ax[2].set_xlabel("fake_factor")
+        ax[2].legend()
+    return fig, ax
+
+def plot_fake_factors_combTaus_3split(
+        df,
+        clipped = True
+) -> None:
+    hep.style.use(hep.style.CMS)
+	
+    if clipped:
+        ff_dnn_tau1 = 'ff_dnn_1'
+        ff_dnn_tau2 = 'ff_dnn_2'
+        ff_dnn_tau3 = 'ff_dnn_3'
+    
+        bins_tau1 = np.linspace(0, 0.5, 51)
+        bins_tau2 = np.linspace(0, 0.5, 51)
+        bins_tau3 = np.linspace(0, 0.5, 51)
+    else:
+        ff_dnn_tau1 = 'ff_unclipped_dnn_1'
+        ff_dnn_tau2 = 'ff_unclipped_dnn_2'
+        ff_dnn_tau3 = 'ff_unclipped_dnn_3'
+
+        bins_tau1 = np.linspace(0, 2., 51)
+        bins_tau2 = np.linspace(0, 2., 51)
+        bins_tau3 = np.linspace(0, 2., 51)
+
+    fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
+
+
+    n1, binedges = np.histogram(df.data.AR_1[ff_dnn_tau1], bins=bins_tau1)
+    n2, _ = np.histogram(df.data.AR_2[ff_dnn_tau2], bins=bins_tau2)
+    n3, _ = np.histogram(df.data.AR_3[ff_dnn_tau3], bins=bins_tau3)
+
+    n = n1 + n2 + n3
+
+    fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+
+    CMS_CHANNEL_TITLE(ax)
+    CMS_LUMI_TITLE(ax)
+    CMS_LABEL(ax)
+    #CMS_CATEGORY_TITLE(ax, title=category_title)
+
+    ax.stairs(n, binedges, linewidth=2, label=r'Combined $\tau_h$: incl')
+
+    ax.set_ylabel('Events')
+    ax.set_xlabel("fake_factor")
+    ax.set_ylim(top=1.2*np.max(n))
+    ax.legend()
+    return fig, ax
+
 def plot_classic_fake_factors(
         df,
         short,
@@ -1359,6 +1468,101 @@ def FF_closure_in_DR_incl(
     )
 
     ax[0].stairs(counts_FF_AR_like, bin_edges, label = r'$F_\mathrm{F} \cdot $ data(AR-like)', ls = '--', linewidth = 2)
+
+    ax[0].set_ylabel('Events')
+    ax[0].legend()
+    adjust_ylim_for_legend(ax[0])
+    ratio = np.divide(counts_SR_like, counts_FF_AR_like, out=np.zeros_like(counts_SR_like, dtype=float), where=counts_FF_AR_like > 0)
+    ratio_err_SR_like = np.divide(err_SR_like, counts_FF_AR_like, out=np.zeros_like(err_SR_like), where=counts_FF_AR_like > 0)
+    ratio_err_FF_AR_like = np.divide(err_FF_AR_like, counts_FF_AR_like, out=np.zeros_like(err_FF_AR_like), where=counts_FF_AR_like > 0)
+
+    ax[1].errorbar(bin_centers, ratio, xerr = err_bin, yerr = ratio_err_SR_like, fmt='o', color='black', markersize=6, label='ratio')
+    ax[1].fill_between(
+        bin_centers,
+        1 - ratio_err_FF_AR_like,
+        1 + ratio_err_FF_AR_like,
+        color='gray',
+        alpha=0.3,
+        step='mid',
+        label='Sys. Unc.',
+    )
+    ax[1].set_ylabel("Data / Model", loc='center')
+    ax[1].set_ylim([0.75, 1.25])
+    ax[1].grid(True, linestyle=':', alpha=0.7)
+    ax[1].tick_params(direction='in', top=True, right=True)
+    ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
+    ax[1].set_xlabel(label)
+
+    return fig, ax
+
+def FF_closure_in_DR_3split(
+    df_srlike,
+    df_arlike,
+	var,
+	bins,
+	label,
+    split,
+	grouping = None,
+):
+    hep.style.use(hep.style.CMS)
+
+    if grouping == 'tau_decaymode':
+        ff_dnn = f'ff_DR_dnn_{split}_tau_dm'
+        cat_title = r'$\tau$ DM: inclusive'
+    elif grouping == 'njets':
+        ff_dnn = f'ff_DR_dnn_{split}_njets'
+        cat_title = r'$N_{jets}$: inclusive'
+    else:
+        ff_dnn = f'ff_DR_dnn_{split}'
+        cat_title = 'inclusive'
+
+    counts_SR_like, bin_edges = np.histogram(df_srlike[var], weights = df_srlike.weight_qcd, bins = bins)
+    counts_FF_AR_like, _ = np.histogram(df_arlike[var], weights = df_arlike.weight_qcd * df_arlike[ff_dnn], bins = bins)
+
+    variance_SR_like, _ = np.histogram(df_srlike[var], weights = df_srlike.weight_qcd**2, bins = bins)
+    variance_FF_AR_like, _ = np.histogram(
+        df_arlike[var], 
+        weights = (df_arlike.weight_qcd * df_arlike[ff_dnn])**2,
+        bins = bins)
+
+    err_SR_like = np.sqrt(variance_SR_like)
+    err_FF_AR_like = np.sqrt(variance_FF_AR_like)
+
+    bin_widths = np.diff(bin_edges)
+    bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+    err_bin = 0.5 * bin_widths
+
+
+    fig, ax = plt.subplots(
+        2,
+        1,
+        figsize=(11.7, 9.1),
+        sharex=True,
+        gridspec_kw={
+            'height_ratios': [4, 1],
+            'hspace': 0.05,
+        },
+        constrained_layout=True,
+    )
+    CMS_LABEL(ax)
+    CMS_CATEGORY_TITLE(ax, cat_title)
+    CMS_LUMI_TITLE(ax)
+    CMS_CHANNEL_TITLE(ax)
+
+    ax[0].errorbar(
+        bin_centers,
+        counts_SR_like,
+        yerr=err_SR_like,
+        xerr=err_bin,
+        fmt='o',
+        color='black',
+        label='data(SR-like)',
+        markersize=6,
+        elinewidth=1.2,
+        capsize=0,
+    )
+
+    ax[0].stairs(counts_FF_AR_like, bin_edges, label = r'$F_\mathrm{F} \cdot $ data(AR-like, leading $\tau$)', ls = '--', linewidth = 2)
 
     ax[0].set_ylabel('Events')
     ax[0].legend()

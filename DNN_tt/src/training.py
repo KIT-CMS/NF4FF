@@ -28,9 +28,9 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
-    incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
-    dnn_grouped: bool = False
+    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
+    dnn_grouped: bool = True
 
 args = Args().parse_args()
 
@@ -591,6 +591,97 @@ def main():
                 )
     
                 base_path = Path(CHECKPOINT_DIR) / 'ungrouped' / '3split' / process
+                save_model(even_model, base_path / 'fold_even')
+                save_model(odd_model, base_path / 'fold_odd')
+                save_model(model, base_path)
+
+    elif args.taus=='3split' and args.dnn_grouped:
+        logger.info('Training uses the grouped DNN.')
+        for grouping, group_label in zip([grouping_njets], ['njets']):
+            logger.info(f'Group splitting: {group_label}')
+            
+            for process in ['tau1', 'tau2', 'tau1&tau2']:
+
+                logger.info(f'Training process: {process}')
+                
+                if process == 'tau1':
+                    df_sig = df.data.SR_like
+                    df_bkg = df.data.AR_like_1
+                    weight_column = 'weight_qcd'
+                    balance_column = 'tau_decaymode_1' if group_label == 'tau_decaymode' else 'njets'
+
+                elif process == 'tau2':
+                    df_sig = df.data.SR_like
+                    df_bkg = df.data.AR_like_2
+                    weight_column = 'weight_qcd'
+                    balance_column = 'tau_decaymode_2' if group_label == 'tau_decaymode' else 'njets'
+
+                elif process == 'tau1&tau2':
+                    df_sig = df.data.SR_like
+                    df_bkg = df.data.AR_like_3
+                    weight_column = 'weight_qcd'
+                    balance_column = 'njets'
+
+                balance_groups = next(iter(grouping.values()))
+
+                df_sig_plain = df_sig.events
+                df_bkg_plain = df_bkg.events
+                df_sig_even = df_sig_plain[df_sig_plain['event']%2 == 0]
+                df_sig_odd  = df_sig_plain[df_sig_plain['event']%2 == 1]
+                df_bkg_even = df_bkg_plain[df_bkg_plain['event']%2 == 0]
+                df_bkg_odd  = df_bkg_plain[df_bkg_plain['event']%2 == 1]
+
+                logger.info(
+                    "%s/%s fold sizes: even=%d (sig=%d, bkg=%d), odd=%d (sig=%d, bkg=%d)",
+                    group_label,
+                    process,
+                    len(df_sig_even) + len(df_bkg_even),
+                    len(df_sig_even),
+                    len(df_bkg_even),
+                    len(df_sig_odd) + len(df_bkg_odd),
+                    len(df_sig_odd),
+                    len(df_bkg_odd),
+                )
+
+                # even_model: trained on odd events, applied to even events
+                even_model = _train_fold_model(
+                    cfg=cfg,
+                    grouping=grouping,
+                    training_var=training_var,
+                    df_sig=df_sig_odd,
+                    df_bkg=df_bkg_odd,
+                    weight_column=weight_column,
+                    device=device,
+                    checkpoint_dir=CHECKPOINT_DIR,
+                    taus=args.taus,
+                    fold_label='fold_odd',
+                    balance_column=balance_column,
+                    balance_groups=balance_groups,
+                )
+
+                # odd_model: trained on even events, applied to odd events
+                odd_model = _train_fold_model(
+                    cfg=cfg,
+                    grouping=grouping,
+                    training_var=training_var,
+                    df_sig=df_sig_even,
+                    df_bkg=df_bkg_even,
+                    weight_column=weight_column,
+                    device=device,
+                    checkpoint_dir=CHECKPOINT_DIR,
+                    taus=args.taus,
+                    fold_label='fold_even',
+                    balance_column=balance_column,
+                    balance_groups=balance_groups,
+                )
+
+                model = FoldCombinedDNN(
+                    even_model=even_model,
+                    odd_model=odd_model,
+                    fold_id_name='event',
+                )
+
+                base_path = Path(CHECKPOINT_DIR) / group_label / '3split' / process
                 save_model(even_model, base_path / 'fold_even')
                 save_model(odd_model, base_path / 'fold_odd')
                 save_model(model, base_path)
