@@ -547,6 +547,154 @@ def calculate_fake_factors_3split_ungrouped(
         fake_factor_3 = np.clip(fake_factor_3, 0, 3)
         df.AR_3[f"ff_dnn_3"] = fake_factor_3
 
+def calculate_fake_factors_grouped(
+    df,
+    model1: t.nn.Module = None,
+    model2: t.nn.Module = None,
+    model3: t.nn.Module = None,
+    training_variables=None,
+    DR: bool = False,
+    grouping_variable=None,
+    grouping_definition=None,
+    output_suffix=None,
+):
+    if output_suffix is None or grouping_variable is None or grouping_definition is None:
+        calculate_fake_factors_ungrouped(df, model_tau1=model1, model_tau2=model2, model_tau3=model3, training_variables=training_variables, DR=DR)
+        logger.warning("Grouping variable, grouping definition, or output suffix is None. Calculating ungrouped fake factors instead.")
+        return
+
+    if model1 is None or model2 is None or model3 is None:
+        logger.error("One or more models are None. No fake factors will be calculated.")
+        return
+
+    # ----- grouping variable handling -----
+    if isinstance(grouping_variable, list):
+        grouping_var_1 = grouping_variable[0]
+        grouping_var_2 = grouping_variable[1]
+        grouping_var_3 = grouping_variable[2]
+    else:
+        grouping_var_1 = grouping_variable
+        grouping_var_2 = grouping_variable
+        grouping_var_3 = grouping_variable
+
+    # ----- FF calculation specifics in DR or SR -----
+    if DR:
+        ar1_group_values = np.asarray(df.AR_like_1[grouping_var_1])
+        ar2_group_values = np.asarray(df.AR_like_2[grouping_var_2])
+        ar3_group_values = np.asarray(df.AR_like_3[grouping_var_3])
+
+        ratio1 = _compute_ratio(model1, df.AR_like_1, training_variables)
+        ratio2 = _compute_ratio(model2, df.AR_like_2, training_variables)
+        ratio3 = _compute_ratio(model3, df.AR_like_3, training_variables)
+    else:
+        ar1_group_values = np.asarray(df.AR_1[grouping_var_1])
+        ar2_group_values = np.asarray(df.AR_2[grouping_var_2])
+        ar3_group_values = np.asarray(df.AR_3[grouping_var_3])
+
+        ratio1 = _compute_ratio(model1, df.AR_1, training_variables)
+        ratio2 = _compute_ratio(model2, df.AR_2, training_variables)
+        ratio3 = _compute_ratio(model3, df.AR_3, training_variables)
+
+
+    # Ar masks for each group
+    group1_masks = _build_group_masks(ar1_group_values, grouping_definition)
+    group2_masks = _build_group_masks(ar2_group_values, grouping_definition)
+    group3_masks = _build_group_masks(ar3_group_values, grouping_definition)
+
+    # AR-like and SR-like masks for each group
+    sr1_masks = dict(_build_group_masks(np.asarray(df.data.SR_like[grouping_var_1]), grouping_definition))
+    ar1_masks = dict(_build_group_masks(np.asarray(df.data.AR_like_1[grouping_var_1]), grouping_definition))
+
+    sr2_masks = dict(_build_group_masks(np.asarray(df.data.SR_like[grouping_var_2]), grouping_definition))
+    ar2_masks = dict(_build_group_masks(np.asarray(df.data.AR_like_2[grouping_var_2]), grouping_definition))
+
+    sr3_masks = dict(_build_group_masks(np.asarray(df.data.SR_like[grouping_var_3]), grouping_definition))
+    ar3_masks = dict(_build_group_masks(np.asarray(df.data.AR_like_3[grouping_var_3]), grouping_definition))
+
+    # ----- Main FF calculation -----
+    fake_factor_1 = np.zeros_like(ratio1) if ratio1 is not None else None
+    fake_factor_2 = np.zeros_like(ratio2) if ratio2 is not None else None
+    fake_factor_3 = np.zeros_like(ratio3) if ratio3 is not None else None
+
+    for group_name, ar_mask in group1_masks:
+
+        sr1_mask = sr1_masks[group_name]
+        ar1_mask = ar1_masks[group_name]
+
+        norm1 = (
+            np.sum(df.data.SR_like.weight_qcd[sr1_mask])
+            / np.sum(df.data.AR_like_1.weight_qcd[ar1_mask])
+        )
+
+        fake_factor_1[ar_mask] = (norm1 * ratio1[ar_mask])
+
+        print(f"{group_name}:tau1 norm = {norm1:.4f}")
+
+    for group_name, ar_mask in group2_masks:
+
+        sr2_mask = sr2_masks[group_name]
+        ar2_mask = ar2_masks[group_name]
+
+        norm2 = (
+            np.sum(df.data.SR_like.weight_qcd[sr2_mask])
+            / np.sum(df.data.AR_like_2.weight_qcd[ar2_mask])
+        )
+
+        fake_factor_2[ar_mask] = (norm2 * ratio2[ar_mask])
+
+        print(f"{group_name}:tau2 norm = {norm2:.4f}")
+
+    for group_name, ar_mask in group3_masks:
+    
+        sr3_mask = sr3_masks[group_name]
+        ar3_mask = ar3_masks[group_name]
+
+        norm3 = (
+            np.sum(df.data.SR_like.weight_qcd[sr3_mask])
+            / np.sum(df.data.AR_like_3.weight_qcd[ar3_mask])
+        )
+
+        fake_factor_3[ar_mask] = (norm3 * ratio3[ar_mask])
+
+        print(f"{group_name}:tau3 norm = {norm3:.4f}")
+
+    # ----- number of FF over 3 -----
+    _FF_over_3(fake_factor_1, "tau1")
+    _FF_over_3(fake_factor_2, "tau2")
+    _FF_over_3(fake_factor_3, "tau3")
+
+
+    # ----- clipping + output assignment -----
+    suffix = f"_{output_suffix}"
+
+    if fake_factor_1 is None or fake_factor_2 is None or fake_factor_3 is None:
+        print("FF for tau 1 is None or FF for tau 2 is None or FF for tau 3 is None")
+
+    if DR:
+        df.AR_like_1[f"ff_DR_unclipped_dnn_1{suffix}"] = fake_factor_1
+        fake_factor_1 = np.clip(fake_factor_1, 0, 3)
+        df.AR_like_1[f"ff_DR_dnn_1{suffix}"] = fake_factor_1
+
+        df.AR_like_2[f"ff_DR_unclipped_dnn_2{suffix}"] = fake_factor_2
+        fake_factor_2 = np.clip(fake_factor_2, 0, 3)
+        df.AR_like_2[f"ff_DR_dnn_2{suffix}"] = fake_factor_2
+
+        df.AR_like_3[f"ff_DR_unclipped_dnn_3{suffix}"] = fake_factor_3
+        fake_factor_3 = np.clip(fake_factor_3, 0, 3)
+        df.AR_like_3[f"ff_DR_dnn_3{suffix}"] = fake_factor_3
+    else:
+        df.AR_1[f"ff_unclipped_dnn_1{suffix}"] = fake_factor_1
+        fake_factor_1 = np.clip(fake_factor_1, 0, 3)
+        df.AR_1[f"ff_dnn_1{suffix}"] = fake_factor_1
+
+        df.AR_2[f"ff_unclipped_dnn_2{suffix}"] = fake_factor_2
+        fake_factor_2 = np.clip(fake_factor_2, 0, 3)
+        df.AR_2[f"ff_dnn_2{suffix}"] = fake_factor_2
+
+        df.AR_3[f"ff_unclipped_dnn_3{suffix}"] = fake_factor_3
+        fake_factor_3 = np.clip(fake_factor_3, 0, 3)
+        df.AR_3[f"ff_dnn_3{suffix}"] = fake_factor_3
+
 def calculate_fake_factor_frac_3split(
         df,
         df1,
@@ -557,7 +705,7 @@ def calculate_fake_factor_frac_3split(
         grouping_variable = None,
         grouping_definition = None,
         fraction = "global",
-        where_calc_frac = 'AR-like',
+        where_calc_frac = 'AR_like',
 ):
     '''
     Applying fraction factor to FF for tau split.
@@ -574,13 +722,13 @@ def calculate_fake_factor_frac_3split(
         ff_tau2 = "ff_dnn_2"
         ff_tau3 = "ff_dnn_3"
     elif grouping == 'tau_dm':
-        ff_tau1 = "ff_dnn_t1_tau_dm"
-        ff_tau2 = "ff_dnn_t2_tau_dm"
-        ff_tau3 = "ff_dnn_t3_tau_dm"
+        ff_tau1 = "ff_dnn_1_tau_dm"
+        ff_tau2 = "ff_dnn_2_tau_dm"
+        ff_tau3 = "ff_dnn_3_tau_dm"
     elif grouping == 'njets':
-        ff_tau1 = "ff_dnn_t1_njets"
-        ff_tau2 = "ff_dnn_t2_njets"
-        ff_tau3 = "ff_dnn_t3_njets"
+        ff_tau1 = "ff_dnn_1_njets"
+        ff_tau2 = "ff_dnn_2_njets"
+        ff_tau3 = "ff_dnn_3_njets"
 
     if fraction == "global":
         if where_calc_frac == 'AR_like':
