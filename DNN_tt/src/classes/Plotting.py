@@ -2197,6 +2197,121 @@ def plot_fractions(title, frac, pt1_edges, pt2_edges, global_frac, global_std):
     fig.tight_layout()
     return fig, ax
 
+def plot_fractions_3split(title, frac, pt1_edges, pt2_edges, global_frac, global_std, max_bins=0):
+    """Plot fractions, optionally averaging adjacent cells for display only.
+
+    max_bins limits each axis (0 keeps the original grid). Block means give
+    equal weight to finite cells, not to events. Global statistics stay unchanged.
+    """
+    frac = np.asarray(frac, dtype=float)
+    if max_bins < 0:
+        raise ValueError('max_bins must be non-negative')
+    averaged = max_bins > 0 and max(frac.shape) > max_bins
+    if averaged:
+        boundaries = [
+            np.linspace(0, n, min(n, max_bins) + 1, dtype=int)
+            for n in frac.shape
+        ]
+        reduced = np.full(tuple(len(b) - 1 for b in boundaries), np.nan)
+        for i, (start_x, end_x) in enumerate(zip(boundaries[0][:-1], boundaries[0][1:])):
+            for j, (start_y, end_y) in enumerate(zip(boundaries[1][:-1], boundaries[1][1:])):
+                block = frac[start_x:end_x, start_y:end_y]
+                finite = block[np.isfinite(block)]
+                if finite.size:
+                    reduced[i, j] = finite.mean()
+        frac = reduced
+        pt1_edges = np.asarray(pt1_edges)[boundaries[0]]
+        pt2_edges = np.asarray(pt2_edges)[boundaries[1]]
+
+    n_pt1, n_pt2 = frac.shape
+
+    fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+
+    CMS_LABEL(ax)
+    CMS_CATEGORY_TITLE(ax, title=title)
+    CMS_LUMI_TITLE(ax)
+    CMS_CHANNEL_TITLE(ax)
+
+    diff = np.abs(np.nanmin(frac.T)) if np.abs(np.nanmin(frac.T))> np.abs(np.nanmax(frac.T)) else np.abs(np.nanmax(frac.T))
+
+    image = ax.imshow(
+        frac.T,
+        origin="lower",
+        aspect="equal",
+        interpolation="none",
+        cmap="RdBu",
+        extent=(-0.5, n_pt1 - 0.5, -0.5, n_pt2 - 0.5),
+        vmin=0.2 if title=='AR' or title=='AR_like' else -diff,
+        vmax=0.46 if title=='AR' or title=='AR_like' else diff,
+    )
+
+    for pt2_bin in range(n_pt2):
+        for pt1_bin in range(n_pt1):
+            value = frac.T[pt2_bin, pt1_bin]
+
+            if np.isfinite(value):
+                ax.text(
+                    pt1_bin,
+                    pt2_bin,
+                    f"{value:.2f}",
+                    ha="center",
+                    va="center",
+                    color="black" if value > (0.24 if title=='AR' or title=='AR_like' else -0.06) and value < (0.42 if title=='AR' or title=='AR_like' else 0.06) else "white",
+                    fontsize=8,
+                )
+
+            # Values outside of range get outlined red
+            if (value < 0.2 or value > 0.469) and (title=='AR' or title=='AR_like'):
+                rectangle = plt.Rectangle(
+                    (pt1_bin - 0.5, pt2_bin - 0.5),
+                    1,
+                    1,
+                    fill=False,
+                    edgecolor="red",
+                    linewidth=2,
+                )
+                ax.add_patch(rectangle)
+
+    # Positions of bin boundaries.
+    x_boundaries = np.arange(n_pt1 + 1) - 0.5
+    y_boundaries = np.arange(n_pt2 + 1) - 0.5
+
+    # Format the actual pT bin edges.
+    edge_labels_x = [
+        f"{edge:.1f}" if np.isfinite(edge) else "∞"
+        for edge in pt1_edges
+    ]
+    edge_labels_y = [
+            f"{edge:.1f}" if np.isfinite(edge) else "∞"
+            for edge in pt2_edges
+        ]
+
+    
+
+    ax.set_xticks(x_boundaries)
+    ax.set_yticks(y_boundaries)
+    ax.set_xticklabels(edge_labels_x, rotation=45, ha="right", fontsize=15)
+    ax.set_yticklabels(edge_labels_y, fontsize=15)
+
+    ax.text(0.04, 0.85, 
+            f"Mean = {global_frac:.3f} \nStd = {global_std:.3f}", 
+            fontsize=20,  ha='left', va='top', transform=ax.transAxes, ma='left')
+
+    # Draw lines along the square boundaries.
+    ax.grid(
+        which="major",
+        color="white",
+        linewidth=0.6,
+        alpha=0.6,
+    )
+
+    ax.set_xlabel(r"$p_{T,1}$ [GeV]")
+    ax.set_ylabel(r"$p_{T,2}$ [GeV]")
+
+    fig.colorbar(image, ax=ax, label="Fraction factor (mean of original bins)" if averaged else "Fraction factor")
+    fig.tight_layout()
+    return fig, ax
+
 
 def plot_fractions_grouped(title, grouped_frac, grouping, safe_path):
 
@@ -2309,4 +2424,117 @@ def plot_fractions_grouped(title, grouped_frac, grouping, safe_path):
         fig.tight_layout()
         plt.savefig(safe_path / f'plot_fractions_{title}_{group_name}_{key}.png', dpi=150, bbox_inches='tight')
         plt.savefig(safe_path / f'plot_fractions_{title}_{group_name}_{key}.pdf', dpi=150, bbox_inches='tight')
+        plt.close(fig)
+
+def plot_fractions_grouped_3split(title, grouped_frac, grouping, safe_path, tau):
+
+    if grouping == 'tau_decaymode':
+        grouping_key = ['0', '1', '10', '11']
+        group_name = 'tau_dm'
+        cat_title = r'$\tau$ DM'
+    elif grouping == 'njets':
+        grouping_key = ['0', '1', '2_1000']
+        group_name = 'njets'
+        cat_title = r'$N_{jets}$'
+    else:
+        raise ValueError(f'Unsupported grouping: {grouping}')
+
+    for key in grouping_key:
+        frac_arlike = grouped_frac[key]
+
+        frac, pt1_edges, pt2_edges = frac_arlike['fraction'], frac_arlike['pt1_edges'], frac_arlike['pt2_edges']
+        global_frac, global_std = frac_arlike['global_frac'], frac_arlike['global_std']
+
+        frac = np.array(frac)
+        n_pt1, n_pt2 = frac.shape
+
+        fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+
+        CMS_LABEL(ax)
+        CMS_CATEGORY_TITLE(ax, title=title)
+        CMS_LUMI_TITLE(ax)
+        CMS_CHANNEL_TITLE(ax)
+
+        diff = np.abs(np.nanmin(frac.T)) if np.abs(np.nanmin(frac.T))> np.abs(np.nanmax(frac.T)) else np.abs(np.nanmax(frac.T))
+
+        image = ax.imshow(
+            frac.T,
+            origin="lower",
+            aspect="equal",
+            interpolation="none",
+            cmap="RdBu",
+            extent=(-0.5, n_pt1 - 0.5, -0.5, n_pt2 - 0.5),
+            vmin=0.2 if title=='AR' or title=='AR_like' else -diff,
+            vmax=0.46 if title=='AR' or title=='AR_like' else diff,
+        )
+
+        for pt2_bin in range(n_pt2):
+            for pt1_bin in range(n_pt1):
+                value = frac.T[pt2_bin, pt1_bin]
+
+                if np.isfinite(value):
+                    ax.text(
+                        pt1_bin,
+                        pt2_bin,
+                        f"{value:.2f}",
+                        ha="center",
+                        va="center",
+                        color="black" if value > 0.24 and value < 0.42 else "white",
+                        fontsize=8,
+                    )
+
+                # Values outside of range get outlined red
+                if (value < 0.2 or value > 0.469) and (title=='AR' or title=='AR_like'):
+                    rectangle = plt.Rectangle(
+                        (pt1_bin - 0.5, pt2_bin - 0.5),
+                        1,
+                        1,
+                        fill=False,
+                        edgecolor="black",
+                        linewidth=2,
+                    )
+                    ax.add_patch(rectangle)
+
+        geq = r'$\geq$'
+        cat = f"{cat_title}{geq}2" if key=="2_1000" else f"{cat_title}={key}"
+        ax.text(0.04, 0.85, f"{cat}:", fontsize=20,  ha='left', va='top', transform=ax.transAxes, ma='left')
+        ax.text(0.14, 0.80, "Mean\nStd", fontsize=20, ha="right", va="top", transform=ax.transAxes)
+        ax.text(0.145, 0.80, f"= {global_frac:.3f}\n= {global_std:.3f}", fontsize=20, ha="left", va="top", transform=ax.transAxes)
+        
+        # Positions of bin boundaries.
+        x_boundaries = np.arange(n_pt1 + 1) - 0.5
+        y_boundaries = np.arange(n_pt2 + 1) - 0.5
+
+        # Format the actual pT bin edges.
+        edge_labels_x = [
+            f"{edge:.1f}" if np.isfinite(edge) else "∞"
+            for edge in pt1_edges
+        ]
+        edge_labels_y = [
+                f"{edge:.1f}" if np.isfinite(edge) else "∞"
+                for edge in pt2_edges
+            ]
+
+        
+
+        ax.set_xticks(x_boundaries)
+        ax.set_yticks(y_boundaries)
+        ax.set_xticklabels(edge_labels_x, rotation=45, ha="right", fontsize=15)
+        ax.set_yticklabels(edge_labels_y, fontsize=15)
+
+        # Draw lines along the square boundaries.
+        ax.grid(
+            which="major",
+            color="white",
+            linewidth=0.6,
+            alpha=0.6,
+        )
+
+        ax.set_xlabel(r"$p_{T,1}$ [GeV]")
+        ax.set_ylabel(r"$p_{T,2}$ [GeV]")
+
+        fig.colorbar(image, ax=ax, label="Fraction factor")
+        fig.tight_layout()
+        plt.savefig(safe_path / f'plot_fractions_{title}_{group_name}_{key}_{tau}.png', dpi=150, bbox_inches='tight')
+        plt.savefig(safe_path / f'plot_fractions_{title}_{group_name}_{key}_{tau}.pdf', dpi=150, bbox_inches='tight')
         plt.close(fig)

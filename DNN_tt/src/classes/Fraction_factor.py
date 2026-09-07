@@ -103,7 +103,7 @@ def fraction_in_bins_3split(which_frac, df_tau1, df_tau2, df_tau3, frac_file, re
         pt2_bin_edges = _equal_weight_bin_edges(
             pt2_values,
             weights,
-            events_per_bin=5000,
+            events_per_bin=8000,
         )
         pt1_bin_edges = pt2_bin_edges
 
