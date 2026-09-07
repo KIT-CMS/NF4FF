@@ -38,8 +38,10 @@ class Args(Tap):
     dnn_grouped: bool = True
     classic: bool = False
 
-    closure_DR: bool = False
-    FF_dist: bool = False
+    vars: Literal['small', 'large'] = 'small' # small: use small set of variables | large: use large set of variables
+
+    closure_DR: bool = True
+    FF_dist: bool = True
     closure_AR: bool = True
 
 args = Args().parse_args()
@@ -125,6 +127,10 @@ def get_bins_and_label(variable, channel='et'):
 def main():
     labels_cfg = load_config(LABELS_CONFIG_PATH)
 
+    if args.vars == 'small': variables = VARIABLES_SMALL
+    elif args.vars == 'large': variables = VARIABLES_LARGE
+    else: variables = VARIABLES_SMALL
+
     # ----- grouping definitions -----    
     grouping_njets = (
         (0,),
@@ -181,7 +187,7 @@ def main():
         # ----- Closure plots in DR -----
         if args.closure_DR:
             for grouping in PLOT_GROUPINGS:
-                for var in VARIABLES_SMALL:
+                for var in variables:
                     bins, label = get_bins_and_label(var)
                     label = labels_cfg['tt'][var]
 
@@ -261,7 +267,7 @@ def main():
 
                 if args.frac == 'pt_binned':
                     # ----- get fraction and bins -----
-                    cfg_frac = load_config(cfg_path['fractions'])
+                    cfg_frac = load_config(cfg_path['fractions']+'/fractions.yaml')
                     safe_path = PLOTS_DIR / 'tau_split' / 'Fraction_factors' / grouping / f'{args.frac}_fraction'
                     # ----- Ar-like
                     frac_arlike = cfg_frac['AR_like'][f'{group_name}']
@@ -270,9 +276,9 @@ def main():
                         
                     # ----- AR
                     # ----- calculate fraction in AR -----                    
-                    fraction_in_bins_grouped(df.data.AR_tau1, df.data.AR_tau2, cfg_path['fractions'], region='AR', ar_file=cfg_frac['AR_like'], grouping=group_name, grouping_variable=group_var, grouping_definition=group_def)
+                    fraction_in_bins_grouped(df.data.AR_tau1, df.data.AR_tau2, cfg_path['fractions']+'/fractions.yaml', region='AR', ar_file=cfg_frac['AR_like'], grouping=group_name, grouping_variable=group_var, grouping_definition=group_def)
                 
-                    cfg_frac = load_config(cfg_path['fractions'])
+                    cfg_frac = load_config(cfg_path['fractions']+'/fractions.yaml')
                     frac_ar = cfg_frac['AR'][f'{group_name}']
                     plot_fractions_grouped('AR', grouped_frac=frac_ar, grouping=grouping, safe_path=safe_path)
     
@@ -285,7 +291,7 @@ def main():
             corr_emb_ff = sum([x[it].to_numpy()[0] for it in bkgs]) / [x[next(it for it in x.keys() if "data" in it and "Nominal" in it and "#q_1" in it)].to_numpy()[0]]
     
             
-            for var in VARIABLES_SMALL:
+            for var in variables:
                 bins, label = get_bins_and_label(var)
                 label = labels_cfg['tt'][var]
                 fig, ax, _ = plot_closure(
@@ -303,7 +309,7 @@ def main():
             logger.info('Saved all closure plots in tau decaymode')
 
 
-            for var in VARIABLES_SMALL:
+            for var in variables:
                 bins, label = get_bins_and_label(var)
                 label = labels_cfg['tt'][var]
                 fig, ax, _ = plot_closure(
@@ -327,7 +333,7 @@ def main():
 
         # ----- Closure plots in DR -----
         if args.closure_DR:
-            for var in VARIABLES_SMALL:
+            for var in variables:
                 bins, label = get_bins_and_label(var)
                 label = labels_cfg['tt'][var]
 
@@ -379,7 +385,7 @@ def main():
 
             if args.frac == 'pt_binned':
                 # ----- get fraction and bins -----
-                cfg_frac = load_config(cfg_path['fractions'])
+                cfg_frac = load_config(cfg_path['fractions']+'/fractions.yaml')
                 # ----- Ar-like
                 frac_arlike = cfg_frac['AR_like']['ungrouped']
                 frac, pt1_edges, pt2_edges = frac_arlike['fraction'], frac_arlike['pt1_edges'], frac_arlike['pt2_edges']
@@ -392,9 +398,9 @@ def main():
 
                 # ----- AR
                 # ----- calculate fraction in AR -----
-                fraction_in_bins(df.data.AR_tau1, df.data.AR_tau2, cfg_path['fractions'], region='AR', pt1_bin_edges=pt1_edges, pt2_bin_edges=pt2_edges)
+                fraction_in_bins(df.data.AR_tau1, df.data.AR_tau2, cfg_path['fractions']+'/fractions.yaml', region='AR', pt1_bin_edges=pt1_edges, pt2_bin_edges=pt2_edges)
 
-                cfg_frac = load_config(cfg_path['fractions'])
+                cfg_frac = load_config(cfg_path['fractions']+'/fractions.yaml')
                 frac_ar = cfg_frac['AR']['ungrouped']
                 fraction_ar, pt1_edges_ar, pt2_edges_ar = frac_ar['fraction'], frac_ar['pt1_edges'], frac_ar['pt2_edges']
                 mean_ar, std_ar = frac_ar['global_frac'], frac_ar['global_std']
@@ -419,7 +425,7 @@ def main():
 
         # ----- FF closure in AR -----
         if args.closure_AR:
-            for var in VARIABLES_SMALL:
+            for var in variables:
                 bins, label = get_bins_and_label(var)
                 label = labels_cfg['tt'][var]
                 fig, ax, _ = plot_closure(
@@ -453,7 +459,7 @@ def main():
 
         # ----- Closure plots in DR -----
         if args.closure_DR:
-            for var in VARIABLES_SMALL:
+            for var in variables:
                 bins, label = get_bins_and_label(var)
                 label = labels_cfg['tt'][var]
 
@@ -489,7 +495,7 @@ def main():
 
         # ----- FF closure in AR -----
         if args.closure_AR:
-            for var in VARIABLES_SMALL:
+            for var in variables:
                 bins, label = get_bins_and_label(var)
                 label = labels_cfg['tt'][var]
                 fig, ax, _ = plot_closure_incl(
@@ -507,8 +513,6 @@ def main():
 
             logger.info('Saved all closure plots for tau inclusive grouped DNN')
 
-
-
     elif args.taus=='incl' and not args.dnn_grouped:
         logger.info('Initiaize plotting for tau inclusive FF calculated through single DNN...')
 
@@ -524,7 +528,7 @@ def main():
 
         # ----- Closure plots in DR -----
         if args.closure_DR:
-            for var in VARIABLES_SMALL:
+            for var in variables:
                 bins, label = get_bins_and_label(var)
                 label = labels_cfg['tt'][var]
 
@@ -559,7 +563,7 @@ def main():
 
         # ----- FF closure in AR -----
         if args.closure_AR:
-            for var in VARIABLES_SMALL:
+            for var in variables:
                 bins, label = get_bins_and_label(var)
                 label = labels_cfg['tt'][var]
                 fig, ax, _ = plot_closure_incl(
@@ -591,7 +595,7 @@ def main():
                 elif split == 'tau2': df_arlike = df.data.AR_like_2
                 elif split == 'tau1&tau2': df_arlike = df.data.AR_like_3                           
             
-                for var in VARIABLES_SMALL:
+                for var in variables:
                     bins, label = get_bins_and_label(var)
                     label = labels_cfg['tt'][var]
     
@@ -680,7 +684,7 @@ def main():
 
         # ----- FF closure in AR -----
         if args.closure_AR:
-                for var in VARIABLES_SMALL:
+                for var in variables:
                     bins, label = get_bins_and_label(var)
                     label = labels_cfg['tt'][var]
                     fig, ax, _ = plot_closure_3split(
@@ -709,7 +713,7 @@ def main():
                 elif split == 'tau2': df_arlike = df.data.AR_like_2
                 elif split == 'tau1&tau2': df_arlike = df.data.AR_like_3
 
-                for var in VARIABLES_SMALL:
+                for var in variables:
                     bins, label = get_bins_and_label(var)
                     label = labels_cfg['tt'][var]
 
@@ -797,7 +801,7 @@ def main():
             bkgs = [it for it in x.keys() if "#q_1;" in it and "Nominal" in it and any(subit in it for subit in ["TT-TTL", "DY-ZL", "jetFakes#", "VV-VVL", "EMB#"])]
             corr_emb_ff = sum([x[it].to_numpy()[0] for it in bkgs]) / [x[next(it for it in x.keys() if "data" in it and "Nominal" in it and "#q_1" in it)].to_numpy()[0]]
 
-            for var in VARIABLES_LARGE:
+            for var in variables:
                 bins, label = get_bins_and_label(var)
                 label = labels_cfg['tt'][var]
                 fig, ax, _ = plot_closure_3split(

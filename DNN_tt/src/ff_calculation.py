@@ -34,7 +34,7 @@ class Args(Tap):
     
     taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
-    frac: Literal['global', 'pt_binned'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction
+    frac: Literal['global', 'pt_binned'] = 'pt_binned' # global: use global fraction | pt_binned: use pt-binned fraction
     dnn_grouped: bool = True
     classic: bool = False
 
@@ -74,16 +74,29 @@ def main():
     training_variables = load_variables(TRAINING_VAR_PATH, args.var)
     if args.taus == 'split':
         try:
-            with open(cfg_path['fractions'], 'x') as file:
+            with open(cfg_path['fractions']+"/fractions.yaml", 'x') as file:
                 dict_arlike = {'AR_like': {'ungrouped': '', 'njets': {}, 'tau_dm': {}}}
                 dict_ar = {'AR': {'ungrouped': '', 'njets': {}, 'tau_dm': {}}}
                 file.write('# saved values of fraction factors for ungrouped, njets and tauDM \n')
                 yaml.safe_dump(dict_arlike, file)
                 yaml.safe_dump(dict_ar, file)
-            logger.info(f'Created {cfg_path["fractions"]}')
+            logger.info(f'Created {cfg_path["fractions"]}/fractions.yaml')
         except FileExistsError:
-            logger.info(f'{cfg_path["fractions"]} already exists')
-    
+            logger.info(f'{cfg_path["fractions"]}/fractions.yaml already exists')
+
+    if args.taus == '3split':
+        for name in ['tau1', 'tau2', 'tau1&tau2']:
+            try:
+                with open(cfg_path['fractions']+f"/fractions_{name}.yaml", 'x') as file:
+                    dict_arlike = {'AR_like': {'ungrouped': '', 'njets': {}, 'tau_dm': {}}}
+                    dict_ar = {'AR': {'ungrouped': '', 'njets': {}, 'tau_dm': {}}}
+                    file.write('# saved values of fraction factors for ungrouped, njets and tauDM \n')
+                    yaml.safe_dump(dict_arlike, file)
+                    yaml.safe_dump(dict_ar, file)
+                logger.info(f'Created {cfg_path["fractions"]}/fractions_{name}.yaml')
+            except FileExistsError:
+                logger.info(f'{cfg_path["fractions"]}/fractions_{name}.yaml already exists')
+
 
     #exit()
 
@@ -152,7 +165,7 @@ def main():
                 df=df,
                 df1=df.AR_tau1,
                 df2=df.AR_tau2,
-                frac_file=cfg_path['fractions'],
+                frac_file=cfg_path['fractions']+'/fractions.yaml',
                 grouping=name,
                 grouping_variable = group_var,
                 grouping_definition = group_def,
@@ -195,7 +208,7 @@ def main():
             df=df,
             df1=df.AR_tau1,
             df2=df.AR_tau2,
-            frac_file=cfg_path['fractions'],
+            frac_file=cfg_path['fractions']+"/fractions.yaml",
             fraction=args.frac
         )       
             
@@ -380,7 +393,8 @@ def main():
             grouping='njets',
             grouping_variable = 'njets',
             grouping_definition = grouping_njets,
-            fraction=args.frac
+            fraction=args.frac,
+            where_calc_frac = 'AR_like'
         )
 
     if args.taus == 'split' or args.taus == '3split':

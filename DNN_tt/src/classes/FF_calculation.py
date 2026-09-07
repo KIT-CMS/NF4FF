@@ -13,6 +13,8 @@ from classes.Fraction_factor import (
     fraction_in_bins,
     fraction_in_bins_grouped,
     fractions_for_events,
+    fraction_in_bins_3split,
+    fraction_in_bins_grouped_3split,
 )
 from classes.Loading import write_yaml_to_file, load_config
 
@@ -744,22 +746,21 @@ def calculate_fake_factor_frac_3split(
         else:
             raise ValueError(f"Invalid value for where_calc_frac: {where_calc_frac}. Must be 'AR_like' or 'AR'.")
         
-        df1[ff_tau1] = 1/3 * _df1[ff_tau1]
-        df2[ff_tau2] = 1/3 * _df2[ff_tau2]
-        df3[ff_tau3] = 1/3 * _df3[ff_tau3]
-
+        df1[ff_tau1] = frac1 * _df1[ff_tau1]
+        df2[ff_tau2] = frac2 * _df2[ff_tau2]
+        df3[ff_tau3] = frac3 * _df3[ff_tau3]
+        logger.info(f"Saved Fraction Factors: \nfrac1 = {frac1:.4f}, frac2 = {frac2:.4f}, frac3 = {frac3:.4f}")
+        
     elif fraction == "pt_binned":
-        #Todo
         if grouping is None:
-            frac, pt1_edges, pt2_edges = fraction_in_bins(df.data.AR_like_tau1, df.data.AR_like_tau2, frac_file)
+            for tau, dfn, _dfn, ff in zip(['tau1', 'tau2', 'tau1&tau2'], [df1, df2, df3], [_df1, _df2, _df3], [ff_tau1, ff_tau2, ff_tau3]):
+                file = frac_file+f'/fractions_{tau}.yaml'
+                frac, pt1_edges, pt2_edges = fraction_in_bins_3split(which_frac=tau, df_tau1=df.data.AR_like_1, df_tau2=df.data.AR_like_2, df_tau3=df.data.AR_like_3, frac_file=file)
 
-            frac_tau1 = fractions_for_events(_df1, frac, pt1_edges, pt2_edges)
-            frac_tau2 = fractions_for_events(_df2, frac, pt1_edges, pt2_edges)
-            frac_tau3 = fractions_for_events(_df3, frac, pt1_edges, pt2_edges)
+                frac = fractions_for_events(_dfn, frac, pt1_edges, pt2_edges, fallback=1/3)
 
-            df1[ff_tau1] = frac_tau1 * _df1[ff_tau1]
-            df2[ff_tau2] = (1.0 - frac_tau2) * _df2[ff_tau2]
-            logger.info(f'Saved Fraction Factors for ungrouped')
+                dfn[ff] = frac * _dfn[ff]
+                logger.info(f'Saved Fraction Factors for ungrouped {tau}')
             
         else:
             if grouping_variable is None or grouping_definition is None:
@@ -772,32 +773,29 @@ def calculate_fake_factor_frac_3split(
             else:
                 grouping_var_1 = grouping_var_2 = grouping_variable
 
-            grouped_frac = fraction_in_bins_grouped(
-                df.data.AR_like_tau1,
-                df.data.AR_like_tau2,
-                frac_file=frac_file,
-                grouping=grouping,
-                grouping_variable=grouping_variable,
-                grouping_definition=grouping_definition,
-            )
-            frac_tau1 = fraction_for_events_grouped(
-                _df1,
-                grouped_frac,
-                grouping_variable=grouping_var_1,
-                grouping_definition=grouping_definition,
-            )
-            frac_tau2 = fraction_for_events_grouped(
-                _df2,
-                grouped_frac,
-                grouping_variable=grouping_var_2,
-                grouping_definition=grouping_definition,
-            )
-            target_dtype = _df1[ff_tau1].dtype
-            df1[ff_tau1] = (frac_tau1 * _df1[ff_tau1]).astype(target_dtype)
-            target_dtype = _df2[ff_tau2].dtype
-            df2[ff_tau2] = (1.0 - frac_tau2) * _df2[ff_tau2].astype(target_dtype)
-            logger.info("Saved Fraction Factors for grouping %s", grouping)
-            return grouped_frac
+            for tau, dfn, _dfn, ff in zip(['tau1', 'tau2', 'tau1&tau2'], [df1, df2, df3], [_df1, _df2, _df3], [ff_tau1, ff_tau2, ff_tau3]):
+                file = frac_file+f'/fractions_{tau}.yaml'
+                grouped_frac = fraction_in_bins_grouped_3split(
+                    tau,
+                    df.data.AR_like_1,
+                    df.data.AR_like_2,
+                    df.data.AR_like_3,
+                    frac_file=file,
+                    grouping=grouping,
+                    grouping_variable=grouping_variable,
+                    grouping_definition=grouping_definition,
+                )
+                frac = fraction_for_events_grouped(
+                    _dfn,
+                    grouped_frac,
+                    grouping_variable=grouping_variable,
+                    grouping_definition=grouping_definition,
+                    fallback=1/3,
+                )
+                target_dtype = _dfn[ff].dtype
+                dfn[ff] = (frac * _dfn[ff]).astype(target_dtype)
+                logger.info(f"Saved Fraction Factors for grouping {grouping} for {tau}")
+                #return grouped_frac
 
 
 # -------------- classic fake factor determination -------------

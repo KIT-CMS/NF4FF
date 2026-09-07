@@ -75,6 +75,86 @@ def fraction_in_bins(df_tau1, df_tau2, frac_file, region='AR_like', pt1_bin_edge
 
     return fraction, pt1_edges, pt2_edges
 
+def fraction_in_bins_3split(which_frac, df_tau1, df_tau2, df_tau3, frac_file, region='AR_like', pt1_bin_edges=None, pt2_bin_edges=None):
+    '''
+    which_frac = tau1, tau2, tau1&tau2
+    df_taun = df.data.AR_like_taun
+    '''
+    # ----- weights -----
+    if region == 'AR_like':
+        weights_tau1 = df_tau1["weight_qcd"] * df_tau1["ff_DR_dnn_1"]
+        weights_tau2 = df_tau2["weight_qcd"] * df_tau2["ff_DR_dnn_2"]
+        weights_tau3 = df_tau3["weight_qcd"] * df_tau3["ff_DR_dnn_3"]
+    elif region == 'AR':
+        weights_tau1 = df_tau1["weight"] * df_tau1["ff_dnn_1"]
+        weights_tau2 = df_tau2["weight"] * df_tau2["ff_dnn_2"]
+        weights_tau3 = df_tau3["weight"] * df_tau3["ff_dnn_3"]
+    else:
+        raise ValueError(f"Unknown region: {region!r}. Expected 'AR_like' or 'AR'.")
+
+    # ----- bins -----
+    pt2_values = np.concatenate([df_tau1["pt_2"].to_numpy(), df_tau2["pt_2"].to_numpy(), df_tau3["pt_2"].to_numpy()])
+    weights = np.concatenate([weights_tau1.to_numpy(), weights_tau2.to_numpy(), weights_tau3.to_numpy()])
+
+    if pt2_bin_edges is not None or pt1_bin_edges is not None:
+        pt1_bin_edges = pt1_bin_edges
+        pt2_bin_edges = pt2_bin_edges
+    else:
+        pt2_bin_edges = _equal_weight_bin_edges(
+            pt2_values,
+            weights,
+            events_per_bin=5000,
+        )
+        pt1_bin_edges = pt2_bin_edges
+
+    # ----- counts -----
+    f1_t2, pt1_edges, pt2_edges = np.histogram2d(
+        df_tau1["pt_1"],
+        df_tau1["pt_2"],
+        bins=(pt1_bin_edges, pt2_bin_edges),
+        weights=weights_tau1,
+    )
+
+    t1_f2, _, _ = np.histogram2d(
+        df_tau2["pt_1"],
+        df_tau2["pt_2"],
+        bins=(pt1_bin_edges, pt2_bin_edges),
+        weights=weights_tau2,
+    )
+
+    f1_f2, _, _ = np.histogram2d(
+            df_tau3["pt_1"],
+            df_tau3["pt_2"],
+            bins=(pt1_bin_edges, pt2_bin_edges),
+            weights=weights_tau3,
+        )
+
+    if which_frac=='tau1': numerator = f1_t2
+    elif which_frac=='tau2': numerator = t1_f2
+    elif which_frac=='tau1&tau2': numerator = f1_f2
+    else: logger.error(f'which_frac is {which_frac}. Expected tau1, tau2 or tau1&tau2.')
+    denominator = f1_t2 + t1_f2 + f1_f2
+
+    fraction = np.divide(
+        numerator,
+        denominator,
+        out=np.full_like(numerator, np.nan),
+        where=denominator != 0,
+    )
+
+    # ----- global -----
+    h = fraction.flatten()
+    h = h[~np.isnan(h)]
+    global_frac = np.mean(h)
+    std = np.std(h)
+
+    # ----- save fraction in yaml for plotting -----
+    all_frac = load_config(frac_file)
+    all_frac[region]['ungrouped'] = dict(zip(['fraction', 'pt1_edges', 'pt2_edges', 'global_frac', 'global_std'],[fraction, pt1_edges, pt2_edges, global_frac, std]))
+    write_yaml_to_file(all_frac, frac_file)
+
+    return fraction, pt1_edges, pt2_edges
+
 def fraction_in_bins_grouped(
         df_tau1, 
         df_tau2,
@@ -200,6 +280,151 @@ def fraction_in_bins_grouped(
 
     return grouped_fractions
 
+def fraction_in_bins_grouped_3split(
+        which_frac,
+        df_tau1, 
+        df_tau2,
+        df_tau3,
+        frac_file: str,
+        region='AR_like', 
+        ar_file=None,
+        grouping=None, grouping_variable=None, grouping_definition=None):
+    '''
+    Calculate the tau-1 fraction independently for every requested group.
+
+    ``grouping_variable`` may either be one column name (for example
+    ``"njets"``) or the two column names belonging to tau 1 and tau 2 (for
+    example ``["tau_decaymode_1", "tau_decaymode_2"]``).  The return value is
+    a dictionary mapping the group name to the usual
+    ``(fraction, pt1_edges, pt2_edges)`` tuple.
+    '''
+
+    if grouping_variable is None or grouping_definition is None or grouping is None:
+        logger.warning("Grouping variable or grouping definition or grouping is None. Calculating ungrouped fractions instead.")
+        return fraction_in_bins_3split(which_frac,df_tau1, df_tau2, df_tau3, frac_file, region)
+
+    # ----- grouping variable handling -----
+    if isinstance(grouping_variable, list):
+        if len(grouping_variable) != 2:
+            raise ValueError("grouping_variable must contain exactly two column names when supplied as a list.")
+        grouping_var_1 = grouping_variable[0]
+        grouping_var_2 = grouping_variable[1]
+    else:
+        grouping_var_1 = grouping_variable
+        grouping_var_2 = grouping_variable    
+
+    if region not in {'AR_like', 'AR'}:
+        raise ValueError(f"Unknown region: {region!r}. Expected 'AR_like' or 'AR'.")
+
+    group_tau1_masks = _build_group_masks(
+        np.asarray(df_tau1[grouping_var_1]), grouping_definition
+    )
+    group_tau2_masks = dict(_build_group_masks(
+        np.asarray(df_tau2[grouping_var_2]), grouping_definition
+    ))
+
+    group_tau3_masks = dict(_build_group_masks(
+            np.asarray(df_tau3[grouping_var_1]), grouping_definition
+        ))
+
+    grouped_fractions = {}
+    all_frac = load_config(frac_file)
+    for group_name, tau1_mask in group_tau1_masks:
+        tau2_mask = group_tau2_masks[group_name]
+        tau3_mask = group_tau3_masks[group_name]
+        if not np.any(tau1_mask) and not np.any(tau2_mask) and not np.any(tau3_mask):
+            raise ValueError(f"Group {group_name!r} contains no events.")
+        
+        # ----- fraction in bins for grouped -----
+        df1 = df_tau1.loc[tau1_mask]
+        df2 = df_tau2.loc[tau2_mask]
+        df3 = df_tau3.loc[tau3_mask]
+
+        # ----- weights -----
+        if region == 'AR_like':
+            weights_tau1 = df1["weight_qcd"] * df1[f"ff_DR_dnn_1_{grouping}"]
+            weights_tau2 = df2["weight_qcd"] * df2[f"ff_DR_dnn_2_{grouping}"]
+            weights_tau3 = df3["weight_qcd"] * df3[f"ff_DR_dnn_3_{grouping}"]
+        elif region == 'AR':
+            weights_tau1 = df1["weight"] * df1[f"ff_dnn_1_{grouping}"]
+            weights_tau2 = df2["weight"] * df2[f"ff_dnn_2_{grouping}"]
+            weights_tau3 = df3["weight"] * df3[f"ff_dnn_3_{grouping}"]
+        else:
+            raise ValueError(f"Unknown region: {region!r}. Expected 'AR_like' or 'AR'.")
+    
+        # ----- bins -----
+        pt2_values = np.concatenate([df1["pt_2"].to_numpy(), df2["pt_2"].to_numpy(), df3["pt_2"].to_numpy()])
+        weights = np.concatenate([weights_tau1.to_numpy(), weights_tau2.to_numpy(), weights_tau3.to_numpy()])
+
+        if region == 'AR' and ar_file is not None:
+            pt1_bin_edges = ar_file[grouping][group_name]['pt1_edges']
+            pt2_bin_edges = ar_file[grouping][group_name]['pt2_edges']
+        else:
+            pt2_bin_edges = _equal_weight_bin_edges(
+                pt2_values,
+                weights,
+                events_per_bin=5000,
+            )
+            pt1_bin_edges = pt2_bin_edges
+    
+        # ----- counts -----
+        f1_t2, pt1_edges, pt2_edges = np.histogram2d(
+            df1["pt_1"],
+            df1["pt_2"],
+            bins=(pt1_bin_edges, pt2_bin_edges),
+            weights=weights_tau1,
+        )
+    
+        t1_f2, _, _ = np.histogram2d(
+            df2["pt_1"],
+            df2["pt_2"],
+            bins=(pt1_bin_edges, pt2_bin_edges),
+            weights=weights_tau2,
+        )
+
+        f1_f2, _, _ = np.histogram2d(
+            df3["pt_1"],
+            df3["pt_2"],
+            bins=(pt1_bin_edges, pt2_bin_edges),
+            weights=weights_tau3,
+        )
+    
+        if which_frac=='tau1': numerator = f1_t2
+        elif which_frac=='tau2': numerator = t1_f2
+        elif which_frac=='tau1&tau2': numerator = f1_f2
+        else: logger.error(f'which_frac is {which_frac}. Expected tau1, tau2 or tau1&tau2.')
+        denominator = f1_t2 + t1_f2 + f1_f2
+    
+        fraction = np.divide(
+            numerator,
+            denominator,
+            out=np.full_like(numerator, np.nan),
+            where=denominator != 0,
+        )
+
+        # ----- global -----
+        h = fraction.flatten()
+        h = h[~np.isnan(h)]
+        global_frac = np.mean(h)
+        std = np.std(h)
+
+        grouped_fractions[group_name] = fraction, pt1_edges, pt2_edges, global_frac, std
+        all_frac[region][grouping][group_name] = {
+            'fraction': fraction,
+            'pt1_edges': pt1_edges,
+            'pt2_edges': pt2_edges,
+            'global_frac': global_frac,
+            'global_std': std,
+            }
+
+    # ----- save fraction in yaml for plotting -----
+    
+    write_yaml_to_file(all_frac, frac_file)
+
+    logger.info("Calculated fraction factors for group %s", group_name)
+
+    return grouped_fractions
+
 
 def _build_group_masks(values, grouping_definition):
     """Build masks using the same group semantics as grouped fake factors."""
@@ -218,7 +443,7 @@ def _build_group_masks(values, grouping_definition):
         masks.append((group_name, mask))
     return masks
 
-def fractions_for_events(frame, frac, pt1_edges, pt2_edges):
+def fractions_for_events(frame, frac, pt1_edges, pt2_edges, fallback=0.5):
     pt1_bin = np.searchsorted(
         pt1_edges, frame["pt_1"].to_numpy(), side="right"
     ) - 1
@@ -234,7 +459,7 @@ def fractions_for_events(frame, frac, pt1_edges, pt2_edges):
     event_fractions = frac[pt1_bin, pt2_bin]
 
     # Choose a fallback for bins without AR-like events.
-    return np.nan_to_num(event_fractions, nan=0.5)
+    return np.nan_to_num(event_fractions, nan=fallback)
 
 
 def fraction_for_events_grouped(
@@ -242,6 +467,7 @@ def fraction_for_events_grouped(
         grouped_fractions,
         grouping_variable,
         grouping_definition,
+        fallback=0.5,
 ):
     """Look up the appropriate grouped fraction for every event."""
     if not isinstance(grouped_fractions, dict):
@@ -250,7 +476,7 @@ def fraction_for_events_grouped(
             "fraction_in_bins_grouped()."
         )
 
-    event_fractions = np.full(len(frame), 0.5, dtype=float)
+    event_fractions = np.full(len(frame), fallback, dtype=float)
     assigned = np.zeros(len(frame), dtype=bool)
     group_masks = _build_group_masks(
         np.asarray(frame[grouping_variable]), grouping_definition
@@ -264,14 +490,14 @@ def fraction_for_events_grouped(
 
         group_frac, pt1_edges, pt2_edges, _, _ = grouped_fractions[group_name]
         event_fractions[group_mask] = fractions_for_events(
-            frame.loc[group_mask], group_frac, pt1_edges, pt2_edges
+            frame.loc[group_mask], group_frac, pt1_edges, pt2_edges, fallback
         )
         assigned |= group_mask
 
     if np.any(~assigned):
         logger.warning(
             "%d events are outside the fraction grouping definition; "
-            "using the fallback fraction 0.5.",
+            f"using the fallback fraction {fallback}.",
             np.count_nonzero(~assigned),
         )
 
