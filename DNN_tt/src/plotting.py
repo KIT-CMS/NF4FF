@@ -34,7 +34,7 @@ class Args(Tap):
 
     taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
-    frac: Literal['global', 'pt_binned', 'DNN'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
+    frac: Literal['global', 'pt_binned', 'DNN'] = 'pt_binned' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
     fraction_max_bins: int = 0 # Maximum displayed bins per axis for 3split fractions; 0 keeps all bins
     dnn_grouped: bool = True
     classic: bool = False
@@ -226,8 +226,8 @@ def main():
                     category_title=f'split in {grouping}',
                     grouping=grouping,
                 )
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_splitTaus_{grouping}.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_splitTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_splitTau.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_splitTaus.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig_ar)
                 logger.info(f'Saved FF distributions in AR for {grouping}')
 
@@ -237,8 +237,8 @@ def main():
                     category_title=f'split in {grouping}',
                     grouping=grouping,
                 )
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_combTaus_{grouping}.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_combTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_combTaus.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_combTaus.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig_ar_ct)
                 logger.info(f'Saved FF distributions in AR for combined Taus for {grouping}')
 
@@ -248,8 +248,8 @@ def main():
                     category_title=f'split in {grouping}',
                     grouping=grouping,
                 )
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_DR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_DR_splitTaus_{grouping}.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_DR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_DR_splitTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_DR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_DR_splitTaus.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_DR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_DR_splitTaus.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig_dr)
                 logger.info(f'Saved FF distributions in DR for {grouping}')
 
@@ -261,8 +261,8 @@ def main():
                     grouping=grouping,
                     clipped=False
                 )
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_unclipped_splitTaus_{grouping}.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_unclipped_splitTaus_{grouping}.pdf', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_unclipped_splitTaus.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_unclipped_splitTaus.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig_ar)
                 logger.info(f'Saved FF distributions in AR for {grouping}')
 

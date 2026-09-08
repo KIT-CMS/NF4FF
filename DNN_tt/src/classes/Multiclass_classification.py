@@ -4,12 +4,13 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, random_split
 from typing import Union
 from pathlib import Path
-from classes import DNN, FoldCombinedDNN
+
 import lightning.pytorch as L
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from lightning.pytorch.loggers import CSVLogger
-from classes import load_data, load_variables, save_model
-from yield_corrections_qcd import calculate_qcd_yield_corrections
+
+from classes.NeuralNetworks import DNN, FoldCombinedDNN, save_model
+from classes.Loading import load_data, load_variables
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

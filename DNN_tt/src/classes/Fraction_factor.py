@@ -17,8 +17,8 @@ def fraction_in_bins(df_tau1, df_tau2, frac_file, region='AR_like', pt1_bin_edge
         weights_tau1 = df_tau1["weight_qcd"] * df_tau1["ff_DR_dnn_tau1"]
         weights_tau2 = df_tau2["weight_qcd"] * df_tau2["ff_DR_dnn_tau2"]
     elif region == 'AR':
-        weights_tau1 = df_tau1["weight"] * df_tau1["ff_dnn_tau1"]
-        weights_tau2 = df_tau2["weight"] * df_tau2["ff_dnn_tau2"]
+        weights_tau1 = df_tau1["weight"] * df_tau1["ff_dnn_tau1_raw"]
+        weights_tau2 = df_tau2["weight"] * df_tau2["ff_dnn_tau2_raw"]
     else:
         raise ValueError(f"Unknown region: {region!r}. Expected 'AR_like' or 'AR'.")
 
@@ -86,9 +86,9 @@ def fraction_in_bins_3split(which_frac, df_tau1, df_tau2, df_tau3, frac_file, re
         weights_tau2 = df_tau2["weight_qcd"] * df_tau2["ff_DR_dnn_2"]
         weights_tau3 = df_tau3["weight_qcd"] * df_tau3["ff_DR_dnn_3"]
     elif region == 'AR':
-        weights_tau1 = df_tau1["weight"] * df_tau1["ff_dnn_1"]
-        weights_tau2 = df_tau2["weight"] * df_tau2["ff_dnn_2"]
-        weights_tau3 = df_tau3["weight"] * df_tau3["ff_dnn_3"]
+        weights_tau1 = df_tau1["weight"] * df_tau1["ff_dnn_1_raw"]
+        weights_tau2 = df_tau2["weight"] * df_tau2["ff_dnn_2_raw"]
+        weights_tau3 = df_tau3["weight"] * df_tau3["ff_dnn_3_raw"]
     else:
         raise ValueError(f"Unknown region: {region!r}. Expected 'AR_like' or 'AR'.")
 
@@ -212,8 +212,8 @@ def fraction_in_bins_grouped(
             weights_tau1 = df1["weight_qcd"] * df1[f"ff_DR_dnn_tau1_{grouping}"]
             weights_tau2 = df2["weight_qcd"] * df2[f"ff_DR_dnn_tau2_{grouping}"]
         elif region == 'AR':
-            weights_tau1 = df1["weight"] * df1[f"ff_dnn_tau1_{grouping}"]
-            weights_tau2 = df2["weight"] * df2[f"ff_dnn_tau2_{grouping}"]
+            weights_tau1 = df1["weight"] * df1[f"ff_dnn_tau1_{grouping}_raw"]
+            weights_tau2 = df2["weight"] * df2[f"ff_dnn_tau2_{grouping}_raw"]
         else:
             raise ValueError(f"Unknown region: {region!r}. Expected 'AR_like' or 'AR'.")
     
@@ -346,9 +346,9 @@ def fraction_in_bins_grouped_3split(
             weights_tau2 = df2["weight_qcd"] * df2[f"ff_DR_dnn_2_{grouping}"]
             weights_tau3 = df3["weight_qcd"] * df3[f"ff_DR_dnn_3_{grouping}"]
         elif region == 'AR':
-            weights_tau1 = df1["weight"] * df1[f"ff_dnn_1_{grouping}"]
-            weights_tau2 = df2["weight"] * df2[f"ff_dnn_2_{grouping}"]
-            weights_tau3 = df3["weight"] * df3[f"ff_dnn_3_{grouping}"]
+            weights_tau1 = df1["weight"] * df1[f"ff_dnn_1_{grouping}_raw"]
+            weights_tau2 = df2["weight"] * df2[f"ff_dnn_2_{grouping}_raw"]
+            weights_tau3 = df3["weight"] * df3[f"ff_dnn_3_{grouping}_raw"]
         else:
             raise ValueError(f"Unknown region: {region!r}. Expected 'AR_like' or 'AR'.")
     
@@ -421,7 +421,7 @@ def fraction_in_bins_grouped_3split(
     
     write_yaml_to_file(all_frac, frac_file)
 
-    logger.info("Calculated fraction factors for group %s", group_name)
+    logger.info("Calculated fraction factors for group %s", grouping)
 
     return grouped_fractions
 

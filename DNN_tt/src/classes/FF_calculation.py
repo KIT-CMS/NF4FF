@@ -148,11 +148,11 @@ def calculate_fake_factors_ungrouped(
     else:
         df.AR_tau1[f"ff_unclipped_dnn_tau1"] = fake_factor_tau1
         fake_factor_tau1 = np.clip(fake_factor_tau1, 0, 3)
-        df.AR_tau1[f"ff_dnn_tau1"] = fake_factor_tau1            
+        df.AR_tau1[f"ff_dnn_tau1_raw"] = fake_factor_tau1            
 
         df.AR_tau2[f"ff_unclipped_dnn_tau2"] = fake_factor_tau2
         fake_factor_tau2 = np.clip(fake_factor_tau2, 0, 3)
-        df.AR_tau2[f"ff_dnn_tau2"] = fake_factor_tau2
+        df.AR_tau2[f"ff_dnn_tau2_raw"] = fake_factor_tau2
 
 def calculate_fake_factors_grouped(
     df,
@@ -262,11 +262,11 @@ def calculate_fake_factors_grouped(
     else:
         df.AR_tau1[f"ff_unclipped_dnn_tau1{suffix}"] = fake_factor_tau1
         fake_factor_tau1 = np.clip(fake_factor_tau1, 0, 3)
-        df.AR_tau1[f"ff_dnn_tau1{suffix}"] = fake_factor_tau1
+        df.AR_tau1[f"ff_dnn_tau1{suffix}_raw"] = fake_factor_tau1
 
         df.AR_tau2[f"ff_unclipped_dnn_tau2{suffix}"] = fake_factor_tau2
         fake_factor_tau2 = np.clip(fake_factor_tau2, 0, 3)
-        df.AR_tau2[f"ff_dnn_tau2{suffix}"] = fake_factor_tau2
+        df.AR_tau2[f"ff_dnn_tau2{suffix}_raw"] = fake_factor_tau2
 
 
 def calculate_fake_factor_frac(
@@ -289,18 +289,18 @@ def calculate_fake_factor_frac(
     _df2 = df2.copy()
 
     if grouping is None:
-        ff_tau1 = "ff_dnn_tau1"
-        ff_tau2 = "ff_dnn_tau2"
+        ff_tau1 = "ff_dnn_tau1_raw"
+        ff_tau2 = "ff_dnn_tau2_raw"
     elif grouping == 'tau_dm':
-        ff_tau1 = "ff_dnn_tau1_tau_dm"
-        ff_tau2 = "ff_dnn_tau2_tau_dm"
+        ff_tau1 = "ff_dnn_tau1_tau_dm_raw"
+        ff_tau2 = "ff_dnn_tau2_tau_dm_raw"
     elif grouping == 'njets':
-        ff_tau1 = "ff_dnn_tau1_njets"
-        ff_tau2 = "ff_dnn_tau2_njets"
+        ff_tau1 = "ff_dnn_tau1_njets_raw"
+        ff_tau2 = "ff_dnn_tau2_njets_raw"
 
     if fraction == "global":
-        df1[ff_tau1] = 0.5 * _df1[ff_tau1]
-        df2[ff_tau2] = 0.5 * _df2[ff_tau2]
+        df1[ff_tau1.removesuffix('_raw')] = 0.5 * _df1[ff_tau1]
+        df2[ff_tau2.removesuffix('_raw')] = 0.5 * _df2[ff_tau2]
 
     elif fraction == "pt_binned":
         if grouping is None:
@@ -309,8 +309,8 @@ def calculate_fake_factor_frac(
             frac_tau1 = fractions_for_events(_df1, frac, pt1_edges, pt2_edges)
             frac_tau2 = fractions_for_events(_df2, frac, pt1_edges, pt2_edges)
 
-            df1[ff_tau1] = frac_tau1 * _df1[ff_tau1]
-            df2[ff_tau2] = (1.0 - frac_tau2) * _df2[ff_tau2]
+            df1[ff_tau1.removesuffix('_raw')] = frac_tau1 * _df1[ff_tau1]
+            df2[ff_tau2.removesuffix('_raw')] = (1.0 - frac_tau2) * _df2[ff_tau2]
             logger.info(f'Saved Fraction Factors for ungrouped')
             
         else:
@@ -345,9 +345,9 @@ def calculate_fake_factor_frac(
                 grouping_definition=grouping_definition,
             )
             target_dtype = _df1[ff_tau1].dtype
-            df1[ff_tau1] = (frac_tau1 * _df1[ff_tau1]).astype(target_dtype)
+            df1[ff_tau1.removesuffix('_raw')] = (frac_tau1 * _df1[ff_tau1]).astype(target_dtype)
             target_dtype = _df2[ff_tau2].dtype
-            df2[ff_tau2] = (1.0 - frac_tau2) * _df2[ff_tau2].astype(target_dtype)
+            df2[ff_tau2.removesuffix('_raw')] = (1.0 - frac_tau2) * _df2[ff_tau2].astype(target_dtype)
             logger.info("Saved Fraction Factors for grouping %s", grouping)
             return grouped_frac
     
@@ -539,15 +539,15 @@ def calculate_fake_factors_3split_ungrouped(
     else:
         df.AR_1[f"ff_unclipped_dnn_1"] = fake_factor_1
         fake_factor_1 = np.clip(fake_factor_1, 0, 3)
-        df.AR_1[f"ff_dnn_1"] = fake_factor_1            
+        df.AR_1[f"ff_dnn_1_raw"] = fake_factor_1            
 
         df.AR_2[f"ff_unclipped_dnn_2"] = fake_factor_2
         fake_factor_2 = np.clip(fake_factor_2, 0, 3)
-        df.AR_2[f"ff_dnn_2"] = fake_factor_2
+        df.AR_2[f"ff_dnn_2_raw"] = fake_factor_2
 
         df.AR_3[f"ff_unclipped_dnn_3"] = fake_factor_3
         fake_factor_3 = np.clip(fake_factor_3, 0, 3)
-        df.AR_3[f"ff_dnn_3"] = fake_factor_3
+        df.AR_3[f"ff_dnn_3_raw"] = fake_factor_3
 
 def calculate_fake_factors_grouped_3split(
     df,
@@ -687,15 +687,15 @@ def calculate_fake_factors_grouped_3split(
     else:
         df.AR_1[f"ff_unclipped_dnn_1{suffix}"] = fake_factor_1
         fake_factor_1 = np.clip(fake_factor_1, 0, 3)
-        df.AR_1[f"ff_dnn_1{suffix}"] = fake_factor_1
+        df.AR_1[f"ff_dnn_1{suffix}_raw"] = fake_factor_1
 
         df.AR_2[f"ff_unclipped_dnn_2{suffix}"] = fake_factor_2
         fake_factor_2 = np.clip(fake_factor_2, 0, 3)
-        df.AR_2[f"ff_dnn_2{suffix}"] = fake_factor_2
+        df.AR_2[f"ff_dnn_2{suffix}_raw"] = fake_factor_2
 
         df.AR_3[f"ff_unclipped_dnn_3{suffix}"] = fake_factor_3
         fake_factor_3 = np.clip(fake_factor_3, 0, 3)
-        df.AR_3[f"ff_dnn_3{suffix}"] = fake_factor_3
+        df.AR_3[f"ff_dnn_3{suffix}_raw"] = fake_factor_3
 
 def calculate_fake_factor_frac_3split(
         df,
@@ -720,17 +720,17 @@ def calculate_fake_factor_frac_3split(
     _df3 = df3.copy()
 
     if grouping is None:
-        ff_tau1 = "ff_dnn_1"
-        ff_tau2 = "ff_dnn_2"
-        ff_tau3 = "ff_dnn_3"
+        ff_tau1 = "ff_dnn_1_raw"
+        ff_tau2 = "ff_dnn_2_raw"
+        ff_tau3 = "ff_dnn_3_raw"
     elif grouping == 'tau_dm':
-        ff_tau1 = "ff_dnn_1_tau_dm"
-        ff_tau2 = "ff_dnn_2_tau_dm"
-        ff_tau3 = "ff_dnn_3_tau_dm"
+        ff_tau1 = "ff_dnn_1_tau_dm_raw"
+        ff_tau2 = "ff_dnn_2_tau_dm_raw"
+        ff_tau3 = "ff_dnn_3_tau_dm_raw"
     elif grouping == 'njets':
-        ff_tau1 = "ff_dnn_1_njets"
-        ff_tau2 = "ff_dnn_2_njets"
-        ff_tau3 = "ff_dnn_3_njets"
+        ff_tau1 = "ff_dnn_1_njets_raw"
+        ff_tau2 = "ff_dnn_2_njets_raw"
+        ff_tau3 = "ff_dnn_3_njets_raw"
 
     if fraction == "global":
         if where_calc_frac == 'AR_like':
@@ -746,9 +746,9 @@ def calculate_fake_factor_frac_3split(
         else:
             raise ValueError(f"Invalid value for where_calc_frac: {where_calc_frac}. Must be 'AR_like' or 'AR'.")
         
-        df1[ff_tau1] = frac1 * _df1[ff_tau1]
-        df2[ff_tau2] = frac2 * _df2[ff_tau2]
-        df3[ff_tau3] = frac3 * _df3[ff_tau3]
+        df1[ff_tau1.removesuffix('_raw')] = frac1 * _df1[ff_tau1]
+        df2[ff_tau2.removesuffix('_raw')] = frac2 * _df2[ff_tau2]
+        df3[ff_tau3.removesuffix('_raw')] = frac3 * _df3[ff_tau3]
         logger.info(f"Saved Fraction Factors: \nfrac1 = {frac1:.4f}, frac2 = {frac2:.4f}, frac3 = {frac3:.4f}")
         
     elif fraction == "pt_binned":
@@ -759,7 +759,7 @@ def calculate_fake_factor_frac_3split(
 
                 frac = fractions_for_events(_dfn, frac, pt1_edges, pt2_edges, fallback=1/3)
 
-                dfn[ff] = frac * _dfn[ff]
+                dfn[ff.removesuffix('_raw')] = frac * _dfn[ff]
                 logger.info(f'Saved Fraction Factors for ungrouped {tau}')
             
         else:
@@ -793,7 +793,7 @@ def calculate_fake_factor_frac_3split(
                     fallback=1/3,
                 )
                 target_dtype = _dfn[ff].dtype
-                dfn[ff] = (frac * _dfn[ff]).astype(target_dtype)
+                dfn[ff.removesuffix('_raw')] = (frac * _dfn[ff]).astype(target_dtype)
                 logger.info(f"Saved Fraction Factors for grouping {grouping} for {tau}")
                 #return grouped_frac
 
