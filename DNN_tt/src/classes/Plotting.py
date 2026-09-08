@@ -2422,8 +2422,8 @@ def plot_fractions_grouped(title, grouped_frac, grouping, safe_path):
 
         fig.colorbar(image, ax=ax, label="Fraction factor")
         fig.tight_layout()
-        plt.savefig(safe_path / f'plot_fractions_{title}_{group_name}_{key}.png', dpi=150, bbox_inches='tight')
-        plt.savefig(safe_path / f'plot_fractions_{title}_{group_name}_{key}.pdf', dpi=150, bbox_inches='tight')
+        plt.savefig(safe_path / f'plot_fractions_{title}_{key}.png', dpi=150, bbox_inches='tight')
+        plt.savefig(safe_path / f'plot_fractions_{title}_{key}.pdf', dpi=150, bbox_inches='tight')
         plt.close(fig)
 
 def plot_fractions_grouped_3split(title, grouped_frac, grouping, safe_path, tau):
@@ -2535,6 +2535,6 @@ def plot_fractions_grouped_3split(title, grouped_frac, grouping, safe_path, tau)
 
         fig.colorbar(image, ax=ax, label="Fraction factor")
         fig.tight_layout()
-        plt.savefig(safe_path / f'plot_fractions_{title}_{group_name}_{key}_{tau}.png', dpi=150, bbox_inches='tight')
-        plt.savefig(safe_path / f'plot_fractions_{title}_{group_name}_{key}_{tau}.pdf', dpi=150, bbox_inches='tight')
+        plt.savefig(safe_path / f'plot_fractions_{title}_{key}.png', dpi=150, bbox_inches='tight')
+        plt.savefig(safe_path / f'plot_fractions_{title}_{key}.pdf', dpi=150, bbox_inches='tight')
         plt.close(fig)

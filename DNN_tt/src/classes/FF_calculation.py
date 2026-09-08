@@ -517,12 +517,12 @@ def calculate_fake_factors_3split_ungrouped(
     # ----- number of FF over 3 -----
     _FF_over_3(fake_factor_1, "tau1")
     _FF_over_3(fake_factor_2, "tau2")
-    _FF_over_3(fake_factor_3, "tau1&tau2")
+    _FF_over_3(fake_factor_3, "tau1&2")
 
     # ----- clipping + output assignment -----
 
     if fake_factor_1 is None or fake_factor_2 is None or fake_factor_3 is None:
-        logger.error("FF for tau 1 is None or FF for tau 2 is None or FF for tau1&tau2 is None")
+        logger.error("FF for tau 1 is None or FF for tau 2 is None or FF for tau1&2 is None")
 
     if DR:
         df.AR_like_1[f"ff_DR_unclipped_dnn_1"] = fake_factor_1
@@ -753,7 +753,7 @@ def calculate_fake_factor_frac_3split(
         
     elif fraction == "pt_binned":
         if grouping is None:
-            for tau, dfn, _dfn, ff in zip(['tau1', 'tau2', 'tau1&tau2'], [df1, df2, df3], [_df1, _df2, _df3], [ff_tau1, ff_tau2, ff_tau3]):
+            for tau, dfn, _dfn, ff in zip(['tau1', 'tau2', 'tau1&2'], [df1, df2, df3], [_df1, _df2, _df3], [ff_tau1, ff_tau2, ff_tau3]):
                 file = frac_file+f'/fractions_{tau}.yaml'
                 frac, pt1_edges, pt2_edges = fraction_in_bins_3split(which_frac=tau, df_tau1=df.data.AR_like_1, df_tau2=df.data.AR_like_2, df_tau3=df.data.AR_like_3, frac_file=file)
 
@@ -773,7 +773,7 @@ def calculate_fake_factor_frac_3split(
             else:
                 grouping_var_1 = grouping_var_2 = grouping_variable
 
-            for tau, dfn, _dfn, ff in zip(['tau1', 'tau2', 'tau1&tau2'], [df1, df2, df3], [_df1, _df2, _df3], [ff_tau1, ff_tau2, ff_tau3]):
+            for tau, dfn, _dfn, ff in zip(['tau1', 'tau2', 'tau1&2'], [df1, df2, df3], [_df1, _df2, _df3], [ff_tau1, ff_tau2, ff_tau3]):
                 file = frac_file+f'/fractions_{tau}.yaml'
                 grouped_frac = fraction_in_bins_grouped_3split(
                     tau,

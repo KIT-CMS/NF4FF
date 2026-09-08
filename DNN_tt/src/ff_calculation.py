@@ -32,9 +32,9 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
     
-    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
-    frac: Literal['global', 'pt_binned'] = 'pt_binned' # global: use global fraction | pt_binned: use pt-binned fraction
+    frac: Literal['global', 'pt_binned'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction
     dnn_grouped: bool = True
     classic: bool = False
 
@@ -85,7 +85,7 @@ def main():
             logger.info(f'{cfg_path["fractions"]}/fractions.yaml already exists')
 
     if args.taus == '3split':
-        for name in ['tau1', 'tau2', 'tau1&tau2']:
+        for name in ['tau1', 'tau2', 'tau1&2']:
             try:
                 with open(cfg_path['fractions']+f"/fractions_{name}.yaml", 'x') as file:
                     dict_arlike = {'AR_like': {'ungrouped': '', 'njets': {}, 'tau_dm': {}}}
@@ -304,8 +304,8 @@ def main():
             odd_model_path=Path(CHECKPOINT_DIR) / f'ungrouped' / '3split' / 'tau2' / 'fold_odd',
         )
         model3 = load_fold_combined_model(
-            even_model_path=Path(CHECKPOINT_DIR) / f'ungrouped' / '3split' / 'tau1&tau2' / 'fold_even',
-            odd_model_path=Path(CHECKPOINT_DIR) / f'ungrouped' / '3split' / 'tau1&tau2' / 'fold_odd',
+            even_model_path=Path(CHECKPOINT_DIR) / f'ungrouped' / '3split' / 'tau1&2' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / f'ungrouped' / '3split' / 'tau1&2' / 'fold_odd',
         )
 
         logger.info("Calculating fake factors...")
@@ -352,8 +352,8 @@ def main():
             odd_model_path=Path(CHECKPOINT_DIR) / f'njets' / '3split' / 'tau2' / 'fold_odd',
         )
         model3 = load_fold_combined_model(
-            even_model_path=Path(CHECKPOINT_DIR) / f'njets' / '3split' / 'tau1&tau2' / 'fold_even',
-            odd_model_path=Path(CHECKPOINT_DIR) / f'njets' / '3split' / 'tau1&tau2' / 'fold_odd',
+            even_model_path=Path(CHECKPOINT_DIR) / f'njets' / '3split' / 'tau1&2' / 'fold_even',
+            odd_model_path=Path(CHECKPOINT_DIR) / f'njets' / '3split' / 'tau1&2' / 'fold_odd',
         )
 
 

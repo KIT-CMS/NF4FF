@@ -77,7 +77,7 @@ def fraction_in_bins(df_tau1, df_tau2, frac_file, region='AR_like', pt1_bin_edge
 
 def fraction_in_bins_3split(which_frac, df_tau1, df_tau2, df_tau3, frac_file, region='AR_like', pt1_bin_edges=None, pt2_bin_edges=None):
     '''
-    which_frac = tau1, tau2, tau1&tau2
+    which_frac = tau1, tau2, tau1&2
     df_taun = df.data.AR_like_taun
     '''
     # ----- weights -----
@@ -131,8 +131,8 @@ def fraction_in_bins_3split(which_frac, df_tau1, df_tau2, df_tau3, frac_file, re
 
     if which_frac=='tau1': numerator = f1_t2
     elif which_frac=='tau2': numerator = t1_f2
-    elif which_frac=='tau1&tau2': numerator = f1_f2
-    else: logger.error(f'which_frac is {which_frac}. Expected tau1, tau2 or tau1&tau2.')
+    elif which_frac=='tau1&2': numerator = f1_f2
+    else: logger.error(f'which_frac is {which_frac}. Expected tau1, tau2 or tau1&2.')
     denominator = f1_t2 + t1_f2 + f1_f2
 
     fraction = np.divide(
@@ -391,8 +391,8 @@ def fraction_in_bins_grouped_3split(
     
         if which_frac=='tau1': numerator = f1_t2
         elif which_frac=='tau2': numerator = t1_f2
-        elif which_frac=='tau1&tau2': numerator = f1_f2
-        else: logger.error(f'which_frac is {which_frac}. Expected tau1, tau2 or tau1&tau2.')
+        elif which_frac=='tau1&2': numerator = f1_f2
+        else: logger.error(f'which_frac is {which_frac}. Expected tau1, tau2 or tau1&2.')
         denominator = f1_t2 + t1_f2 + f1_f2
     
         fraction = np.divide(

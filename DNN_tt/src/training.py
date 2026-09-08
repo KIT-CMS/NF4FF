@@ -28,9 +28,9 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
 
 args = Args().parse_args()
 
@@ -515,7 +515,7 @@ def main():
 
     elif args.taus=='3split' and not args.dnn_grouped:
             logger.info('Training uses the ungrouped DNN.')
-            for process in ['tau1', 'tau2', 'tau1&tau2']:
+            for process in ['tau1', 'tau2', 'tau1&2']:
                 logger.info(f'Training process: {process}')
                 
                 if process == 'tau1':
@@ -528,7 +528,7 @@ def main():
                     df_bkg = df.data.AR_like_2
                     weight_column = 'weight_qcd'
     
-                elif process == 'tau1&tau2':
+                elif process == 'tau1&2':
                     df_sig = df.data.SR_like
                     df_bkg = df.data.AR_like_3
                     weight_column = 'weight_qcd'
@@ -600,7 +600,7 @@ def main():
         for grouping, group_label in zip([grouping_njets], ['njets']):
             logger.info(f'Group splitting: {group_label}')
             
-            for process in ['tau1', 'tau2', 'tau1&tau2']:
+            for process in ['tau1', 'tau2', 'tau1&2']:
 
                 logger.info(f'Training process: {process}')
                 
@@ -616,7 +616,7 @@ def main():
                     weight_column = 'weight_qcd'
                     balance_column = 'tau_decaymode_2' if group_label == 'tau_decaymode' else 'njets'
 
-                elif process == 'tau1&tau2':
+                elif process == 'tau1&2':
                     df_sig = df.data.SR_like
                     df_bkg = df.data.AR_like_3
                     weight_column = 'weight_qcd'
