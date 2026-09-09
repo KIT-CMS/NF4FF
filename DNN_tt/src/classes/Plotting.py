@@ -337,12 +337,12 @@ def plot_closure(
     )
 
     fig, ax = plt.subplots(
-        2,
+        3,
         1,
-        figsize=(11.7, 9.1),
+        figsize=(11.7, 11.4),
         sharex=True,
         gridspec_kw={
-            'height_ratios': [3, 1],
+            'height_ratios': [3, 1, 1],
             'hspace': 0.05,
         },
         constrained_layout=True,
@@ -442,7 +442,30 @@ def plot_closure(
     ax[1].grid(True, linestyle=':', alpha=0.7)
     ax[1].tick_params(direction='in', top=True, right=True)
     ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
-    ax[1].set_xlabel(label)
+
+    # Normalize the model components per bin, leaving empty bins blank.
+    fraction_bottom = np.zeros_like(background_dnn, dtype=float)
+    for counts, color, process_label in stack_components:
+        fraction = np.divide(
+            counts,
+            background_dnn,
+            out=np.zeros_like(counts, dtype=float),
+            where=background_dnn > 0,
+        )
+        ax[2].bar(
+            bin_centers,
+            fraction,
+            bottom=fraction_bottom,
+            width=bin_widths,
+            color=color,
+            label=process_label,
+        )
+        fraction_bottom += fraction
+
+    ax[2].set_ylabel('Proc. frac.', loc='center')
+    ax[2].set_ylim(0, 1)
+    ax[2].tick_params(direction='in', top=True, right=True)
+    ax[2].set_xlabel(label)
 
     return fig, ax, histograms
 
@@ -557,12 +580,12 @@ def plot_closure_incl(
 
 
     fig, ax = plt.subplots(
-        2,
+        3,
         1,
-        figsize=(11.7, 9.1),
+        figsize=(11.7, 11.4),
         sharex=True,
         gridspec_kw={
-            'height_ratios': [3, 1],
+            'height_ratios': [3, 1, 1],
             'hspace': 0.05,
         },
         constrained_layout=True,
@@ -662,7 +685,29 @@ def plot_closure_incl(
     ax[1].tick_params(direction='in', top=True, right=True)
     ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
 
-    ax[1].set_xlabel(label)
+    # Normalize the model components per bin, leaving empty bins blank.
+    fraction_bottom = np.zeros_like(background_dnn, dtype=float)
+    for counts, color, process_label in stack_components:
+        fraction = np.divide(
+            counts,
+            background_dnn,
+            out=np.zeros_like(counts, dtype=float),
+            where=background_dnn > 0,
+        )
+        ax[2].bar(
+            bin_centers,
+            fraction,
+            bottom=fraction_bottom,
+            width=bin_widths,
+            color=color,
+            label=process_label,
+        )
+        fraction_bottom += fraction
+
+    ax[2].set_ylabel('Proc. frac.', loc='center')
+    ax[2].set_ylim(0, 1)
+    ax[2].tick_params(direction='in', top=True, right=True)
+    ax[2].set_xlabel(label)
 
     return fig, ax, histograms
 
@@ -780,12 +825,12 @@ def plot_closure_3split(
     )
 
     fig, ax = plt.subplots(
-        2,
+        3,
         1,
-        figsize=(11.7, 9.1),
+        figsize=(11.7, 11.4),
         sharex=True,
         gridspec_kw={
-            'height_ratios': [3, 1],
+            'height_ratios': [3, 1, 1],
             'hspace': 0.05,
         },
         constrained_layout=True,
@@ -885,7 +930,29 @@ def plot_closure_3split(
     ax[1].grid(True, linestyle=':', alpha=0.7)
     ax[1].tick_params(direction='in', top=True, right=True)
     ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
-    ax[1].set_xlabel(label)
+    # Normalize the model components per bin, leaving empty bins blank.
+    fraction_bottom = np.zeros_like(background_dnn, dtype=float)
+    for counts, color, process_label in stack_components:
+        fraction = np.divide(
+            counts,
+            background_dnn,
+            out=np.zeros_like(counts, dtype=float),
+            where=background_dnn > 0,
+        )
+        ax[2].bar(
+            bin_centers,
+            fraction,
+            bottom=fraction_bottom,
+            width=bin_widths,
+            color=color,
+            label=process_label,
+        )
+        fraction_bottom += fraction
+
+    ax[2].set_ylabel('Proc. frac.', loc='center')
+    ax[2].set_ylim(0, 1)
+    ax[2].tick_params(direction='in', top=True, right=True)
+    ax[2].set_xlabel(label)
 
     return fig, ax, histograms
 
