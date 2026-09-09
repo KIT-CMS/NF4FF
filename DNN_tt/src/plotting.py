@@ -33,18 +33,18 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_binned', 'DNN'] = 'pt_binned' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
     fraction_max_bins: int = 0 # Maximum displayed bins per axis for 3split fractions; 0 keeps all bins
-    dnn_grouped: bool = True
+    dnn_grouped: bool = False
     classic: bool = False
 
     vars: Literal['small', 'large'] = 'small' # small: use small set of variables | large: use large set of variables
 
-    closure_DR: bool = True
+    closure_DR: bool = False
     FF_dist: bool = True
-    closure_AR: bool = True
+    closure_AR: bool = False
 
 args = Args().parse_args()
 
@@ -283,7 +283,12 @@ def main():
                         
                     # ----- AR
                     # ----- calculate fraction in AR -----                    
-                    fraction_in_bins_grouped(df.data.AR_tau1, df.data.AR_tau2, cfg_path['fractions']+'/fractions.yaml', region='AR', ar_file=cfg_frac['AR_like'], grouping=group_name, grouping_variable=group_var, grouping_definition=group_def)
+                    fraction_in_bins_grouped(
+                        df_tau1=df.data.AR_tau1, 
+                        df_tau2=df.data.AR_tau2, 
+                        frac_file=cfg_path['fractions']+'/fractions.yaml', 
+                        region='AR', ar_file=cfg_frac['AR_like'], 
+                        grouping=group_name, grouping_variable=group_var, grouping_definition=group_def)
                 
                     cfg_frac = load_config(cfg_path['fractions']+'/fractions.yaml')
                     frac_ar = cfg_frac['AR'][f'{group_name}']
@@ -405,7 +410,11 @@ def main():
 
                 # ----- AR
                 # ----- calculate fraction in AR -----
-                fraction_in_bins(df.data.AR_tau1, df.data.AR_tau2, cfg_path['fractions']+'/fractions.yaml', region='AR', pt1_bin_edges=pt1_edges, pt2_bin_edges=pt2_edges)
+                fraction_in_bins(
+                    df_tau1=df.data.AR_tau1,
+                    df_tau2=df.data.AR_tau2,
+                    frac_file=cfg_path['fractions']+'/fractions.yaml',
+                    region='AR', var1_bin_edges=pt1_edges, var2_bin_edges=pt2_edges)
 
                 cfg_frac = load_config(cfg_path['fractions']+'/fractions.yaml')
                 frac_ar = cfg_frac['AR']['ungrouped']
@@ -666,7 +675,13 @@ def main():
 
                     # ----- AR
                     # ----- calculate fraction in AR -----
-                    fraction_in_bins_3split(tau, df.data.AR_1, df.data.AR_2, df.data.AR_3, cfg_path['fractions']+f'/fractions_{tau}.yaml', region='AR', pt1_bin_edges=pt1_edges, pt2_bin_edges=pt2_edges)
+                    fraction_in_bins_3split(
+                        which_frac=tau, 
+                        df_tau1=df.data.AR_1, 
+                        df_tau2=df.data.AR_2, 
+                        df_tau3=df.data.AR_3, 
+                        frac_file=cfg_path['fractions']+f'/fractions_{tau}.yaml',
+                        region='AR', var1_bin_edges=pt1_edges, var2_bin_edges=pt2_edges)
 
                     cfg_frac = load_config(cfg_path['fractions']+f'/fractions_{tau}.yaml')
                     frac_ar = cfg_frac['AR']['ungrouped']
@@ -797,7 +812,13 @@ def main():
                         
                     # ----- AR
                     # ----- calculate fraction in AR -----                    
-                    fraction_in_bins_grouped_3split(tau, df.data.AR_1, df.data.AR_2, df.data.AR_3, cfg_path['fractions']+f'/fractions_{tau}.yaml', region='AR', ar_file=cfg_frac['AR_like'], grouping='njets', grouping_variable='njets', grouping_definition=grouping_njets)
+                    fraction_in_bins_grouped_3split(
+                        which_frac=tau, 
+                        df_tau1=df.data.AR_1, 
+                        df_tau2=df.data.AR_2, 
+                        df_tau3=df.data.AR_3, 
+                        frac_file=cfg_path['fractions']+f'/fractions_{tau}.yaml', 
+                        region='AR', ar_file=cfg_frac['AR_like'], grouping='njets', grouping_variable='njets', grouping_definition=grouping_njets)
                 
                     cfg_frac = load_config(cfg_path['fractions']+f'/fractions_{tau}.yaml')
                     frac_ar = cfg_frac['AR'][f'njets']
