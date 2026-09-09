@@ -304,7 +304,7 @@ def calculate_fake_factor_frac(
 
     elif fraction == "pt_binned":
         if grouping is None:
-            frac, pt1_edges, pt2_edges = fraction_in_bins(df.data.AR_like_tau1, df.data.AR_like_tau2, frac_file)
+            frac, pt1_edges, pt2_edges, _, _ = fraction_in_bins(df.data.AR_like_tau1, df.data.AR_like_tau2, frac_file)
 
             frac_tau1 = fractions_for_events(_df1, frac, pt1_edges, pt2_edges)
             frac_tau2 = fractions_for_events(_df2, frac, pt1_edges, pt2_edges)
@@ -755,7 +755,7 @@ def calculate_fake_factor_frac_3split(
         if grouping is None:
             for tau, dfn, _dfn, ff in zip(['tau1', 'tau2', 'tau1&2'], [df1, df2, df3], [_df1, _df2, _df3], [ff_tau1, ff_tau2, ff_tau3]):
                 file = frac_file+f'/fractions_{tau}.yaml'
-                frac, pt1_edges, pt2_edges = fraction_in_bins_3split(which_frac=tau, df_tau1=df.data.AR_like_1, df_tau2=df.data.AR_like_2, df_tau3=df.data.AR_like_3, frac_file=file)
+                frac, pt1_edges, pt2_edges, _, _ = fraction_in_bins_3split(which_frac=tau, df_tau1=df.data.AR_like_1, df_tau2=df.data.AR_like_2, df_tau3=df.data.AR_like_3, frac_file=file)
 
                 frac = fractions_for_events(_dfn, frac, pt1_edges, pt2_edges, fallback=1/3)
 

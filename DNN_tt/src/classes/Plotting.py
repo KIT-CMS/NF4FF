@@ -39,7 +39,7 @@ def CMS_LUMI_TITLE(ax, *args, **kwargs):
 def CMS_LABEL(ax, *args, **kwargs):
     if isinstance(ax, Iterable):
         ax = ax[0]
-    ax.text(
+    return ax.text(
         0.025, 0.95,
         "Private work (CMS data/simulation)",
         fontsize=20,
@@ -49,6 +49,7 @@ def CMS_LABEL(ax, *args, **kwargs):
         bbox=dict(facecolor="white", alpha=0, edgecolor="white", boxstyle="round,pad=0.5"),
         transform=ax.transAxes
     )
+
 
 def estimate_jet_fakes(
 	df,
@@ -80,7 +81,6 @@ def estimate_jet_fakes(
     var_jet_fakes  = var_jet_fakes_tau1 + var_jet_fakes_tau2
 
     return jet_fakes, var_jet_fakes
-
 
 def estimate_jet_fakes_incl(
 	df,
@@ -141,6 +141,7 @@ def estimate_jet_fakes_3split(
     var_jet_fakes  = var_jet_fakes_tau1 + var_jet_fakes_tau2 + var_jet_fakes_3
 
     return jet_fakes, var_jet_fakes
+
 
 def _reorder_for_rowwise_legend(handles, labels, ncol, reverse=False):
     if reverse:
@@ -225,6 +226,7 @@ def draw_stacked_stepfill(ax, bin_edges, components: list[tuple[np.ndarray, str,
         final_top = next_cumulative
 
     return final_top
+
 
 def plot_closure(
     df,
@@ -468,7 +470,6 @@ def plot_closure(
     ax[2].set_xlabel(label)
 
     return fig, ax, histograms
-
 
 def plot_closure_incl(
     df,
@@ -956,6 +957,7 @@ def plot_closure_3split(
 
     return fig, ax, histograms
 
+
 def plot_fake_factors(
         df,
         category_title = None,
@@ -994,7 +996,6 @@ def plot_fake_factors(
     ax[1].set_xlabel("fake_factor")
     ax[1].legend()
     return fig, ax
-
 
 def plot_fake_factors_combTaus(
         df,
@@ -1247,7 +1248,6 @@ def plot_classic_fake_factors(
     ax[1].set_xlabel("fake_factor")
     ax[1].legend()
     return fig, ax
-
 
 def plot_fake_factors_in_DR(
         df,
@@ -1689,6 +1689,7 @@ def _grouping_masks(frame, grouping):
 
     raise ValueError(f'Unsupported grouping: {grouping}')
 
+
 def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode', clipped = True):
     hep.style.use(hep.style.CMS)
 
@@ -2100,7 +2101,6 @@ def plot_NN_output_FF(
     ax[1].set_xlabel('fake factors')
     return fig, ax
 
-
 # combinations
 def plot_fake_factors_ungrouped_splitAndincl(
         df_split,
@@ -2173,16 +2173,21 @@ def plot_fake_factors_ungrouped_splitAndincl(
     ax.legend()
     return fig, ax
 
-def plot_fractions(title, frac, pt1_edges, pt2_edges, global_frac, global_std):
+def plot_fractions(title, frac, var1_edges, var2_edges, global_frac, global_std, label, var1='pt_1', var2='pt_2'):
     frac = np.array(frac)
-    n_pt1, n_pt2 = frac.shape
+    n_var1, n_var2 = frac.shape
+    labels_above = var1 != 'pt_1' or var2 != 'pt_2'
 
-    fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+    fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.5))
 
-    CMS_LABEL(ax)
+    cms_label = CMS_LABEL(ax)
     CMS_CATEGORY_TITLE(ax, title=title)
     CMS_LUMI_TITLE(ax)
     CMS_CHANNEL_TITLE(ax)
+
+    if labels_above:
+        cms_label.set_position((0.0, 1.08))
+        cms_label.set_verticalalignment('bottom')
 
     diff = np.abs(np.nanmin(frac.T)) if np.abs(np.nanmin(frac.T))> np.abs(np.nanmax(frac.T)) else np.abs(np.nanmax(frac.T))
 
@@ -2192,19 +2197,19 @@ def plot_fractions(title, frac, pt1_edges, pt2_edges, global_frac, global_std):
         aspect="equal",
         interpolation="none",
         cmap="RdBu",
-        extent=(-0.5, n_pt1 - 0.5, -0.5, n_pt2 - 0.5),
+        extent=(-0.5, n_var1 - 0.5, -0.5, n_var2 - 0.5),
         vmin=0.4 if title=='AR' or title=='AR_like' else -diff,
         vmax=0.6 if title=='AR' or title=='AR_like' else diff,
     )
 
-    for pt2_bin in range(n_pt2):
-        for pt1_bin in range(n_pt1):
-            value = frac.T[pt2_bin, pt1_bin]
+    for var2_bin in range(n_var2):
+        for var1_bin in range(n_var1):
+            value = frac.T[var2_bin, var1_bin]
 
             if np.isfinite(value):
                 ax.text(
-                    pt1_bin,
-                    pt2_bin,
+                    var1_bin,
+                    var2_bin,
                     f"{value:.2f}",
                     ha="center",
                     va="center",
@@ -2212,30 +2217,30 @@ def plot_fractions(title, frac, pt1_edges, pt2_edges, global_frac, global_std):
                     fontsize=8,
                 )
 
-            # Values outside of range get outlined red
-            if (value < 0.4 or value > 0.609) and (title=='AR' or title=='AR_like'):
-                rectangle = plt.Rectangle(
-                    (pt1_bin - 0.5, pt2_bin - 0.5),
-                    1,
-                    1,
-                    fill=False,
-                    edgecolor="red",
-                    linewidth=2,
-                )
-                ax.add_patch(rectangle)
+            # Values outside of range get outlined black
+            #if (value < 0.4 or value > 0.609) and (title=='AR' or title=='AR_like'):
+            #    rectangle = plt.Rectangle(
+            #        (var1_bin - 0.5, var2_bin - 0.5),
+            #        1,
+            #        1,
+            #        fill=False,
+            #        edgecolor="grey",
+            #        linewidth=2,
+            #    )
+            #    ax.add_patch(rectangle)
 
     # Positions of bin boundaries.
-    x_boundaries = np.arange(n_pt1 + 1) - 0.5
-    y_boundaries = np.arange(n_pt2 + 1) - 0.5
+    x_boundaries = np.arange(n_var1 + 1) - 0.5
+    y_boundaries = np.arange(n_var2 + 1) - 0.5
 
-    # Format the actual pT bin edges.
+    # Format the actual var bin edges.
     edge_labels_x = [
         f"{edge:.1f}" if np.isfinite(edge) else "∞"
-        for edge in pt1_edges
+        for edge in var1_edges
     ]
     edge_labels_y = [
             f"{edge:.1f}" if np.isfinite(edge) else "∞"
-            for edge in pt2_edges
+            for edge in var2_edges
         ]
 
     
@@ -2245,9 +2250,14 @@ def plot_fractions(title, frac, pt1_edges, pt2_edges, global_frac, global_std):
     ax.set_xticklabels(edge_labels_x, rotation=45, ha="right", fontsize=15)
     ax.set_yticklabels(edge_labels_y, fontsize=15)
 
-    ax.text(0.04, 0.85, 
-            f"Mean = {global_frac:.3f} \nStd = {global_std:.3f}", 
-            fontsize=20,  ha='left', va='top', transform=ax.transAxes, ma='left')
+    if labels_above:
+        ax.text(0.0, 1.04,
+                f"Mean = {global_frac:.3f}   Std = {global_std:.3f}",
+                fontsize=18, ha='left', va='bottom', transform=ax.transAxes)
+    else:
+        ax.text(0.04, 0.85,
+                f"Mean = {global_frac:.3f} \nStd = {global_std:.3f}",
+                fontsize=18, ha='left', va='top', transform=ax.transAxes, ma='left')
 
     # Draw lines along the square boundaries.
     ax.grid(
@@ -2257,14 +2267,14 @@ def plot_fractions(title, frac, pt1_edges, pt2_edges, global_frac, global_std):
         alpha=0.6,
     )
 
-    ax.set_xlabel(r"$p_{T,1}$ [GeV]")
-    ax.set_ylabel(r"$p_{T,2}$ [GeV]")
+    ax.set_xlabel(label(var1))
+    ax.set_ylabel(label(var2))
 
     fig.colorbar(image, ax=ax, label="Fraction factor")
     fig.tight_layout()
     return fig, ax
 
-def plot_fractions_3split(title, frac, pt1_edges, pt2_edges, global_frac, global_std, max_bins=0):
+def plot_fractions_3split(title, frac, var1_edges, var2_edges, global_frac, global_std, label, var1='pt_1', var2='pt_2', max_bins=0):
     """Plot fractions, optionally averaging adjacent cells for display only.
 
     max_bins limits each axis (0 keeps the original grid). Block means give
@@ -2287,17 +2297,22 @@ def plot_fractions_3split(title, frac, pt1_edges, pt2_edges, global_frac, global
                 if finite.size:
                     reduced[i, j] = finite.mean()
         frac = reduced
-        pt1_edges = np.asarray(pt1_edges)[boundaries[0]]
-        pt2_edges = np.asarray(pt2_edges)[boundaries[1]]
+        var1_edges = np.asarray(var1_edges)[boundaries[0]]
+        var2_edges = np.asarray(var2_edges)[boundaries[1]]
 
-    n_pt1, n_pt2 = frac.shape
+    n_var1, n_var2 = frac.shape
+    labels_above = var1 != 'pt_1' or var2 != 'pt_2'
 
-    fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+    fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.5))
 
-    CMS_LABEL(ax)
+    cms_label = CMS_LABEL(ax)
     CMS_CATEGORY_TITLE(ax, title=title)
     CMS_LUMI_TITLE(ax)
     CMS_CHANNEL_TITLE(ax)
+
+    if labels_above:
+        cms_label.set_position((0.0, 1.08))
+        cms_label.set_verticalalignment('bottom')
 
     diff = np.abs(np.nanmin(frac.T)) if np.abs(np.nanmin(frac.T))> np.abs(np.nanmax(frac.T)) else np.abs(np.nanmax(frac.T))
 
@@ -2307,19 +2322,19 @@ def plot_fractions_3split(title, frac, pt1_edges, pt2_edges, global_frac, global
         aspect="equal",
         interpolation="none",
         cmap="RdBu",
-        extent=(-0.5, n_pt1 - 0.5, -0.5, n_pt2 - 0.5),
+        extent=(-0.5, n_var1 - 0.5, -0.5, n_var2 - 0.5),
         vmin=0.2 if title=='AR' or title=='AR_like' else -diff,
         vmax=0.46 if title=='AR' or title=='AR_like' else diff,
     )
 
-    for pt2_bin in range(n_pt2):
-        for pt1_bin in range(n_pt1):
-            value = frac.T[pt2_bin, pt1_bin]
+    for var2_bin in range(n_var2):
+        for var1_bin in range(n_var1):
+            value = frac.T[var2_bin, var1_bin]
 
             if np.isfinite(value):
                 ax.text(
-                    pt1_bin,
-                    pt2_bin,
+                    var1_bin,
+                    var2_bin,
                     f"{value:.2f}",
                     ha="center",
                     va="center",
@@ -2328,29 +2343,29 @@ def plot_fractions_3split(title, frac, pt1_edges, pt2_edges, global_frac, global
                 )
 
             # Values outside of range get outlined red
-            if (value < 0.2 or value > 0.469) and (title=='AR' or title=='AR_like'):
-                rectangle = plt.Rectangle(
-                    (pt1_bin - 0.5, pt2_bin - 0.5),
-                    1,
-                    1,
-                    fill=False,
-                    edgecolor="red",
-                    linewidth=2,
-                )
-                ax.add_patch(rectangle)
+            #if (value < 0.2 or value > 0.469) and (title=='AR' or title=='AR_like'):
+            #    rectangle = plt.Rectangle(
+            #        (var1_bin - 0.5, var2_bin - 0.5),
+            #        1,
+            #        1,
+            #        fill=False,
+            #        edgecolor="red",
+            #        linewidth=2,
+            #    )
+            #    ax.add_patch(rectangle)
 
     # Positions of bin boundaries.
-    x_boundaries = np.arange(n_pt1 + 1) - 0.5
-    y_boundaries = np.arange(n_pt2 + 1) - 0.5
+    x_boundaries = np.arange(n_var1 + 1) - 0.5
+    y_boundaries = np.arange(n_var2 + 1) - 0.5
 
-    # Format the actual pT bin edges.
+    # Format the actual var bin edges.
     edge_labels_x = [
         f"{edge:.1f}" if np.isfinite(edge) else "∞"
-        for edge in pt1_edges
+        for edge in var1_edges
     ]
     edge_labels_y = [
             f"{edge:.1f}" if np.isfinite(edge) else "∞"
-            for edge in pt2_edges
+            for edge in var2_edges
         ]
 
     
@@ -2360,9 +2375,14 @@ def plot_fractions_3split(title, frac, pt1_edges, pt2_edges, global_frac, global
     ax.set_xticklabels(edge_labels_x, rotation=45, ha="right", fontsize=15)
     ax.set_yticklabels(edge_labels_y, fontsize=15)
 
-    ax.text(0.04, 0.85, 
-            f"Mean = {global_frac:.3f} \nStd = {global_std:.3f}", 
-            fontsize=20,  ha='left', va='top', transform=ax.transAxes, ma='left')
+    if labels_above:
+        ax.text(0.0, 1.04,
+                f"Mean = {global_frac:.3f}   Std = {global_std:.3f}",
+                fontsize=18, ha='left', va='bottom', transform=ax.transAxes)
+    else:
+        ax.text(0.04, 0.85,
+                f"Mean = {global_frac:.3f} \nStd = {global_std:.3f}",
+                fontsize=18, ha='left', va='top', transform=ax.transAxes, ma='left')
 
     # Draw lines along the square boundaries.
     ax.grid(
@@ -2372,15 +2392,14 @@ def plot_fractions_3split(title, frac, pt1_edges, pt2_edges, global_frac, global
         alpha=0.6,
     )
 
-    ax.set_xlabel(r"$p_{T,1}$ [GeV]")
-    ax.set_ylabel(r"$p_{T,2}$ [GeV]")
+    ax.set_xlabel(label(var1))
+    ax.set_ylabel(label(var2))
 
     fig.colorbar(image, ax=ax, label="Fraction factor (mean of original bins)" if averaged else "Fraction factor")
     fig.tight_layout()
     return fig, ax
 
-
-def plot_fractions_grouped(title, grouped_frac, grouping, safe_path):
+def plot_fractions_grouped(title, grouped_frac, grouping, safe_path, label, var1='pt_1', var2='pt_2'):
 
     if grouping == 'tau_decaymode':
         grouping_key = ['0', '1', '10', '11']
@@ -2393,21 +2412,35 @@ def plot_fractions_grouped(title, grouped_frac, grouping, safe_path):
     else:
         raise ValueError(f'Unsupported grouping: {grouping}')
 
+    labels_above = var1 != 'pt_1' or var2 != 'pt_2'
+
     for key in grouping_key:
         frac_arlike = grouped_frac[key]
 
-        frac, pt1_edges, pt2_edges = frac_arlike['fraction'], frac_arlike['pt1_edges'], frac_arlike['pt2_edges']
-        global_frac, global_std = frac_arlike['global_frac'], frac_arlike['global_std']
+        if isinstance(frac_arlike, dict):
+            frac = frac_arlike['fraction']
+            var1_edges = frac_arlike['pt1_edges']
+            var2_edges = frac_arlike['pt2_edges']
+            global_frac = frac_arlike['global_frac']
+            global_std = frac_arlike['global_std']
+        else:
+            frac, var1_edges, var2_edges, global_frac, global_std = frac_arlike
+        
+
 
         frac = np.array(frac)
-        n_pt1, n_pt2 = frac.shape
+        n_var1, n_var2 = frac.shape
 
         fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
 
-        CMS_LABEL(ax)
+        cms_label = CMS_LABEL(ax)
         CMS_CATEGORY_TITLE(ax, title=title)
         CMS_LUMI_TITLE(ax)
         CMS_CHANNEL_TITLE(ax)
+
+        if labels_above:
+            cms_label.set_position((0.0, 1.08))
+            cms_label.set_verticalalignment('bottom')
 
         diff = np.abs(np.nanmin(frac.T)) if np.abs(np.nanmin(frac.T))> np.abs(np.nanmax(frac.T)) else np.abs(np.nanmax(frac.T))
 
@@ -2417,19 +2450,19 @@ def plot_fractions_grouped(title, grouped_frac, grouping, safe_path):
             aspect="equal",
             interpolation="none",
             cmap="RdBu",
-            extent=(-0.5, n_pt1 - 0.5, -0.5, n_pt2 - 0.5),
+            extent=(-0.5, n_var1 - 0.5, -0.5, n_var2 - 0.5),
             vmin=0.4 if title=='AR' or title=='AR_like' else -diff,
             vmax=0.6 if title=='AR' or title=='AR_like' else diff,
         )
 
-        for pt2_bin in range(n_pt2):
-            for pt1_bin in range(n_pt1):
-                value = frac.T[pt2_bin, pt1_bin]
+        for var2_bin in range(n_var2):
+            for var1_bin in range(n_var1):
+                value = frac.T[var2_bin, var1_bin]
 
                 if np.isfinite(value):
                     ax.text(
-                        pt1_bin,
-                        pt2_bin,
+                        var1_bin,
+                        var2_bin,
                         f"{value:.2f}",
                         ha="center",
                         va="center",
@@ -2438,35 +2471,41 @@ def plot_fractions_grouped(title, grouped_frac, grouping, safe_path):
                     )
 
                 # Values outside of range get outlined red
-                if (value < 0.4 or value > 0.609) and (title=='AR' or title=='AR_like'):
-                    rectangle = plt.Rectangle(
-                        (pt1_bin - 0.5, pt2_bin - 0.5),
-                        1,
-                        1,
-                        fill=False,
-                        edgecolor="black",
-                        linewidth=2,
-                    )
-                    ax.add_patch(rectangle)
+                #if (value < 0.4 or value > 0.609) and (title=='AR' or title=='AR_like'):
+                #    rectangle = plt.Rectangle(
+                #        (var1_bin - 0.5, var2_bin - 0.5),
+                #        1,
+                #        1,
+                #        fill=False,
+                #        edgecolor="black",
+                #        linewidth=2,
+                #    )
+                #    ax.add_patch(rectangle)
 
         geq = r'$\geq$'
         cat = f"{cat_title}{geq}2" if key=="2_1000" else f"{cat_title}={key}"
-        ax.text(0.04, 0.85, f"{cat}:", fontsize=20,  ha='left', va='top', transform=ax.transAxes, ma='left')
-        ax.text(0.14, 0.80, "Mean\nStd", fontsize=20, ha="right", va="top", transform=ax.transAxes)
-        ax.text(0.145, 0.80, f"= {global_frac:.3f}\n= {global_std:.3f}", fontsize=20, ha="left", va="top", transform=ax.transAxes)
         
-        # Positions of bin boundaries.
-        x_boundaries = np.arange(n_pt1 + 1) - 0.5
-        y_boundaries = np.arange(n_pt2 + 1) - 0.5
+        if labels_above:
+            ax.text(0.0, 1.04,
+                    f"{cat}: Mean = {global_frac:.3f}   Std = {global_std:.3f}",
+                    fontsize=18, ha='left', va='bottom', transform=ax.transAxes)
+        else:
+            ax.text(0.04, 0.85, f"{cat}:", fontsize=20,  ha='left', va='top', transform=ax.transAxes, ma='left')
+            ax.text(0.14, 0.80, "Mean\nStd", fontsize=20, ha="right", va="top", transform=ax.transAxes)
+            ax.text(0.145, 0.80, f"= {global_frac:.3f}\n= {global_std:.3f}", fontsize=20, ha="left", va="top", transform=ax.transAxes)
 
-        # Format the actual pT bin edges.
+        # Positions of bin boundaries.
+        x_boundaries = np.arange(n_var1 + 1) - 0.5
+        y_boundaries = np.arange(n_var2 + 1) - 0.5
+
+        # Format the actual var bin edges.
         edge_labels_x = [
             f"{edge:.1f}" if np.isfinite(edge) else "∞"
-            for edge in pt1_edges
+            for edge in var1_edges
         ]
         edge_labels_y = [
                 f"{edge:.1f}" if np.isfinite(edge) else "∞"
-                for edge in pt2_edges
+                for edge in var2_edges
             ]
 
         
@@ -2484,8 +2523,8 @@ def plot_fractions_grouped(title, grouped_frac, grouping, safe_path):
             alpha=0.6,
         )
 
-        ax.set_xlabel(r"$p_{T,1}$ [GeV]")
-        ax.set_ylabel(r"$p_{T,2}$ [GeV]")
+        ax.set_xlabel(label(var1))
+        ax.set_ylabel(label(var2))
 
         fig.colorbar(image, ax=ax, label="Fraction factor")
         fig.tight_layout()
@@ -2493,7 +2532,7 @@ def plot_fractions_grouped(title, grouped_frac, grouping, safe_path):
         plt.savefig(safe_path / f'plot_fractions_{title}_{key}.pdf', dpi=150, bbox_inches='tight')
         plt.close(fig)
 
-def plot_fractions_grouped_3split(title, grouped_frac, grouping, safe_path, tau):
+def plot_fractions_grouped_3split(title, grouped_frac, grouping, safe_path, tau, var1='pt_1', var2='pt_2', label=None):
 
     if grouping == 'tau_decaymode':
         grouping_key = ['0', '1', '10', '11']
@@ -2509,11 +2548,14 @@ def plot_fractions_grouped_3split(title, grouped_frac, grouping, safe_path, tau)
     for key in grouping_key:
         frac_arlike = grouped_frac[key]
 
-        frac, pt1_edges, pt2_edges = frac_arlike['fraction'], frac_arlike['pt1_edges'], frac_arlike['pt2_edges']
-        global_frac, global_std = frac_arlike['global_frac'], frac_arlike['global_std']
+        if isinstance(frac_arlike, dict):
+            frac, var1_edges, var2_edges = frac_arlike['fraction'], frac_arlike['pt1_edges'], frac_arlike['pt2_edges']
+            global_frac, global_std = frac_arlike['global_frac'], frac_arlike['global_std']
+        else:
+            frac, var1_edges, var2_edges, global_frac, global_std = frac_arlike
 
         frac = np.array(frac)
-        n_pt1, n_pt2 = frac.shape
+        n_var1, n_var2 = frac.shape
 
         fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
 
@@ -2530,19 +2572,19 @@ def plot_fractions_grouped_3split(title, grouped_frac, grouping, safe_path, tau)
             aspect="equal",
             interpolation="none",
             cmap="RdBu",
-            extent=(-0.5, n_pt1 - 0.5, -0.5, n_pt2 - 0.5),
+            extent=(-0.5, n_var1 - 0.5, -0.5, n_var2 - 0.5),
             vmin=0.2 if title=='AR' or title=='AR_like' else -diff,
             vmax=0.46 if title=='AR' or title=='AR_like' else diff,
         )
 
-        for pt2_bin in range(n_pt2):
-            for pt1_bin in range(n_pt1):
-                value = frac.T[pt2_bin, pt1_bin]
+        for var2_bin in range(n_var2):
+            for var1_bin in range(n_var1):
+                value = frac.T[var2_bin, var1_bin]
 
                 if np.isfinite(value):
                     ax.text(
-                        pt1_bin,
-                        pt2_bin,
+                        var1_bin,
+                        var2_bin,
                         f"{value:.2f}",
                         ha="center",
                         va="center",
@@ -2551,16 +2593,16 @@ def plot_fractions_grouped_3split(title, grouped_frac, grouping, safe_path, tau)
                     )
 
                 # Values outside of range get outlined red
-                if (value < 0.2 or value > 0.469) and (title=='AR' or title=='AR_like'):
-                    rectangle = plt.Rectangle(
-                        (pt1_bin - 0.5, pt2_bin - 0.5),
-                        1,
-                        1,
-                        fill=False,
-                        edgecolor="black",
-                        linewidth=2,
-                    )
-                    ax.add_patch(rectangle)
+                #if (value < 0.2 or value > 0.469) and (title=='AR' or title=='AR_like'):
+                #    rectangle = plt.Rectangle(
+                #        (var1_bin - 0.5, var2_bin - 0.5),
+                #        1,
+                #        1,
+                #        fill=False,
+                #        edgecolor="black",
+                #        linewidth=2,
+                #    )
+                #    ax.add_patch(rectangle)
 
         geq = r'$\geq$'
         cat = f"{cat_title}{geq}2" if key=="2_1000" else f"{cat_title}={key}"
@@ -2569,17 +2611,17 @@ def plot_fractions_grouped_3split(title, grouped_frac, grouping, safe_path, tau)
         ax.text(0.145, 0.80, f"= {global_frac:.3f}\n= {global_std:.3f}", fontsize=20, ha="left", va="top", transform=ax.transAxes)
         
         # Positions of bin boundaries.
-        x_boundaries = np.arange(n_pt1 + 1) - 0.5
-        y_boundaries = np.arange(n_pt2 + 1) - 0.5
+        x_boundaries = np.arange(n_var1 + 1) - 0.5
+        y_boundaries = np.arange(n_var2 + 1) - 0.5
 
-        # Format the actual pT bin edges.
+        # Format the actual var bin edges.
         edge_labels_x = [
             f"{edge:.1f}" if np.isfinite(edge) else "∞"
-            for edge in pt1_edges
+            for edge in var1_edges
         ]
         edge_labels_y = [
                 f"{edge:.1f}" if np.isfinite(edge) else "∞"
-                for edge in pt2_edges
+                for edge in var2_edges
             ]
 
         
@@ -2597,8 +2639,9 @@ def plot_fractions_grouped_3split(title, grouped_frac, grouping, safe_path, tau)
             alpha=0.6,
         )
 
-        ax.set_xlabel(r"$p_{T,1}$ [GeV]")
-        ax.set_ylabel(r"$p_{T,2}$ [GeV]")
+        axis_labels = {'pt_1': r"$p_{T,1}$ [GeV]", 'pt_2': r"$p_{T,2}$ [GeV]", 'm_vis': r"$m_{vis}$ [GeV]"}
+        ax.set_xlabel(label(var1) if label else axis_labels.get(var1, var1))
+        ax.set_ylabel(label(var2) if label else axis_labels.get(var2, var2))
 
         fig.colorbar(image, ax=ax, label="Fraction factor")
         fig.tight_layout()

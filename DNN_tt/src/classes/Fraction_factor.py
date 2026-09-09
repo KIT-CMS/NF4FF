@@ -71,10 +71,8 @@ def fraction_in_bins(df_tau1, df_tau2, frac_file, var1='pt_1', var2='pt_2', regi
     if var1=='pt_1' and var2=='pt_2':
         all_frac[region]['ungrouped'] = dict(zip(['fraction', 'pt1_edges', 'pt2_edges', 'global_frac', 'global_std'],[fraction, var1_edges, var2_edges, global_frac, std]))
         write_yaml_to_file(all_frac, frac_file)
-    else:
-        print('Yaml for other var not yet implemented')
 
-    return fraction, var1_edges, var2_edges
+    return fraction, var1_edges, var2_edges, global_frac, std
 
 def fraction_in_bins_3split(which_frac, df_tau1, df_tau2, df_tau3, frac_file, var1='pt_1', var2='pt_2', region='AR_like', var1_bin_edges=None, var2_bin_edges=None):
     '''
@@ -154,10 +152,8 @@ def fraction_in_bins_3split(which_frac, df_tau1, df_tau2, df_tau3, frac_file, va
     if var1=='pt_1' and var2=='pt_2':
         all_frac[region]['ungrouped'] = dict(zip(['fraction', 'pt1_edges', 'pt2_edges', 'global_frac', 'global_std'],[fraction, var1_edges, var2_edges, global_frac, std]))
         write_yaml_to_file(all_frac, frac_file)
-    else:
-        print('Yaml for other var not yet implemented')
 
-    return fraction, var1_edges, var2_edges
+    return fraction, var1_edges, var2_edges, global_frac, std
 
 #Todo: Change everything to var1 und var2
 def fraction_in_bins_grouped(
