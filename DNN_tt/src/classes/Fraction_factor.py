@@ -370,7 +370,7 @@ def fraction_in_bins_grouped_3split(
             var2_bin_edges = _equal_weight_bin_edges(
                 var2_values,
                 weights,
-                events_per_bin=5000,
+                events_per_bin=8000,
             )
             var1_bin_edges = var2_bin_edges
     

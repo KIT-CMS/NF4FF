@@ -33,10 +33,10 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
     fraction_max_bins: int = 0 # Maximum displayed bins per axis for 3split fractions; 0 keeps all bins
-    dnn_grouped: bool = True
+    dnn_grouped: bool = False
     classic: bool = False
 
     vars: Literal['small', 'large'] = 'small' # small: use small set of variables | large: use large set of variables
@@ -638,8 +638,8 @@ def main():
                     )
     
                 fig, ax = plot_fractions_3split('AR_like', frac=frac, var1_edges=edges1, var2_edges=edges2, global_frac=mean, global_std=std, label=get_label, var1='m_vis')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'mvis_pt2' / 'tau1' / 'plot_fractions_AR_like.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'mvis_pt2' / 'tau1' / 'plot_fractions_AR_like.pdf', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'mvis_pt2' / f'{tau}' / 'plot_fractions_AR_like.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'mvis_pt2' / f'{tau}' / 'plot_fractions_AR_like.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig)
 
                 frac, edges1, edges2, mean, std = fraction_in_bins_3split(
@@ -653,9 +653,11 @@ def main():
                     )
     
                 fig, ax = plot_fractions_3split('AR_like', frac=frac, var1_edges=edges1, var2_edges=edges2, global_frac=mean, global_std=std, label=get_label, var1='m_vis')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'mvis_pt2' / 'tau1' / 'plot_fractions_AR.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'mvis_pt2' / 'tau1' / 'plot_fractions_AR.pdf', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'mvis_pt2' / f'{tau}' / 'plot_fractions_AR.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'mvis_pt2' / f'{tau}' / 'plot_fractions_AR.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig)
+
+                logger.info(f'Plotted fraction factor in bins of pt_2 and m_vis for {tau}')
 
         # ----- FF closure in AR -----
         if args.closure_AR:
@@ -764,35 +766,37 @@ def main():
                 logger.info(f'Saved plots of Fraction Factors for njets')
 
                 # ----- plot m_vis/pt_2
-                frac, edges1, edges2, mean, std = fraction_in_bins_grouped_3split(
+                grouped_frac = fraction_in_bins_grouped_3split(
                     which_frac=tau,
                     df_tau1=df.data.AR_like_1,
                     df_tau2=df.data.AR_like_2,
                     df_tau3=df.data.AR_like_3,
-                    frac_file=cfg_path['fractions']+'/fractions.yaml',
+                    frac_file=cfg_path['fractions']+f'/fractions_{tau}.yaml',
                     var1='m_vis', var2 = 'pt_2',
-                    region='AR_like', var1_bin_edges=pt1_edges, var2_bin_edges=pt2_edges
+                    region='AR_like', ar_file=cfg_frac['AR_like'], 
+                    grouping='njets', grouping_variable='njets', grouping_definition=grouping_njets
                     )
-    
-                fig, ax = plot_fractions_3split('AR_like', frac=frac, var1_edges=edges1, var2_edges=edges2, global_frac=mean, global_std=std, label=get_label, var1='m_vis')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'mvis_pt2' / 'tau1' / 'plot_fractions_AR_like.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'mvis_pt2' / 'tau1' / 'plot_fractions_AR_like.pdf', dpi=150, bbox_inches='tight')
-                plt.close(fig)
 
-                frac, edges1, edges2, mean, std = fraction_in_bins_3split(
+                safe_path = PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / grouping / f'{args.frac}_fraction' / 'mvis_pt2' / f'{tau}'
+                plot_fractions_grouped_3split('AR_like', grouped_frac=grouped_frac, grouping=grouping, safe_path=safe_path, tau=tau, label=get_label, var1='m_vis')
+                
+
+                grouped_frac = fraction_in_bins_grouped_3split(
                     which_frac=tau,
                     df_tau1=df.data.AR_1,
                     df_tau2=df.data.AR_2,
                     df_tau3=df.data.AR_3,
-                    frac_file=cfg_path['fractions']+'/fractions.yaml',
+                    frac_file=cfg_path['fractions']+f'/fractions_{tau}.yaml',
                     var1='m_vis', var2 = 'pt_2',
-                    region='AR', var1_bin_edges=pt1_edges, var2_bin_edges=pt2_edges
+                    region='AR', ar_file=cfg_frac['AR_like'], 
+                    grouping='njets', grouping_variable='njets', grouping_definition=grouping_njets
                     )
     
-                fig, ax = plot_fractions_3split('AR_like', frac=frac, var1_edges=edges1, var2_edges=edges2, global_frac=mean, global_std=std, label=get_label, var1='m_vis')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'mvis_pt2' / 'tau1' / 'plot_fractions_AR.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'mvis_pt2' / 'tau1' / 'plot_fractions_AR.pdf', dpi=150, bbox_inches='tight')
-                plt.close(fig)
+                safe_path = PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / grouping / f'{args.frac}_fraction' / 'mvis_pt2' / f'{tau}'
+                plot_fractions_grouped_3split('AR', grouped_frac=grouped_frac, grouping=grouping, safe_path=safe_path, tau=tau, label=get_label, var1='m_vis')
+
+                logger.info(f'Plotted fraction factor in bins of pt_2 and m_vis for {tau}')
+ 
 
         # ----- FF closure in AR -----
         if args.closure_AR:

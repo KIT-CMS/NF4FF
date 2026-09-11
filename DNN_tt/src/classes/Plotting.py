@@ -2178,7 +2178,10 @@ def plot_fractions(title, frac, var1_edges, var2_edges, global_frac, global_std,
     n_var1, n_var2 = frac.shape
     labels_above = var1 != 'pt_1' or var2 != 'pt_2'
 
-    fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.5))
+    if labels_above:
+        fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.5))
+    else:
+        fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
 
     cms_label = CMS_LABEL(ax)
     CMS_CATEGORY_TITLE(ax, title=title)
@@ -2303,7 +2306,10 @@ def plot_fractions_3split(title, frac, var1_edges, var2_edges, global_frac, glob
     n_var1, n_var2 = frac.shape
     labels_above = var1 != 'pt_1' or var2 != 'pt_2'
 
-    fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.5))
+    if labels_above:
+        fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.5))
+    else:
+        fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
 
     cms_label = CMS_LABEL(ax)
     CMS_CATEGORY_TITLE(ax, title=title)
@@ -2431,7 +2437,10 @@ def plot_fractions_grouped(title, grouped_frac, grouping, safe_path, label, var1
         frac = np.array(frac)
         n_var1, n_var2 = frac.shape
 
-        fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+        if labels_above:
+            fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.5))
+        else:
+            fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
 
         cms_label = CMS_LABEL(ax)
         CMS_CATEGORY_TITLE(ax, title=title)
@@ -2545,24 +2554,36 @@ def plot_fractions_grouped_3split(title, grouped_frac, grouping, safe_path, tau,
     else:
         raise ValueError(f'Unsupported grouping: {grouping}')
 
+    labels_above = var1 != 'pt_1' or var2 != 'pt_2'
+
     for key in grouping_key:
         frac_arlike = grouped_frac[key]
 
         if isinstance(frac_arlike, dict):
-            frac, var1_edges, var2_edges = frac_arlike['fraction'], frac_arlike['pt1_edges'], frac_arlike['pt2_edges']
-            global_frac, global_std = frac_arlike['global_frac'], frac_arlike['global_std']
+            frac = frac_arlike['fraction']
+            var1_edges = frac_arlike['pt1_edges']
+            var2_edges = frac_arlike['pt2_edges']
+            global_frac = frac_arlike['global_frac']
+            global_std = frac_arlike['global_std']
         else:
             frac, var1_edges, var2_edges, global_frac, global_std = frac_arlike
 
         frac = np.array(frac)
         n_var1, n_var2 = frac.shape
 
-        fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+        if labels_above:
+            fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.5))
+        else:
+            fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
 
-        CMS_LABEL(ax)
+        cms_label = CMS_LABEL(ax)
         CMS_CATEGORY_TITLE(ax, title=title)
         CMS_LUMI_TITLE(ax)
         CMS_CHANNEL_TITLE(ax)
+
+        if labels_above:
+            cms_label.set_position((0.0, 1.08))
+            cms_label.set_verticalalignment('bottom')
 
         diff = np.abs(np.nanmin(frac.T)) if np.abs(np.nanmin(frac.T))> np.abs(np.nanmax(frac.T)) else np.abs(np.nanmax(frac.T))
 
@@ -2606,9 +2627,14 @@ def plot_fractions_grouped_3split(title, grouped_frac, grouping, safe_path, tau,
 
         geq = r'$\geq$'
         cat = f"{cat_title}{geq}2" if key=="2_1000" else f"{cat_title}={key}"
-        ax.text(0.04, 0.85, f"{cat}:", fontsize=20,  ha='left', va='top', transform=ax.transAxes, ma='left')
-        ax.text(0.14, 0.80, "Mean\nStd", fontsize=20, ha="right", va="top", transform=ax.transAxes)
-        ax.text(0.145, 0.80, f"= {global_frac:.3f}\n= {global_std:.3f}", fontsize=20, ha="left", va="top", transform=ax.transAxes)
+        if labels_above:
+            ax.text(0.0, 1.04,
+                    f"{cat}: Mean = {global_frac:.3f}   Std = {global_std:.3f}",
+                    fontsize=18, ha='left', va='bottom', transform=ax.transAxes)
+        else:
+            ax.text(0.04, 0.85, f"{cat}:", fontsize=20,  ha='left', va='top', transform=ax.transAxes, ma='left')
+            ax.text(0.14, 0.80, "Mean\nStd", fontsize=20, ha="right", va="top", transform=ax.transAxes)
+            ax.text(0.145, 0.80, f"= {global_frac:.3f}\n= {global_std:.3f}", fontsize=20, ha="left", va="top", transform=ax.transAxes)
         
         # Positions of bin boundaries.
         x_boundaries = np.arange(n_var1 + 1) - 0.5
