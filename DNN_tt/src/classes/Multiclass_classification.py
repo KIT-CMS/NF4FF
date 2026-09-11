@@ -25,50 +25,6 @@ CLASS_WEIGHT_COLUMNS = (
     "weight",
 )
 
-
-def qcd_fraction_data_frame(df):
-    df.data[QCD_FRACTION_WEIGHT_COLUMN]
-    frame = df.data.DR_qcd_fractions.events.copy()
-    validate_qcd_fraction_weights(frame)
-
-    return frame
-
-
-def validate_qcd_fraction_weights(frame, weight_column=QCD_FRACTION_WEIGHT_COLUMN):
-    if weight_column not in frame.columns:
-        raise ValueError(f"Missing QCD fraction weight column: {weight_column}")
-
-    finite_weights = np.isfinite(frame[weight_column].to_numpy(dtype=np.float64))
-    if not finite_weights.all():
-        raise ValueError(
-            f"{weight_column} contains non-finite weights for "
-            f"{int((~finite_weights).sum())}/{len(frame)} "
-            "preselected DR_qcd_fractions events."
-        )
-
-
-def _weight_array(frame, weight_column, label):
-    if weight_column not in frame.columns:
-        raise ValueError(f"{label}: missing event-weight column {weight_column}.")
-
-    weights = frame[weight_column].to_numpy(dtype=np.float32)
-    finite_weights = np.isfinite(weights)
-    if not finite_weights.all():
-        raise ValueError(
-            f"{label}: {weight_column} contains non-finite weights for "
-            f"{int((~finite_weights).sum())}/{len(frame)} events."
-        )
-
-    weight_sum = weights.sum(dtype=np.float64)
-    if weight_sum <= 0:
-        raise ValueError(
-            f"{label}: {weight_column} has non-positive total weight "
-            f"{weight_sum}."
-        )
-
-    return weights
-
-
 def _qcd_yield_correction_array(frame, corrections):
     correction_values = np.ones(len(frame), dtype=np.float32)
 
