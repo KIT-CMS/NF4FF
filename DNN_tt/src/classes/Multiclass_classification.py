@@ -439,10 +439,9 @@ class LitFoldMulticlassClassifier(L.LightningModule):
 
 
 def train_fraction_classifier(
-    data_path=DATA_PATH,
-    masks_path=MASKS_PATH,
-    training_var_path=TRAINING_VAR_PATH,
-    output_dir=MODEL_RESULT_DIR,
+    df,
+    training_var,
+    output_dir,
     number_of_classes = 3,
 ):
 
@@ -453,8 +452,8 @@ def train_fraction_classifier(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    df = load_data(data_path, masks_path)
-    training_var = load_variables(training_var_path)
+    #df = load_data(data_path, masks_path)
+    #training_var = load_variables(training_var_path)
     #qcd_yield_corrections = calculate_qcd_yield_corrections(df)
 
     n_classes = number_of_classes

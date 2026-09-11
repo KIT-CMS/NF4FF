@@ -65,6 +65,7 @@ data/
 src/FF_results
 src/NF_results
 src/Training_results
+src/Training_multiclass_results
 src/*.spm
 
 # logs
@@ -94,6 +95,7 @@ results*/
 **/NF_results/
 **/NF_results_new/
 **/Training_results/
+**/Training_multiclass_results/
 **/Training_results_new/
 **/Training_results_to_remember/
 **/.cache/

@@ -16,7 +16,7 @@ from classes.Fraction_factor import (
     fraction_in_bins_3split,
     fraction_in_bins_grouped_3split,
 )
-from classes.Loading import write_yaml_to_file, load_config
+from classes.Multiclass_classification import train_fraction_classifier
 
 
 logger = logging.getLogger(__name__)
@@ -699,25 +699,27 @@ def calculate_fake_factors_grouped_3split(
 
 def calculate_fake_factor_frac_3split(
         df,
-        df1,
-        df2,
-        df3,
         frac_file,
         grouping = None,
         grouping_variable = None,
         grouping_definition = None,
         fraction = "global",
         where_calc_frac = 'AR_like',
+        training_variables = None,
 ):
     '''
     Applying fraction factor to FF for tau split.
 
     :fraction: either "global" (every FF gets a factorized with 1/2) or "pt_bins"
     '''
+    
+    df1 = df.AR_1
+    df2 = df.AR_2
+    df3 = df.AR_3
     _df = df.copy()
-    _df1 = df1.copy()
-    _df2 = df2.copy()
-    _df3 = df3.copy()
+    _df1 = df.AR_1.copy()
+    _df2 = df.AR_2.copy()
+    _df3 = df.AR_3.copy()
 
     if grouping is None:
         ff_tau1 = "ff_dnn_1_raw"
@@ -797,6 +799,10 @@ def calculate_fake_factor_frac_3split(
                 logger.info(f"Saved Fraction Factors for grouping {grouping} for {tau}")
                 #return grouped_frac
 
+    elif fraction == "DNN":
+        if grouping is None:
+            output_dir = "/work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results"
+            train_fraction_classifier(df=df, training_var=training_variables, output_dir=output_dir)
 
 # -------------- classic fake factor determination -------------
 

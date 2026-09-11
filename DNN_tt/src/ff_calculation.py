@@ -336,6 +336,7 @@ def main():
             frac_file=cfg_path['fractions'],
             fraction=args.frac,
             where_calc_frac = 'AR_like',
+            training_variables=training_variables,
         )       
 
     elif args.taus=='3split' and args.dnn_grouped:
@@ -386,9 +387,6 @@ def main():
         logger.info("Applying fake factor fractions...")
         calculate_fake_factor_frac_3split(
             df=df,
-            df1=df.AR_1,
-            df2=df.AR_2,
-            df3=df.AR_3,
             frac_file=cfg_path['fractions'],
             grouping='njets',
             grouping_variable = 'njets',
