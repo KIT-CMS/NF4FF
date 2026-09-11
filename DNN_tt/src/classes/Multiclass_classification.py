@@ -88,54 +88,58 @@ def _qcd_yield_correction_array(frame, corrections):
     return correction_values
 
 
-def build_multiclass_training_arrays(df, training_var, qcd_yield_corrections=None):
-    data_qcd_fraction = qcd_fraction_data_frame(df)
-
-    class_frames = [
-        data_qcd_fraction,
-        df.wjets.AR.events,
-        df.ttbar.AR.events,
+def build_tau_fraction_training_arrays(df, training_var):
+    specifications = [
+        (df.data.AR_like_1.events, "ff_DR_dnn_1"),
+        (df.data.AR_like_2.events, "ff_DR_dnn_2"),
+        (df.data.AR_like_3.events, "ff_DR_dnn_3"),
     ]
-    class_labels = ("qcd", "wjets", "ttbar")
 
-    X = np.concatenate(
-        [
-            frame[training_var].to_numpy(dtype=np.float32)
-            for frame in class_frames
-        ],
-        axis=0,
-    )
-    y = np.concatenate(
-        [
-            np.full(len(frame), class_index, dtype=np.int64)
-            for class_index, frame in enumerate(class_frames)
-        ],
-        axis=0,
-    )
-    parity = np.concatenate(
-        [
-            (frame["event"].to_numpy(dtype=np.int64) % 2)
-            for frame in class_frames
-        ],
-        axis=0,
-    )
-    class_weights = []
-    for frame, weight_column, label in zip(
-        class_frames,
-        CLASS_WEIGHT_COLUMNS,
-        class_labels,
-    ):
-        weights = _weight_array(frame, weight_column, label)
-        if label == "qcd" and qcd_yield_corrections is not None:
-            weights = (
-                weights
-                * _qcd_yield_correction_array(frame, qcd_yield_corrections)
-            ).astype(np.float32)
-        class_weights.append(weights)
+    features = []
+    labels = []
+    parities = []
+    event_weights = []
 
-    weights_event = np.concatenate(class_weights, axis=0)
+    for label, (frame, ff_column) in enumerate(specifications):
+        x = frame[training_var].to_numpy(dtype=np.float32)
 
-    return X, y, parity, weights_event
+        weights = (
+            frame["weight_qcd"].to_numpy(dtype=np.float64)
+            * frame[ff_column].to_numpy(dtype=np.float64)
+        )
+
+        if len(frame) == 0:
+            raise ValueError(f"Fraction class {label} is empty.")
+
+        if not np.isfinite(x).all():
+            raise ValueError(f"Nonfinite features in class {label}.")
+
+        if not np.isfinite(weights).all():
+            raise ValueError(f"Nonfinite weights in class {label}.")
+
+        # Required for the ordinary cross-entropy implementation below.
+        if np.any(weights < 0):
+            raise ValueError(
+                f"Class {label} has signed weights; "
+                "choose a signed-weight treatment before training."
+            )
+
+        if weights.sum() <= 0:
+            raise ValueError(f"Class {label} has no positive yield.")
+
+        features.append(x)
+        labels.append(np.full(len(frame), label, dtype=np.int64))
+        parities.append(
+            frame["event"].to_numpy(dtype=np.int64) % 2
+        )
+        event_weights.append(weights.astype(np.float32))
+
+    return (
+        np.concatenate(features), #X
+        np.concatenate(labels), #y
+        np.concatenate(parities),
+        np.concatenate(event_weights),
+    )
 
 
 
@@ -483,6 +487,7 @@ def train_fraction_classifier(
     masks_path=MASKS_PATH,
     training_var_path=TRAINING_VAR_PATH,
     output_dir=MODEL_RESULT_DIR,
+    number_of_classes = 3,
 ):
 
     # ------------------------------------------------------------
@@ -494,13 +499,13 @@ def train_fraction_classifier(
 
     df = load_data(data_path, masks_path)
     training_var = load_variables(training_var_path)
-    qcd_yield_corrections = calculate_qcd_yield_corrections(df)
+    #qcd_yield_corrections = calculate_qcd_yield_corrections(df)
 
-    n_classes = 3
-    X, y, parity, weights_event = build_multiclass_training_arrays(
+    n_classes = number_of_classes
+    X, y, parity, weights_event = build_tau_fraction_training_arrays(
         df,
         training_var,
-        qcd_yield_corrections=qcd_yield_corrections,
+        #qcd_yield_corrections=qcd_yield_corrections,
     )
     n_features = X.shape[1]
 
@@ -556,13 +561,13 @@ def train_fraction_classifier(
 
     print("Class counts:", class_counts)
     print("Class weight columns:", CLASS_WEIGHT_COLUMNS)
-    print(
-        "QCD yield corrections:",
-        {
-            bin_name: result["correction"]
-            for bin_name, result in qcd_yield_corrections.items()
-        },
-    )
+    #print(
+    #    "QCD yield corrections:",
+    #    {
+    #        bin_name: result["correction"]
+    #        for bin_name, result in qcd_yield_corrections.items()
+    #    },
+    #)
     print("Class weighted yields:", class_weight_sums)
 
     # ------------------------------------------------------------
