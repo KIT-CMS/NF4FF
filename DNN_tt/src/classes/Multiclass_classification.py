@@ -515,7 +515,6 @@ def train_fraction_classifier(
         )
 
     print("Class counts:", class_counts)
-    print("Class weight columns:", CLASS_WEIGHT_COLUMNS)
     #print(
     #    "QCD yield corrections:",
     #    {
@@ -536,6 +535,7 @@ def train_fraction_classifier(
         dropout=0.1,
         activation="ReLU",
         output_activation="Linear",
+        input_names=training_var,
     )
 
     odd_model = DNN(
@@ -545,6 +545,7 @@ def train_fraction_classifier(
         dropout=0.1,
         activation="ReLU",
         output_activation="Linear",
+        input_names=training_var,
     )
 
     even_model.initialize_scaler(

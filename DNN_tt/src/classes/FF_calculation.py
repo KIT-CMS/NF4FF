@@ -6,7 +6,7 @@ import correctionlib as cr
 import numpy as np
 import pandas as pd
 
-from .NeuralNetworks import FoldCombinedDNN
+from .NeuralNetworks import FoldCombinedDNN, load_model, load_fold_combined_model
 from .DataHandling import test_data
 from classes.Fraction_factor import (
     fraction_for_events_grouped,
@@ -706,6 +706,7 @@ def calculate_fake_factor_frac_3split(
         fraction = "global",
         where_calc_frac = 'AR_like',
         training_variables = None,
+        train_frac = True,
 ):
     '''
     Applying fraction factor to FF for tau split.
@@ -716,6 +717,7 @@ def calculate_fake_factor_frac_3split(
     df1 = df.AR_1
     df2 = df.AR_2
     df3 = df.AR_3
+
     _df = df.copy()
     _df1 = df.AR_1.copy()
     _df2 = df.AR_2.copy()
@@ -802,7 +804,28 @@ def calculate_fake_factor_frac_3split(
     elif fraction == "DNN":
         if grouping is None:
             output_dir = "/work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results"
-            train_fraction_classifier(df=df, training_var=training_variables, output_dir=output_dir)
+            if train_frac:
+                train_fraction_classifier(df=df, training_var=training_variables, output_dir=output_dir)
+
+            model = load_model(output_dir, device="cpu")
+            model.eval()
+
+            for class_idx, region, raw_ff in zip(range(3), [df1, df2, df3], [ff_tau1, ff_tau2, ff_tau3]):
+                data = test_data(region, training_variables)
+                X = t.from_numpy(data.X)
+                X = _prepare_input_tensor(model, X, region)
+
+                with t.inference_mode():
+                    # Saved combined model returns logits.
+                    # reshape also handles a region containing one event.
+                    logits = model(X).reshape(-1, 3)
+                    fractions = t.softmax(logits, dim=1)
+                    fraction_i = fractions[:, class_idx].cpu().numpy()
+
+                region[f"fraction_dnn_{class_idx + 1}"] = fraction_i
+                region[raw_ff.removesuffix("_raw")] = fraction_i * region[raw_ff]
+
+
 
 # -------------- classic fake factor determination -------------
 

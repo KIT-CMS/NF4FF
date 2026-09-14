@@ -34,8 +34,8 @@ class Args(Tap):
     
     taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
-    frac: Literal['global', 'pt_binned'] = 'pt_binned' # global: use global fraction | pt_binned: use pt-binned fraction
-    dnn_grouped: bool = True
+    frac: Literal['global', 'pt_binned', 'DNN'] = 'DNN' # global: use global fraction | pt_binned: use pt-binned fraction
+    dnn_grouped: bool = False
     classic: bool = False
 
 args = Args().parse_args()
@@ -330,13 +330,11 @@ def main():
         logger.info(f"Applying fake factor {args.frac} fractions...")
         calculate_fake_factor_frac_3split(
             df=df,
-            df1=df.AR_1,
-            df2=df.AR_2,
-            df3=df.AR_3,
             frac_file=cfg_path['fractions'],
             fraction=args.frac,
             where_calc_frac = 'AR_like',
             training_variables=training_variables,
+            train_frac=False,
         )       
 
     elif args.taus=='3split' and args.dnn_grouped:
@@ -392,7 +390,8 @@ def main():
             grouping_variable = 'njets',
             grouping_definition = grouping_njets,
             fraction=args.frac,
-            where_calc_frac = 'AR_like'
+            where_calc_frac = 'AR_like',
+            train_frac=False,
         )
 
     if args.taus == 'split' or args.taus == '3split':
