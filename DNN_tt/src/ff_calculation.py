@@ -35,7 +35,7 @@ class Args(Tap):
     taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_binned', 'DNN'] = 'DNN' # global: use global fraction | pt_binned: use pt-binned fraction
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
     classic: bool = False
 
 args = Args().parse_args()
@@ -72,6 +72,7 @@ def main():
     )    
   
     training_variables = load_variables(TRAINING_VAR_PATH, args.var)
+    training_variables_multiclass = load_variables(TRAINING_VAR_PATH, 'variables_for_multiclass')
     if args.taus == 'split':
         try:
             with open(cfg_path['fractions']+"/fractions.yaml", 'x') as file:
@@ -169,7 +170,9 @@ def main():
                 grouping=name,
                 grouping_variable = group_var,
                 grouping_definition = group_def,
-                fraction=args.frac
+                fraction=args.frac,
+                training_variables=training_variables_multiclass,
+                train_frac=True,
             )
 
     elif args.taus == 'split' and not args.dnn_grouped:
@@ -209,7 +212,9 @@ def main():
             df1=df.AR_tau1,
             df2=df.AR_tau2,
             frac_file=cfg_path['fractions']+"/fractions.yaml",
-            fraction=args.frac
+            fraction=args.frac,
+            training_variables=training_variables_multiclass,
+            train_frac=True,
         )       
             
 
@@ -333,8 +338,8 @@ def main():
             frac_file=cfg_path['fractions'],
             fraction=args.frac,
             where_calc_frac = 'AR_like',
-            training_variables=training_variables,
-            train_frac=False,
+            training_variables=training_variables_multiclass,
+            train_frac=True,
         )       
 
     elif args.taus=='3split' and args.dnn_grouped:
@@ -391,7 +396,8 @@ def main():
             grouping_definition = grouping_njets,
             fraction=args.frac,
             where_calc_frac = 'AR_like',
-            train_frac=False,
+            training_variables=training_variables_multiclass,
+            train_frac=True,
         )
 
     if args.taus == 'split' or args.taus == '3split':

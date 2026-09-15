@@ -268,7 +268,6 @@ def calculate_fake_factors_grouped(
         fake_factor_tau2 = np.clip(fake_factor_tau2, 0, 3)
         df.AR_tau2[f"ff_dnn_tau2{suffix}_raw"] = fake_factor_tau2
 
-
 def calculate_fake_factor_frac(
         df,
         df1,
@@ -278,11 +277,15 @@ def calculate_fake_factor_frac(
         grouping_variable = None,
         grouping_definition = None,
         fraction = "global",
+        training_variables = None,
+        train_frac=True,
 ):
     '''
     Applying fraction factor to FF for tau split.
 
-    :fraction: either "global" (every FF gets a factorized with 1/2) or "pt_bins"
+    :fraction: "global" (factor 1/2), "pt_binned", or "DNN".
+    DNN fractions use one classifier for tau_dm with both decay modes as
+    inputs and tau_dm DR weights; njets uses a classifier per jet category.
     '''
     _df = df.copy()
     _df1 = df1.copy()
@@ -350,7 +353,115 @@ def calculate_fake_factor_frac(
             df2[ff_tau2.removesuffix('_raw')] = (1.0 - frac_tau2) * _df2[ff_tau2].astype(target_dtype)
             logger.info("Saved Fraction Factors for grouping %s", grouping)
             return grouped_frac
-    
+
+    elif fraction == "DNN":
+        if grouping is None or grouping == "tau_dm":
+            output_dir = "/work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results"
+            suffix = "" if grouping is None else "_tau_dm"
+            if grouping == "tau_dm":
+                # Both classes must describe the same event categories. Selecting
+                # dm_1 for class 0 and dm_2 for class 1 breaks this correspondence.
+                output_dir += "/tau_dm/combined"
+                if training_variables is None:
+                    raise ValueError("training_variables are required for DNN fraction factors.")
+                training_variables = list(training_variables)
+                for variable in ("tau_decaymode_1", "tau_decaymode_2"):
+                    if variable not in training_variables:
+                        training_variables.append(variable)
+
+            if train_frac:
+                train_fraction_classifier(
+                    df=df,
+                    training_var=training_variables,
+                    output_dir=output_dir,
+                    number_of_classes=2,
+                    training_masks=None,
+                    ff_suffix=suffix,
+                )
+
+            model = load_model(output_dir, device="cpu")
+            model.eval()
+
+            for class_idx, region, raw_ff in zip(range(2), [df1, df2], [ff_tau1, ff_tau2]):
+                data = test_data(region, training_variables)
+                X = t.from_numpy(data.X)
+                X = _prepare_input_tensor(model, X, region)
+
+                with t.inference_mode():
+                    logits = model(X).reshape(-1, 2)
+                    fractions = t.softmax(logits, dim=1)
+                    fraction_i = fractions[:, class_idx].cpu().numpy()
+
+                region[f"fraction_dnn_{class_idx + 1}{suffix}"] = fraction_i
+                region[raw_ff.removesuffix("_raw")] = fraction_i * region[raw_ff]
+        else:
+            if grouping_variable is None or grouping_definition is None:
+                raise ValueError("grouping_variable and grouping_definition are required for grouped fraction factors.")
+
+            if isinstance(grouping_variable, list):
+                if len(grouping_variable) != 2:
+                    raise ValueError("grouping_variable must contain exactly two column names when supplied as a list.")
+                grouping_var_1, grouping_var_2 = grouping_variable
+            else:
+                grouping_var_1 = grouping_var_2 = grouping_variable
+
+            regions = [df.data.AR_like_tau1, df.data.AR_like_tau2, df1, df2]
+            group_variables = [grouping_var_1, grouping_var_2] * 2
+            masks = [
+                dict(_build_group_masks(np.asarray(region[variable]), grouping_definition))
+                for region, variable in zip(regions, group_variables)
+            ]
+
+            # Each training and application event must belong to exactly one group.
+            for region, region_masks in zip(regions, masks):
+                coverage = np.zeros(len(region), dtype=int)
+                for mask in region_masks.values():
+                    coverage += mask
+                if np.any(coverage != 1):
+                    raise ValueError(f"Grouping {grouping!r} must cover each event exactly once.")
+
+            event_fractions = [np.full(len(df1), np.nan, dtype=np.float32), np.full(len(df2), np.nan, dtype=np.float32),
+            ]
+
+            for group_name in masks[0]:
+                output_dir = f"/work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results/{grouping}/{group_name}"
+                if train_frac:
+                    train_fraction_classifier(
+                        df=df,
+                        training_var=training_variables,
+                        output_dir=output_dir,
+                        number_of_classes=2,
+                        training_masks=[masks[0][group_name], masks[1][group_name]],
+                        ff_suffix=f"_{grouping}",
+                    )
+
+                model = load_model(output_dir, device="cpu")
+                model.eval()
+
+                for class_idx, region in enumerate([df1, df2]):
+                    mask = masks[class_idx + 2][group_name]
+                    if not mask.any():
+                        continue
+
+                    selected = [_df1, _df2][class_idx].loc[mask]
+                    data = test_data(selected, training_variables)
+                    X = t.from_numpy(data.X).float()
+                    X = _prepare_input_tensor(model, X, selected)
+
+                    with t.inference_mode():
+                        logits = model(X).reshape(-1, 2)
+                        fractions = t.softmax(logits, dim=1)
+                        fraction_i = fractions[:, class_idx].cpu().numpy()
+
+                    event_fractions[class_idx][mask] = fraction_i
+
+            if any(not np.isfinite(fractions).all() for fractions in event_fractions):
+                raise ValueError(f"Missing or nonfinite fraction predictions for grouping {grouping!r}.")
+
+            for class_idx, region, raw_ff in zip(range(2), [df1, df2], [ff_tau1, ff_tau2]):
+                fraction_i = event_fractions[class_idx]
+                region[f"fraction_dnn_{class_idx + 1}_{grouping}"] = fraction_i
+                region[raw_ff.removesuffix("_raw")] = fraction_i * region[raw_ff]
 
 
 # ----- tau inclusive FF -----
@@ -709,9 +820,11 @@ def calculate_fake_factor_frac_3split(
         train_frac = True,
 ):
     '''
-    Applying fraction factor to FF for tau split.
+    Apply fraction factors to the three tau application regions.
 
-    :fraction: either "global" (every FF gets a factorized with 1/2) or "pt_bins"
+    :fraction: "global" (yield fractions), "pt_binned", or "DNN".
+    Grouped DNN fractions train one three-class classifier per njets category
+    using weight_qcd times the corresponding njets DR fake factor.
     '''
     
     df1 = df.AR_1
@@ -816,15 +929,85 @@ def calculate_fake_factor_frac_3split(
                 X = _prepare_input_tensor(model, X, region)
 
                 with t.inference_mode():
-                    # Saved combined model returns logits.
-                    # reshape also handles a region containing one event.
                     logits = model(X).reshape(-1, 3)
                     fractions = t.softmax(logits, dim=1)
                     fraction_i = fractions[:, class_idx].cpu().numpy()
 
                 region[f"fraction_dnn_{class_idx + 1}"] = fraction_i
                 region[raw_ff.removesuffix("_raw")] = fraction_i * region[raw_ff]
+        elif grouping == "njets":
+            if grouping_variable != "njets" or grouping_definition is None:
+                raise ValueError("grouping_variable='njets' and grouping_definition are required for njets fraction factors.")
+            if training_variables is None:
+                raise ValueError("training_variables are required for DNN fraction factors.")
+            if where_calc_frac != "AR_like":
+                raise ValueError("Grouped DNN fractions are trained in AR_like regions.")
 
+            training_regions = [df.data.AR_like_1, df.data.AR_like_2, df.data.AR_like_3]
+            application_regions = [df1, df2, df3]
+            application_frames = [_df1, _df2, _df3]
+            masks = [
+                dict(_build_group_masks(np.asarray(region["njets"]), grouping_definition))
+                for region in training_regions + application_regions
+            ]
+
+            for region, region_masks in zip(training_regions + application_regions, masks):
+                coverage = np.zeros(len(region), dtype=int)
+                for mask in region_masks.values():
+                    coverage += mask
+                if np.any(coverage != 1):
+                    raise ValueError("Grouping 'njets' must cover each event exactly once.")
+
+            event_fractions = [
+                np.full(len(region), np.nan, dtype=np.float32)
+                for region in application_regions
+            ]
+
+            for group_name in masks[0]:
+                # Keep three-class checkpoints separate from two-class models.
+                output_dir = (
+                    "/work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results/"
+                    f"3split/njets/{group_name}"
+                )
+                if train_frac:
+                    train_fraction_classifier(
+                        df=df,
+                        training_var=training_variables,
+                        output_dir=output_dir,
+                        number_of_classes=3,
+                        training_masks=[region_masks[group_name] for region_masks in masks[:3]],
+                        ff_suffix="_njets",
+                    )
+
+                model = load_model(output_dir, device="cpu")
+                model.eval()
+
+                for class_idx, frame in enumerate(application_frames):
+                    mask = masks[class_idx + 3][group_name]
+                    if not mask.any():
+                        continue
+
+                    selected = frame.loc[mask]
+                    data = test_data(selected, training_variables)
+                    X = t.from_numpy(data.X).float()
+                    X = _prepare_input_tensor(model, X, selected)
+
+                    with t.inference_mode():
+                        logits = model(X).reshape(-1, 3)
+                        fractions = t.softmax(logits, dim=1)
+                        fraction_i = fractions[:, class_idx].cpu().numpy()
+
+                    event_fractions[class_idx][mask] = fraction_i
+
+            if any(not np.isfinite(fractions).all() for fractions in event_fractions):
+                raise ValueError("Missing or nonfinite three-split fraction predictions for grouping 'njets'.")
+
+            for class_idx, region, raw_ff in zip(range(3), application_regions, [ff_tau1, ff_tau2, ff_tau3]):
+                fraction_i = event_fractions[class_idx]
+                region[f"fraction_dnn_{class_idx + 1}_njets"] = fraction_i
+                region[raw_ff.removesuffix("_raw")] = fraction_i * region[raw_ff]
+        else:
+            raise NotImplementedError(f"Grouped three-split DNN fractions are not implemented for {grouping!r}.")
 
 
 # -------------- classic fake factor determination -------------

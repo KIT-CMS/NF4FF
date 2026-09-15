@@ -44,12 +44,21 @@ def _qcd_yield_correction_array(frame, corrections):
     return correction_values
 
 
-def build_tau_fraction_training_arrays(df, training_var):
-    specifications = [
-        (df.data.AR_like_1.events, "ff_DR_dnn_1"),
-        (df.data.AR_like_2.events, "ff_DR_dnn_2"),
-        (df.data.AR_like_3.events, "ff_DR_dnn_3"),
-    ]
+def build_tau_fraction_training_arrays(df, training_var, num_classes, training_masks=None, ff_suffix=""):
+
+    if num_classes == 2:
+        specifications = [
+            (df.data.AR_like_tau1.events, "ff_DR_dnn_tau1"),
+            (df.data.AR_like_tau2.events, "ff_DR_dnn_tau2"),
+        ]
+    elif num_classes == 3:
+        specifications = [
+            (df.data.AR_like_1.events, "ff_DR_dnn_1"),
+            (df.data.AR_like_2.events, "ff_DR_dnn_2"),
+            (df.data.AR_like_3.events, "ff_DR_dnn_3"),
+        ]
+    else:
+        raise ValueError("number_of_classes must be 2 or 3.")
 
     features = []
     labels = []
@@ -57,6 +66,11 @@ def build_tau_fraction_training_arrays(df, training_var):
     event_weights = []
 
     for label, (frame, ff_column) in enumerate(specifications):
+        if training_masks is not None:
+            frame = frame.loc[training_masks[label]]
+
+        ff_column = ff_column + ff_suffix
+
         x = frame[training_var].to_numpy(dtype=np.float32)
 
         weights = (
@@ -443,6 +457,8 @@ def train_fraction_classifier(
     training_var,
     output_dir,
     number_of_classes = 3,
+    training_masks=None, 
+    ff_suffix=""
 ):
 
     # ------------------------------------------------------------
@@ -460,6 +476,9 @@ def train_fraction_classifier(
     X, y, parity, weights_event = build_tau_fraction_training_arrays(
         df,
         training_var,
+        num_classes = n_classes,
+        training_masks=training_masks,
+        ff_suffix=ff_suffix,
         #qcd_yield_corrections=qcd_yield_corrections,
     )
     n_features = X.shape[1]

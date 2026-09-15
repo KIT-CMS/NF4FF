@@ -2079,7 +2079,7 @@ def plot_NN_output_FF(
         FF,
         process = 'Wjets',
         ):
-
+    hep.style.use(hep.style.CMS)
     bins = np.linspace(0, 1, 51)
 
     fig, ax = plt.subplots(2, 1, figsize=(10, 7))
@@ -2174,6 +2174,7 @@ def plot_fake_factors_ungrouped_splitAndincl(
     return fig, ax
 
 def plot_fractions(title, frac, var1_edges, var2_edges, global_frac, global_std, label, var1='pt_1', var2='pt_2'):
+    hep.style.use(hep.style.CMS)
     frac = np.array(frac)
     n_var1, n_var2 = frac.shape
     labels_above = var1 != 'pt_1' or var2 != 'pt_2'
@@ -2283,6 +2284,7 @@ def plot_fractions_3split(title, frac, var1_edges, var2_edges, global_frac, glob
     max_bins limits each axis (0 keeps the original grid). Block means give
     equal weight to finite cells, not to events. Global statistics stay unchanged.
     """
+    hep.style.use(hep.style.CMS)
     frac = np.asarray(frac, dtype=float)
     if max_bins < 0:
         raise ValueError('max_bins must be non-negative')
@@ -2406,7 +2408,7 @@ def plot_fractions_3split(title, frac, var1_edges, var2_edges, global_frac, glob
     return fig, ax
 
 def plot_fractions_grouped(title, grouped_frac, grouping, safe_path, label, var1='pt_1', var2='pt_2'):
-
+    hep.style.use(hep.style.CMS)
     if grouping == 'tau_decaymode':
         grouping_key = ['0', '1', '10', '11']
         group_name = 'tau_dm'
@@ -2542,7 +2544,7 @@ def plot_fractions_grouped(title, grouped_frac, grouping, safe_path, label, var1
         plt.close(fig)
 
 def plot_fractions_grouped_3split(title, grouped_frac, grouping, safe_path, tau, var1='pt_1', var2='pt_2', label=None):
-
+    hep.style.use(hep.style.CMS)
     if grouping == 'tau_decaymode':
         grouping_key = ['0', '1', '10', '11']
         group_name = 'tau_dm'
@@ -2673,4 +2675,72 @@ def plot_fractions_grouped_3split(title, grouped_frac, grouping, safe_path, tau,
         fig.tight_layout()
         plt.savefig(safe_path / f'plot_fractions_{title}_{key}.png', dpi=150, bbox_inches='tight')
         plt.savefig(safe_path / f'plot_fractions_{title}_{key}.pdf', dpi=150, bbox_inches='tight')
+        plt.close(fig)
+
+def plot_in_hist1d(input_values, label, cat_title, input_name, save_dir, save_name, region='AR_like'):
+    hep.style.use(hep.style.CMS)
+    bins = np.linspace(0.1, 0.6, 51)
+
+    if not isinstance(input_values, list):
+        fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
+
+        CMS_LABEL(ax)
+        CMS_CATEGORY_TITLE(ax, title=cat_title)
+        CMS_LUMI_TITLE(ax)
+        CMS_CHANNEL_TITLE(ax)
+
+        ax.hist(input_values, bins=bins, histtype='step', linewidth=2, label=label)
+        ax.set_xlabel(input_name)
+        ax.set_ylabel('Events')
+        legend = ax.legend(loc="upper right", frameon=False)
+        ax.annotate(
+            f"Mean = {np.mean(input_values[i]):.3f}\n"
+            f"Std = {np.std(input_values[i]):.3f}",
+            xy=(1, 0),
+            xycoords=legend,
+            xytext=(0, -6),
+            textcoords="offset points",
+            fontsize=18,
+            ha="right",
+            va="top",
+            multialignment="right",
+            )
+        fig.tight_layout()
+
+        plt.savefig(save_dir / f'plot_f{save_name}_1d_{region}.png', dpi=150, bbox_inches='tight')
+        plt.savefig(save_dir / f'plot_{save_name}_1d_{region}.pdf', dpi=150, bbox_inches='tight')
+        plt.close(fig)
+
+    else:
+        fig, ax = plt.subplots(len(input_values), 1, figsize=(11.7, 11.7))
+
+        CMS_LABEL(ax[0])
+        CMS_CATEGORY_TITLE(ax[0], title=cat_title)
+        CMS_LUMI_TITLE(ax[0])
+        CMS_CHANNEL_TITLE(ax[0])
+
+        for i in range(len(input_values)): 
+        
+            ax[i].hist(input_values[i], bins=bins, histtype='step', linewidth=2, label=label[i])
+            # A fixed location avoids recursive placement with legend-anchored text.
+            legend = ax[i].legend(loc="upper right", frameon=False)
+            ax[i].annotate(
+                f"Mean = {np.mean(input_values[i]):.3f}\n"
+                f"Std = {np.std(input_values[i]):.3f}",
+                xy=(1, 0),
+                xycoords=legend,
+                xytext=(0, -6),
+                textcoords="offset points",
+                fontsize=18,
+                ha="right",
+                va="top",
+                multialignment="right",
+                )
+            ax[i].set_ylabel('Events')
+            
+
+        ax[len(input_values)-1].set_xlabel(input_name)
+        fig.tight_layout()
+        plt.savefig(save_dir / f'plot_{save_name}_{region}.png', dpi=150, bbox_inches='tight')
+        plt.savefig(save_dir / f'plot_{save_name}_{region}.pdf', dpi=150, bbox_inches='tight')
         plt.close(fig)

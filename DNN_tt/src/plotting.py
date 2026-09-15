@@ -18,7 +18,7 @@ from classes.Plotting import plot_fake_factors, plot_closure, plot_fake_factors_
 from classes.Plotting import FF_closure_in_DR_tau1, FF_closure_in_DR_tau2, FF_closure_in_DR_incl, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl, plot_fake_factors_combTaus, plot_fake_factors_grouped_incl
 from classes.Plotting import plot_closure_3split, FF_closure_in_DR_3split, plot_fake_factors_3split, plot_fake_factors_combTaus_3split, plot_fake_factors_grouped_3split, plot_fake_factors_grouped_combTaus_3split
 from classes.Plotting import plot_fractions, plot_fractions_grouped, plot_fractions_3split, plot_fractions_grouped_3split
-
+from classes.Plotting import plot_in_hist1d
 
 SEED = 42
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
     fraction_max_bins: int = 0 # Maximum displayed bins per axis for 3split fractions; 0 keeps all bins
     dnn_grouped: bool = False
@@ -43,7 +43,7 @@ class Args(Tap):
 
     closure_DR: bool = False
     FF_dist: bool = False
-    frac: Literal['global', 'pt_binned', 'DNN'] = 'pt_binned' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
+    frac: Literal['global', 'pt_binned', 'DNN'] = 'DNN' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
     closure_AR: bool = False
 
 args = Args().parse_args()
@@ -326,6 +326,17 @@ def main():
     
                 plot_fractions_grouped('AR', grouped_frac=grouped_frac, grouping=grouping, safe_path=safe_path, label=get_label, var1='m_vis')
 
+        if args.frac=='DNN':
+            plot_in_hist1d(
+                input_values=[df.data.AR_tau1['fraction_dnn_1_njets'], df.data.AR_tau2['fraction_dnn_2_njets']], 
+                label=[r'$AR_1$', r'$AR_2$'],
+                cat_title='njets inclusive',
+                input_name='combinatorial weight',
+                save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'njets' / f'{args.frac}_fraction',
+                save_name='fractions',
+                )
+            logger.info('Plotted fraction factors calculated with multiclass classification...')
+        
         # ----- FF closure in AR -----
         if args.closure_AR:
             x = uproot.open("/work/ptoedter/MA-Pascal/smhtt_ul/output/2018-et-2025-12_15_with_uncertainties_ntupels_v1-final_v3_2026_02_19/control_shapes-2018-et-2025-12_15_with_uncertainties_ntupels_v1-final_v3_2026_02_19.root")
@@ -498,7 +509,18 @@ def main():
             plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'mvis_pt2' / 'tau1' / 'plot_fractions_AR.pdf', dpi=150, bbox_inches='tight')
             plt.close(fig)
 
-
+        elif args.frac == 'DNN':
+            plot_in_hist1d(
+                input_values=[df.data.AR_tau1['fraction_dnn_1'], df.data.AR_tau2['fraction_dnn_2']], 
+                label=[r'$AR_1$', r'$AR_2$'],
+                cat_title='inclusive',
+                input_name='combinatorial weight',
+                save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
+                save_name='fractions',
+                )
+            logger.info('Plotted fraction factors calculated with multiclass classification...')
+        
+        
         # ----- FF closure in AR -----
         if args.closure_AR:
             for var in variables:
@@ -659,6 +681,19 @@ def main():
 
                 logger.info(f'Plotted fraction factor in bins of pt_2 and m_vis for {tau}')
 
+        elif args.frac == 'DNN':
+            plot_in_hist1d(
+                input_values=[df.data.AR_1['fraction_dnn_1'], df.data.AR_2['fraction_dnn_2'], df.data.AR_3['fraction_dnn_3']], 
+                label=[r'$AR_1$', r'$AR_2$', r'$AR_3$'],
+                cat_title='inclusive',
+                input_name='combinatorial weight',
+                save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
+                save_name='fractions',
+                )
+            logger.info('Plotted fraction factors calculated with multiclass classification...')
+
+
+
         # ----- FF closure in AR -----
         if args.closure_AR:
                 for var in variables:
@@ -797,6 +832,17 @@ def main():
 
                 logger.info(f'Plotted fraction factor in bins of pt_2 and m_vis for {tau}')
  
+        if args.frac=='DNN':
+            plot_in_hist1d(
+                input_values=[df.data.AR_1['fraction_dnn_1_njets'], df.data.AR_2['fraction_dnn_2_njets'], df.data.AR_3['fraction_dnn_3_njets']], 
+                label=[r'$AR_1$', r'$AR_2$', r'$AR_3$'],
+                cat_title='njets inclusive',
+                input_name='combinatorial weight',
+                save_dir=PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / grouping / f'{args.frac}_fraction',
+                save_name='fractions',
+                )
+            logger.info('Plotted fraction factors calculated with multiclass classification...')
+
 
         # ----- FF closure in AR -----
         if args.closure_AR:
