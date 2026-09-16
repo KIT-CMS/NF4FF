@@ -18,7 +18,7 @@ from classes.Plotting import plot_fake_factors, plot_closure, plot_fake_factors_
 from classes.Plotting import FF_closure_in_DR_tau1, FF_closure_in_DR_tau2, FF_closure_in_DR_incl, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl, plot_fake_factors_combTaus, plot_fake_factors_grouped_incl
 from classes.Plotting import plot_closure_3split, FF_closure_in_DR_3split, plot_fake_factors_3split, plot_fake_factors_combTaus_3split, plot_fake_factors_grouped_3split, plot_fake_factors_grouped_combTaus_3split
 from classes.Plotting import plot_fractions, plot_fractions_grouped, plot_fractions_3split, plot_fractions_grouped_3split
-from classes.Plotting import plot_in_hist1d
+from classes.Plotting import plot_in_hist1d, plot_NN_output_frac
 
 SEED = 42
 logger = logging.getLogger(__name__)
@@ -33,18 +33,18 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
     fraction_max_bins: int = 0 # Maximum displayed bins per axis for 3split fractions; 0 keeps all bins
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
     classic: bool = False
 
     vars: Literal['small', 'large'] = 'small' # small: use small set of variables | large: use large set of variables
 
     closure_DR: bool = False
-    FF_dist: bool = False
-    frac: Literal['global', 'pt_binned', 'DNN'] = 'DNN' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
-    closure_AR: bool = False
+    FF_dist: bool = True
+    frac: Literal['global', 'pt_binned', 'DNN'] = 'pt_binned' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
+    closure_AR: bool = True
 
 args = Args().parse_args()
 
@@ -336,6 +336,19 @@ def main():
                 save_name='fractions',
                 )
             logger.info('Plotted fraction factors calculated with multiclass classification...')
+
+            nn_output = load_config(cfg_path['DNN_output'] + f'/frac_{args.taus}.yaml')
+            exit()
+            nn_output = nn_output['njets']
+            for x in ['0', '1', '2_1000']:
+                plot_NN_output_frac(
+                    nn_output=nn_output[x],
+                    cat_title='inclusive',
+                    label=[r'class 0: $AR_1$', r'class 1: $AR_2$'],
+                    save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'njets' / f'{args.frac}_fraction',
+                    save_name=f'nn_output_{x}',
+                    )
+                logger.info('Plotted NN outputs of multiclass classification...')
         
         # ----- FF closure in AR -----
         if args.closure_AR:
@@ -519,6 +532,17 @@ def main():
                 save_name='fractions',
                 )
             logger.info('Plotted fraction factors calculated with multiclass classification...')
+
+            nn_output = load_config(cfg_path['DNN_output'] + f'/frac_{args.taus}.yaml')
+            nn_output = nn_output['ungrouped']
+            plot_NN_output_frac(
+                nn_output=nn_output,
+                cat_title='inclusive',
+                label=[r'$class 0: AR_1$', r'$class 1: AR_2$'],
+                save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
+                save_name='nn_output',
+                )
+            logger.info('Plotted NN outputs of multiclass classification...')
         
         
         # ----- FF closure in AR -----
@@ -687,10 +711,21 @@ def main():
                 label=[r'$AR_1$', r'$AR_2$', r'$AR_3$'],
                 cat_title='inclusive',
                 input_name='combinatorial weight',
-                save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
+                save_dir=PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
                 save_name='fractions',
                 )
             logger.info('Plotted fraction factors calculated with multiclass classification...')
+
+            nn_output = load_config(cfg_path['DNN_output'] + f'/frac_{args.taus}.yaml')
+            nn_output = nn_output['ungrouped']
+            plot_NN_output_frac(
+                nn_output=nn_output,
+                cat_title='inclusive',
+                label=[r'$class 1: AR_1$', r'$class 2: AR_2$', r'$class 3: AR_3$'],
+                save_dir=PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
+                save_name='nn_output',
+                )
+            logger.info('Plotted NN outputs of multiclass classification...')
 
 
 
@@ -713,7 +748,7 @@ def main():
     
                 logger.info('Saved all closure plots for ungrouped DNN')
 
-    if args.taus=='3split' and args.dnn_grouped:
+    elif args.taus=='3split' and args.dnn_grouped:
         logger.info('Initiaize plotting for tau 3split FF calculated through grouped DNN...')
 
         df = load_data(DATA_PATH, MASKS_PATH_3SPLIT)
@@ -842,6 +877,18 @@ def main():
                 save_name='fractions',
                 )
             logger.info('Plotted fraction factors calculated with multiclass classification...')
+
+            nn_output = load_config(cfg_path['DNN_output'] + f'/frac_{args.taus}.yaml')
+            nn_output = nn_output['njets']
+            for x in ['0', '1', '2_1000']:
+                plot_NN_output_frac(
+                    nn_output=nn_output[x],
+                    cat_title='inclusive',
+                    label=[r'class 1: $AR_1$', r'class 2: $AR_2$', r'$class 3: AR_3$'],
+                    save_dir=PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'njets' / f'{args.frac}_fraction',
+                    save_name=f'nn_output_{x}',
+                    )
+                logger.info('Plotted NN outputs of multiclass classification...')
 
 
         # ----- FF closure in AR -----

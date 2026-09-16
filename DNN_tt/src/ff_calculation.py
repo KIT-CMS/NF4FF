@@ -34,7 +34,7 @@ class Args(Tap):
     
     taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
-    frac: Literal['global', 'pt_binned', 'DNN'] = 'DNN' # global: use global fraction | pt_binned: use pt-binned fraction
+    frac: Literal['global', 'pt_binned', 'DNN'] = 'pt_binned' # global: use global fraction | pt_binned: use pt-binned fraction
     dnn_grouped: bool = True
     classic: bool = False
 
@@ -98,7 +98,16 @@ def main():
             except FileExistsError:
                 logger.info(f'{cfg_path["fractions"]}/fractions_{name}.yaml already exists')
 
-
+    if args.taus == 'split' or args.taus == '3split':
+        Path(cfg_path['DNN_output']).mkdir(parents=True, exist_ok=True)
+        try:
+            with open(cfg_path['DNN_output']+f"/frac_{args.taus}.yaml", 'x') as file:
+                dict = {'ungrouped': '', 'njets': {}, 'tau_dm': ''}
+                file.write('# saved values of fraction factors for ungrouped, njets and tauDM \n')
+                yaml.safe_dump(dict, file)
+            logger.info(f'Created {cfg_path["DNN_output"]}/frac_{args.taus}.yaml')
+        except FileExistsError:
+            logger.info(f'{cfg_path["DNN_output"]}/frac_{args.taus}.yaml already exists')
     #exit()
 
     # ----- calculate fake factors -----
@@ -224,7 +233,7 @@ def main():
         elif args.incl=='andor': incl = 2
         else:
             logger.error(f'Value Error: args.incl = {args.incl}, but only accepts "and or "or".')
-            exit()
+            exit() 
 
         logger.info("Loading model for inclusive split in njets...")
         model = load_fold_combined_model(

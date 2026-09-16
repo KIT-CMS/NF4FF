@@ -10,7 +10,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from lightning.pytorch.loggers import CSVLogger
 
 from classes.NeuralNetworks import DNN, FoldCombinedDNN, save_model
-from classes.Loading import load_data, load_variables
+from classes.Loading import load_data, load_variables, load_config, write_yaml_to_file
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -458,7 +458,10 @@ def train_fraction_classifier(
     output_dir,
     number_of_classes = 3,
     training_masks=None, 
-    ff_suffix=""
+    ff_suffix="",
+    save_file=None,
+    save_column=None,
+    save_key=None,
 ):
 
     # ------------------------------------------------------------
@@ -651,6 +654,39 @@ def train_fraction_classifier(
     save_model(lit_model.odd_model, output_dir / "fold_odd")
     save_model(lit_model.combined_model, output_dir)
 
+
+    # ------------------------------------------------------------
+    # Saving NN output in yaml
+    # ------------------------------------------------------------
+    X_save = X
+    parity_save = parity
+
+    X_save_with_parity = np.concatenate(
+        [
+            parity_save.reshape(-1, 1).astype(np.float32),
+            X_save.astype(np.float32),
+        ],
+        axis=1,
+    )
+
+    X_save_with_parity = t.tensor(X_save_with_parity, dtype=t.float32)
+
+    lit_model.eval()
+
+    with t.no_grad():
+        logits = lit_model(X_save_with_parity)
+        probs = lit_model.predict_proba(X_save_with_parity)
+
+    if save_file is not None:
+        column = save_column if save_column is not None else 'ungrouped'
+        cfg_nn_output = load_config(save_file)
+        if save_key is None:
+            cfg_nn_output[column] = probs.tolist()
+        else:
+            cfg_nn_output[column][save_key] = probs.tolist()
+
+        write_yaml_to_file(cfg_nn_output, save_file)
+    
     # ------------------------------------------------------------
     # Inference example
     # ------------------------------------------------------------

@@ -17,8 +17,9 @@ from classes.Fraction_factor import (
     fraction_in_bins_grouped_3split,
 )
 from classes.Multiclass_classification import train_fraction_classifier
+from classes.Loading import load_config
 
-
+cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
 logger = logging.getLogger(__name__)
 
 def _prepare_input_tensor(model: t.nn.Module, X_tensor: t.Tensor, df_ar) -> t.Tensor:
@@ -377,6 +378,8 @@ def calculate_fake_factor_frac(
                     number_of_classes=2,
                     training_masks=None,
                     ff_suffix=suffix,
+                    save_file=cfg_path['DNN_output']+'/frac_split.yaml',
+                    save_column = grouping,
                 )
 
             model = load_model(output_dir, device="cpu")
@@ -433,6 +436,9 @@ def calculate_fake_factor_frac(
                         number_of_classes=2,
                         training_masks=[masks[0][group_name], masks[1][group_name]],
                         ff_suffix=f"_{grouping}",
+                        save_file=cfg_path['DNN_output']+'/frac_split.yaml',
+                        save_column = grouping,
+                        save_key=group_name,
                     )
 
                 model = load_model(output_dir, device="cpu")
@@ -918,7 +924,7 @@ def calculate_fake_factor_frac_3split(
         if grouping is None:
             output_dir = "/work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results"
             if train_frac:
-                train_fraction_classifier(df=df, training_var=training_variables, output_dir=output_dir)
+                train_fraction_classifier(df=df, training_var=training_variables, output_dir=output_dir, save_file=cfg_path['DNN_output']+'/frac_3split.yaml')
 
             model = load_model(output_dir, device="cpu")
             model.eval()
@@ -935,6 +941,7 @@ def calculate_fake_factor_frac_3split(
 
                 region[f"fraction_dnn_{class_idx + 1}"] = fraction_i
                 region[raw_ff.removesuffix("_raw")] = fraction_i * region[raw_ff]
+
         elif grouping == "njets":
             if grouping_variable != "njets" or grouping_definition is None:
                 raise ValueError("grouping_variable='njets' and grouping_definition are required for njets fraction factors.")
@@ -977,6 +984,9 @@ def calculate_fake_factor_frac_3split(
                         number_of_classes=3,
                         training_masks=[region_masks[group_name] for region_masks in masks[:3]],
                         ff_suffix="_njets",
+                        save_file=cfg_path['DNN_output']+'/frac_3split.yaml',
+                        save_column = grouping,
+                        save_key=group_name,
                     )
 
                 model = load_model(output_dir, device="cpu")
