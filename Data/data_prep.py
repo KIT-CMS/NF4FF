@@ -16,7 +16,7 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 class Args(Tap):
     loc: Literal["remote", "present"] = "present"
-    embedding: Literal["embedding", "no_embedding"] = "embedding"
+    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
     classic: bool = False
 
 
@@ -136,7 +136,7 @@ def main():
 
     # set class weights for process
     combined_data['class_weights'] = get_class_weights(weights = combined_data.weight, Y = combined_data.Label, classes = (0, 1), class_weighted=True)
-    
+    exit()
     if args.classic:
         out_classic = Path(cfg['output_dir'][args.loc] + "classic")
         out_classic.mkdir(parents=True, exist_ok=True)

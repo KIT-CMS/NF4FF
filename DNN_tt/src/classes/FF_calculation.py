@@ -357,12 +357,13 @@ def calculate_fake_factor_frac(
 
     elif fraction == "DNN":
         if grouping is None or grouping == "tau_dm":
-            output_dir = "/work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results"
+            grouping = 'ungrouped' if grouping is None else grouping
+            output_dir = f"/work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results/split/{grouping}"
             suffix = "" if grouping is None else "_tau_dm"
             if grouping == "tau_dm":
                 # Both classes must describe the same event categories. Selecting
                 # dm_1 for class 0 and dm_2 for class 1 breaks this correspondence.
-                output_dir += "/tau_dm/combined"
+                output_dir += "/combined"
                 if training_variables is None:
                     raise ValueError("training_variables are required for DNN fraction factors.")
                 training_variables = list(training_variables)
@@ -427,7 +428,7 @@ def calculate_fake_factor_frac(
             ]
 
             for group_name in masks[0]:
-                output_dir = f"/work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results/{grouping}/{group_name}"
+                output_dir = f"/work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results/split/{grouping}/{group_name}"
                 if train_frac:
                     train_fraction_classifier(
                         df=df,
@@ -511,7 +512,6 @@ def calculate_fake_factors_incl_ungrouped(
         df.AR[f"ff_unclipped_dnn_incl_{incl}"] = fake_factor
         fake_factor = np.clip(fake_factor, 0, 3)
         df.AR[f"ff_dnn_incl_{incl}"] = fake_factor           
-
     
 def calculate_fake_factors_incl_grouped(
     df,
@@ -922,7 +922,7 @@ def calculate_fake_factor_frac_3split(
 
     elif fraction == "DNN":
         if grouping is None:
-            output_dir = "/work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results"
+            output_dir = "/work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results/3split/ungrouped"
             if train_frac:
                 train_fraction_classifier(df=df, training_var=training_variables, output_dir=output_dir, save_file=cfg_path['DNN_output']+'/frac_3split.yaml')
 
@@ -973,8 +973,7 @@ def calculate_fake_factor_frac_3split(
             for group_name in masks[0]:
                 # Keep three-class checkpoints separate from two-class models.
                 output_dir = (
-                    "/work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results/"
-                    f"3split/njets/{group_name}"
+                    f"/work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results/3split/njets/{group_name}"
                 )
                 if train_frac:
                     train_fraction_classifier(

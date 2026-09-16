@@ -34,7 +34,7 @@ class Args(Tap):
     
     taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
-    frac: Literal['global', 'pt_binned', 'DNN'] = 'pt_binned' # global: use global fraction | pt_binned: use pt-binned fraction
+    frac: Literal['global', 'pt_binned', 'DNN'] = 'DNN' # global: use global fraction | pt_binned: use pt-binned fraction
     dnn_grouped: bool = True
     classic: bool = False
 
@@ -51,7 +51,7 @@ MASKS_PATH_INCL = [cfg_path["masks_incl_and"], cfg_path["masks_incl_or"], cfg_pa
 MASKS_PATH_3SPLIT = cfg_path["masks_3split"]
 
 TRAINING_VAR_PATH = cfg_path["train_var"]
-CHECKPOINT_DIR = cfg_path["traininfg_results"]
+CHECKPOINT_DIR = cfg_path["training_results"]
 
 
 

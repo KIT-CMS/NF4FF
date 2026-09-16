@@ -677,15 +677,15 @@ def train_fraction_classifier(
         logits = lit_model(X_save_with_parity)
         probs = lit_model.predict_proba(X_save_with_parity)
 
-    if save_file is not None:
-        column = save_column if save_column is not None else 'ungrouped'
-        cfg_nn_output = load_config(save_file)
-        if save_key is None:
-            cfg_nn_output[column] = probs.tolist()
-        else:
-            cfg_nn_output[column][save_key] = probs.tolist()
+    #if save_file is not None:
+    #    column = save_column if save_column is not None else 'ungrouped'
+    #    cfg_nn_output = load_config(save_file)
+    #    if save_key is None:
+    #        cfg_nn_output[column] = probs.tolist()
+    #    else:
+    #        cfg_nn_output[column][save_key] = probs.tolist()
 
-        write_yaml_to_file(cfg_nn_output, save_file)
+    #    write_yaml_to_file(cfg_nn_output, save_file)
     
     # ------------------------------------------------------------
     # Inference example

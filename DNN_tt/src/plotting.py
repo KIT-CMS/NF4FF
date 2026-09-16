@@ -12,13 +12,13 @@ import torch as t
 from typing import Literal
 import uproot
 
-from classes.Loading import load_config, load_labels, load_data
+from classes.Loading import load_config, load_labels, load_data, load_variables
 from classes.Fraction_factor import fraction_in_bins, fraction_in_bins_grouped, fraction_in_bins_3split, fraction_in_bins_grouped_3split
 from classes.Plotting import plot_fake_factors, plot_closure, plot_fake_factors_grouped, plot_fake_factors_in_dr_grouped
 from classes.Plotting import FF_closure_in_DR_tau1, FF_closure_in_DR_tau2, FF_closure_in_DR_incl, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl, plot_fake_factors_combTaus, plot_fake_factors_grouped_incl
 from classes.Plotting import plot_closure_3split, FF_closure_in_DR_3split, plot_fake_factors_3split, plot_fake_factors_combTaus_3split, plot_fake_factors_grouped_3split, plot_fake_factors_grouped_combTaus_3split
 from classes.Plotting import plot_fractions, plot_fractions_grouped, plot_fractions_3split, plot_fractions_grouped_3split
-from classes.Plotting import plot_in_hist1d, plot_NN_output_frac
+from classes.Plotting import plot_in_hist1d, plot_NN_output_frac, plot_NN_output_frac_stacked
 
 SEED = 42
 logger = logging.getLogger(__name__)
@@ -42,9 +42,9 @@ class Args(Tap):
     vars: Literal['small', 'large'] = 'small' # small: use small set of variables | large: use large set of variables
 
     closure_DR: bool = False
-    FF_dist: bool = True
-    frac: Literal['global', 'pt_binned', 'DNN'] = 'pt_binned' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
-    closure_AR: bool = True
+    FF_dist: bool = False
+    frac: Literal['global', 'pt_binned', 'DNN'] = 'DNN' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
+    closure_AR: bool = False
 
 args = Args().parse_args()
 
@@ -60,6 +60,8 @@ MASKS_PATH_3SPLIT = cfg_path["masks_3split"]
 
 PLOTTING_CONFIG_PATH = cfg_path["cfg_plotting"]
 LABELS_CONFIG_PATH = cfg_path["labels"]
+
+TRAINING_VAR_PATH = cfg_path["train_var"]
 
 PLOTS_DIR = Path(cfg_path["plots"])
 PLOTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -135,6 +137,7 @@ def get_bins_and_label(variable, channel='tt'):
 
 def main():
     labels_cfg = load_config(LABELS_CONFIG_PATH)
+    training_variables_multiclass = load_variables(TRAINING_VAR_PATH, 'variables_for_multiclass')
 
     if args.vars == 'small': variables = VARIABLES_SMALL
     elif args.vars == 'large': variables = VARIABLES_LARGE
@@ -533,17 +536,16 @@ def main():
                 )
             logger.info('Plotted fraction factors calculated with multiclass classification...')
 
-            nn_output = load_config(cfg_path['DNN_output'] + f'/frac_{args.taus}.yaml')
-            nn_output = nn_output['ungrouped']
-            plot_NN_output_frac(
-                nn_output=nn_output,
+            plot_NN_output_frac_stacked(
+                df = df,
                 cat_title='inclusive',
-                label=[r'$class 0: AR_1$', r'$class 1: AR_2$'],
+                model_path=cfg_path['multiclass_results']+'/split/ungrouped',
+                n_classes=2,
+                training_variables=training_variables_multiclass,
                 save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
-                save_name='nn_output',
-                )
+                save_name='nn_output'
+            )
             logger.info('Plotted NN outputs of multiclass classification...')
-        
         
         # ----- FF closure in AR -----
         if args.closure_AR:
@@ -716,16 +718,18 @@ def main():
                 )
             logger.info('Plotted fraction factors calculated with multiclass classification...')
 
-            nn_output = load_config(cfg_path['DNN_output'] + f'/frac_{args.taus}.yaml')
-            nn_output = nn_output['ungrouped']
-            plot_NN_output_frac(
-                nn_output=nn_output,
+            plot_NN_output_frac_stacked(
+                df = df,
                 cat_title='inclusive',
-                label=[r'$class 1: AR_1$', r'$class 2: AR_2$', r'$class 3: AR_3$'],
+                model_path=cfg_path['multiclass_results']+'/3split/ungrouped',
+                n_classes=3,
+                training_variables=training_variables_multiclass,
                 save_dir=PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
-                save_name='nn_output',
-                )
+                save_name='nn_output'
+            )
             logger.info('Plotted NN outputs of multiclass classification...')
+
+
 
 
 
@@ -877,6 +881,20 @@ def main():
                 save_name='fractions',
                 )
             logger.info('Plotted fraction factors calculated with multiclass classification...')
+
+            for x in ['0', '1', '2_1000']:
+                plot_NN_output_frac_stacked(
+                    df = df,
+                    cat_title='inclusive',
+                    model_path=cfg_path['multiclass_results']+f'/3split/njets/{x}',
+                    n_classes=3,
+                    training_variables=training_variables_multiclass,
+                    grouping='njets',
+                    save_dir=PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'njets' / f'{args.frac}_fraction',
+                    save_name=f'nn_output{x}'
+                )
+            logger.info('Plotted NN outputs of multiclass classification...')
+            exit()
 
             nn_output = load_config(cfg_path['DNN_output'] + f'/frac_{args.taus}.yaml')
             nn_output = nn_output['njets']

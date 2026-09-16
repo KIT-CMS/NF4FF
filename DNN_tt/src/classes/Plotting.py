@@ -4,7 +4,11 @@ import matplotlib.pyplot as plt
 import mplhep as hep
 from collections.abc import Iterable
 
+import torch as t
+
 from classes.Fraction_factor import fraction_in_bins
+from classes.NeuralNetworks import load_model, FoldCombinedDNN
+from classes.DataHandling import test_data
 
 def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
     if isinstance(ax, Iterable):
@@ -142,6 +146,12 @@ def estimate_jet_fakes_3split(
 
     return jet_fakes, var_jet_fakes
 
+def _prepare_input_tensor(model: t.nn.Module, X_tensor: t.Tensor, df_ar) -> t.Tensor:
+    """Return the correctly shaped input tensor for the given model type."""
+    if isinstance(model, FoldCombinedDNN):
+        event_ids = t.from_numpy(np.asarray(df_ar['event']%2, dtype=np.float32))
+        return t.cat([event_ids.unsqueeze(0), X_tensor.T], dim=0)  # [1 + n_features, N]
+    return X_tensor  # [N, n_features]
 
 def _reorder_for_rowwise_legend(handles, labels, ncol, reverse=False):
     if reverse:
@@ -356,8 +366,8 @@ def plot_closure(
         (histograms['ST']['counts'], "#717581", r"Single t"),
         (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
         (histograms['wjets']['counts'], '#e76300', r"W+jets"),
-        (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
         (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
+        (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
     ]
 
     counts_stack_total = draw_stacked_stepfill(
@@ -598,8 +608,8 @@ def plot_closure_incl(
         (histograms['ST']['counts'], "#717581", r"Single t"),
         (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
         (histograms['wjets']['counts'], '#e76300', r"W+jets"),
-        (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
         (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
+        (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
     ]
 
     counts_stack_total = draw_stacked_stepfill(
@@ -843,8 +853,8 @@ def plot_closure_3split(
         (histograms['ST']['counts'], "#717581", r"Single t"),
         (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
         (histograms['wjets']['counts'], '#e76300', r"W+jets"),
-        (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
         (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
+        (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
     ]
 
     counts_stack_total = draw_stacked_stepfill(
@@ -2480,18 +2490,6 @@ def plot_fractions_grouped(title, grouped_frac, grouping, safe_path, label, var1
                         fontsize=8,
                     )
 
-                # Values outside of range get outlined red
-                #if (value < 0.4 or value > 0.609) and (title=='AR' or title=='AR_like'):
-                #    rectangle = plt.Rectangle(
-                #        (var1_bin - 0.5, var2_bin - 0.5),
-                #        1,
-                #        1,
-                #        fill=False,
-                #        edgecolor="black",
-                #        linewidth=2,
-                #    )
-                #    ax.add_patch(rectangle)
-
         geq = r'$\geq$'
         cat = f"{cat_title}{geq}2" if key=="2_1000" else f"{cat_title}={key}"
         
@@ -2744,6 +2742,78 @@ def plot_in_hist1d(input_values, label, cat_title, input_name, save_dir, save_na
         plt.savefig(save_dir / f'plot_{save_name}_{region}.pdf', dpi=150, bbox_inches='tight')
         plt.close(fig)
 
+def plot_NN_output_frac_stacked(df, cat_title, model_path, n_classes, training_variables, grouping=None, save_dir=None, save_name=''):
+    hep.style.use(hep.style.CMS)
+
+    grouping = 'ungrouped' if grouping is None else grouping
+
+    df = [df.data.AR_like_tau1, df.data.AR_like_tau2] if n_classes==2 else [df.data.AR_like_1, df.data.AR_like_2, df.data.AR_like_3]
+    colors = ['darkorange', 'dodgerblue', 'lawngreen']
+    labels = [r'$ARlike_1$', r'$ARlike_2$', r'$ARlike_3$']
+
+    # ----- load model -----
+    model = load_model(model_path, device="cpu")
+    model.eval()
+
+    bins = np.linspace(0, 1.0, 51)
+
+    fig, ax = plt.subplots(n_classes, 1, figsize=(11.7, 11.7))
+
+    
+
+    
+    for i in range(n_classes):
+        outputs_i = []
+        stack_components = []
+
+        for j in range(n_classes):
+            data = test_data(df[j], training_variables)
+            X = t.from_numpy(data.X)
+            X = _prepare_input_tensor(model, X, df[j])
+
+            with t.inference_mode():
+                logits = model(X).reshape(-1, n_classes)
+                nn_output = t.softmax(logits, dim=1)
+
+            values = nn_output[:, i].cpu().numpy()
+            outputs_i.append(values)
+            counts_j, bin_edges = np.histogram(values, bins)
+
+            comp = (counts_j, colors[j], f'class {i + 1}: '+labels[j])
+            stack_components.append(comp)
+
+        all_values = np.concatenate(outputs_i)
+        counts_stack_total = draw_stacked_stepfill(ax[i], bin_edges, stack_components)
+
+        ax[i].stairs(counts_stack_total, bin_edges, color='black', linewidth=0.7)
+        ax[i].axvline(1/n_classes, color='black', label=f'1/{n_classes}')
+        legend = ax[i].legend(loc="upper right", frameon=False, fontsize=18)
+        ax[i].annotate(
+            f"Mean = {all_values.mean():.3f}\n"
+            f"Std = {all_values.std():.3f}",
+            xy=(1, 0),
+            xycoords=legend,
+            xytext=(-8, -6),
+            textcoords="offset points",
+            fontsize=18,
+            ha="right",
+            va="top",
+            multialignment="right",
+            )
+        ax[0].set_ylim(top=1.1*counts_stack_total.max())
+        ax[i].set_ylabel('Events')
+
+
+    CMS_LABEL(ax[0])
+    CMS_CATEGORY_TITLE(ax[0], title=cat_title)
+    CMS_LUMI_TITLE(ax[0])
+    CMS_CHANNEL_TITLE(ax[0])
+
+    ax[-1].set_xlabel('NN output')
+    fig.tight_layout()
+    plt.savefig(save_dir / f'plot_{save_name}.png', dpi=150, bbox_inches='tight')
+    plt.savefig(save_dir / f'plot_{save_name}.pdf', dpi=150, bbox_inches='tight')
+    plt.close(fig)
 
 def plot_NN_output_frac(nn_output, cat_title, label, save_dir=None, save_name=''):
     hep.style.use(hep.style.CMS)
@@ -2783,134 +2853,3 @@ def plot_NN_output_frac(nn_output, cat_title, label, save_dir=None, save_name=''
     plt.savefig(save_dir / f'plot_{save_name}.png', dpi=150, bbox_inches='tight')
     plt.savefig(save_dir / f'plot_{save_name}.pdf', dpi=150, bbox_inches='tight')
     plt.close(fig)
-
-def plot_lookup_matrix(title, df, input_column, grouping, safe_path, label, var1_edges, var2_edges, var1='pt_1', var2='pt_2'):
-    hep.style.use(hep.style.CMS)
-    if grouping == 'tau_decaymode':
-        grouping_key = ['0', '1', '10', '11']
-        group_name = 'tau_dm'
-        cat_title = r'$\tau$ DM'
-    elif grouping == 'njets':
-        grouping_key = ['0', '1', '2_1000']
-        group_name = 'njets'
-        cat_title = r'$N_{jets}$'
-    elif grouping is None:
-        grouping_key = None
-        group_name = 'ungrouped'
-        cat_title = r'inclusive'
-    else:
-        raise ValueError(f'Unsupported grouping: {grouping}')
-
-    labels_above = var1 != 'pt_1' or var2 != 'pt_2'
-
-    for key in grouping_key:
-        frac_arlike = grouped_frac[key]
-
-        if isinstance(frac_arlike, dict):
-            frac = frac_arlike['fraction']
-            var1_edges = frac_arlike['pt1_edges']
-            var2_edges = frac_arlike['pt2_edges']
-            global_frac = frac_arlike['global_frac']
-            global_std = frac_arlike['global_std']
-        else:
-            frac, var1_edges, var2_edges, global_frac, global_std = frac_arlike
-        
-
-
-        frac = np.array(frac)
-        n_var1, n_var2 = frac.shape
-
-        if labels_above:
-            fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.5))
-        else:
-            fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
-
-        cms_label = CMS_LABEL(ax)
-        CMS_CATEGORY_TITLE(ax, title=title)
-        CMS_LUMI_TITLE(ax)
-        CMS_CHANNEL_TITLE(ax)
-
-        if labels_above:
-            cms_label.set_position((0.0, 1.08))
-            cms_label.set_verticalalignment('bottom')
-
-        diff = np.abs(np.nanmin(frac.T)) if np.abs(np.nanmin(frac.T))> np.abs(np.nanmax(frac.T)) else np.abs(np.nanmax(frac.T))
-
-        image = ax.imshow(
-            frac.T,
-            origin="lower",
-            aspect="equal",
-            interpolation="none",
-            cmap="RdBu",
-            extent=(-0.5, n_var1 - 0.5, -0.5, n_var2 - 0.5),
-            vmin=0.4 if title=='AR' or title=='AR_like' else -diff,
-            vmax=0.6 if title=='AR' or title=='AR_like' else diff,
-        )
-
-        for var2_bin in range(n_var2):
-            for var1_bin in range(n_var1):
-                value = frac.T[var2_bin, var1_bin]
-
-                if np.isfinite(value):
-                    ax.text(
-                        var1_bin,
-                        var2_bin,
-                        f"{value:.2f}",
-                        ha="center",
-                        va="center",
-                        color="black" if value < 0.57 and value > 0.43 else "white",
-                        fontsize=8,
-                    )
-
-        geq = r'$\geq$'
-        cat = f"{cat_title}{geq}2" if key=="2_1000" else f"{cat_title}={key}"
-        
-        if labels_above:
-            ax.text(0.0, 1.04,
-                    f"{cat}: Mean = {global_frac:.3f}   Std = {global_std:.3f}",
-                    fontsize=18, ha='left', va='bottom', transform=ax.transAxes)
-        elif grouping is None:
-            ax.text(0.14, 0.80, "Mean\nStd", fontsize=20, ha="right", va="top", transform=ax.transAxes)
-            ax.text(0.145, 0.80, f"= {global_frac:.3f}\n= {global_std:.3f}", fontsize=20, ha="left", va="top", transform=ax.transAxes)
-        else:
-            ax.text(0.04, 0.85, f"{cat}:", fontsize=20,  ha='left', va='top', transform=ax.transAxes, ma='left')
-            ax.text(0.14, 0.80, "Mean\nStd", fontsize=20, ha="right", va="top", transform=ax.transAxes)
-            ax.text(0.145, 0.80, f"= {global_frac:.3f}\n= {global_std:.3f}", fontsize=20, ha="left", va="top", transform=ax.transAxes)
-
-        # Positions of bin boundaries.
-        x_boundaries = np.arange(n_var1 + 1) - 0.5
-        y_boundaries = np.arange(n_var2 + 1) - 0.5
-
-        # Format the actual var bin edges.
-        edge_labels_x = [
-            f"{edge:.1f}" if np.isfinite(edge) else "∞"
-            for edge in var1_edges
-        ]
-        edge_labels_y = [
-                f"{edge:.1f}" if np.isfinite(edge) else "∞"
-                for edge in var2_edges
-            ]
-
-        
-
-        ax.set_xticks(x_boundaries)
-        ax.set_yticks(y_boundaries)
-        ax.set_xticklabels(edge_labels_x, rotation=45, ha="right", fontsize=15)
-        ax.set_yticklabels(edge_labels_y, fontsize=15)
-
-        # Draw lines along the square boundaries.
-        ax.grid(
-            which="major",
-            color="white",
-            linewidth=0.6,
-            alpha=0.6,
-        )
-
-        ax.set_xlabel(label(var1))
-        ax.set_ylabel(label(var2))
-
-        fig.colorbar(image, ax=ax, label="Fraction factor")
-        fig.tight_layout()
-        plt.savefig(safe_path / f'plot_fractions_{title}_{key}.png', dpi=150, bbox_inches='tight')
-        plt.savefig(safe_path / f'plot_fractions_{title}_{key}.pdf', dpi=150, bbox_inches='tight')
-        plt.close(fig)

@@ -6,9 +6,10 @@ masks_incl_andor: /work/tapp/TauFF/NF4FF/DNN_tt/configs/masks_incl_andor.yaml
 masks_3split: /work/tapp/TauFF/NF4FF/DNN_tt/configs/masks_3split.yaml
 train_var: /work/tapp/TauFF/NF4FF/DNN_tt/configs/training_variables.yaml
 DNN: /work/tapp/TauFF/NF4FF/DNN_tt/configs/DNN.yaml
-traininfg_results: /work/tapp/TauFF/NF4FF/DNN_tt/Training_results
+training_results: /work/tapp/TauFF/NF4FF/DNN_tt/Training_results
 cfg_plotting: /work/tapp/TauFF/NF4FF/DNN_tt/configs/plotting.yaml
 labels: /work/tapp/TauFF/NF4FF/DNN_tt/configs/labels.yaml
 plots: /work/tapp/TauFF/NF4FF/DNN_tt/plots
 fractions: /work/tapp/TauFF/NF4FF/DNN_tt/configs/fractions
+multiclass_results: /work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results
 DNN_output: /work/tapp/TauFF/NF4FF/DNN_tt/configs/dnn_output
