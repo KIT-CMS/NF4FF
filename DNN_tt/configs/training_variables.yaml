@@ -89,3 +89,5 @@ variables_for_multiclass:
   - deltaEta_2j2
   - deltaEta_12j1
   - deltaEta_12j2
+  - tau_decaymode_1
+  - tau_decaymode_2

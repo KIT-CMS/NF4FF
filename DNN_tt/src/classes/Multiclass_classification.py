@@ -75,7 +75,7 @@ def build_tau_fraction_training_arrays(df, training_var, num_classes, training_m
 
         weights = (
             frame["weight_qcd"].to_numpy(dtype=np.float64)
-            * frame[ff_column].to_numpy(dtype=np.float64)
+            #* frame[ff_column].to_numpy(dtype=np.float64)
         )
 
         if len(frame) == 0:

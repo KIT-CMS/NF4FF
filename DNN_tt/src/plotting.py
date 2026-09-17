@@ -18,7 +18,7 @@ from classes.Plotting import plot_fake_factors, plot_closure, plot_fake_factors_
 from classes.Plotting import FF_closure_in_DR_tau1, FF_closure_in_DR_tau2, FF_closure_in_DR_incl, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl, plot_fake_factors_combTaus, plot_fake_factors_grouped_incl
 from classes.Plotting import plot_closure_3split, FF_closure_in_DR_3split, plot_fake_factors_3split, plot_fake_factors_combTaus_3split, plot_fake_factors_grouped_3split, plot_fake_factors_grouped_combTaus_3split
 from classes.Plotting import plot_fractions, plot_fractions_grouped, plot_fractions_3split, plot_fractions_grouped_3split
-from classes.Plotting import plot_in_hist1d, plot_NN_output_frac, plot_NN_output_frac_stacked
+from classes.Plotting import plot_in_hist1d, plot_NN_output_frac, plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio
 
 SEED = 42
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
     fraction_max_bins: int = 0 # Maximum displayed bins per axis for 3split fractions; 0 keeps all bins
     dnn_grouped: bool = True
@@ -43,8 +43,8 @@ class Args(Tap):
 
     closure_DR: bool = False
     FF_dist: bool = False
-    frac: Literal['global', 'pt_binned', 'DNN'] = 'DNN' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
-    closure_AR: bool = False
+    frac: Literal['global', 'pt_binned', 'DNN'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
+    closure_AR: bool = True
 
 args = Args().parse_args()
 
@@ -329,6 +329,15 @@ def main():
     
                 plot_fractions_grouped('AR', grouped_frac=grouped_frac, grouping=grouping, safe_path=safe_path, label=get_label, var1='m_vis')
 
+                plot_in_hist1d(
+                    input_values=[df.data.AR_tau1[f'fraction_pt_binned_1_{group_name}'], df.data.AR_tau2[f'fraction_pt_binned_2_{group_name}']], 
+                    label=[r'$AR_1$', r'$AR_2$'],
+                    cat_title=f'{group_name} inclusive',
+                    input_name='combinatorial weight',
+                    save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / grouping / f'{args.frac}_fraction',
+                    save_name='fractions',
+                    )
+                
         if args.frac=='DNN':
             plot_in_hist1d(
                 input_values=[df.data.AR_tau1['fraction_dnn_1_njets'], df.data.AR_tau2['fraction_dnn_2_njets']], 
@@ -340,18 +349,33 @@ def main():
                 )
             logger.info('Plotted fraction factors calculated with multiclass classification...')
 
-            nn_output = load_config(cfg_path['DNN_output'] + f'/frac_{args.taus}.yaml')
-            exit()
-            nn_output = nn_output['njets']
             for x in ['0', '1', '2_1000']:
-                plot_NN_output_frac(
-                    nn_output=nn_output[x],
-                    cat_title='inclusive',
-                    label=[r'class 0: $AR_1$', r'class 1: $AR_2$'],
-                    save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'njets' / f'{args.frac}_fraction',
-                    save_name=f'nn_output_{x}',
+                for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio):
+                    plot_nn_output(
+                        df=df,
+                        cat_title=f'njets = {x}' if x != '2_1000' else r'$2 \leq n_{jets} \leq 1000$',
+                        model_path=cfg_path['multiclass_results'] + f'/split/njets/{x}',
+                        n_classes=2,
+                        training_variables=training_variables_multiclass,
+                        grouping='njets',
+                        group_key=x,
+                        grouping_definition=grouping_njets,
+                        save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'njets' / f'{args.frac}_fraction',
+                        save_name=f'nn_output_{x}',
                     )
-                logger.info('Plotted NN outputs of multiclass classification...')
+            for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio):
+                plot_nn_output(
+                    df=df,
+                    cat_title='tau decaymode inclusive',
+                    model_path=cfg_path['multiclass_results'] + '/split/tau_dm/combined',
+                    n_classes=2,
+                    training_variables=training_variables_multiclass,
+                    grouping='tau_dm',
+                    group_key='combined',
+                    save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'tau_decaymode' / f'{args.frac}_fraction',
+                    save_name='nn_output',
+                )
+            logger.info('Plotted NN outputs of multiclass classification...')
         
         # ----- FF closure in AR -----
         if args.closure_AR:
@@ -525,6 +549,15 @@ def main():
             plt.savefig(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction' / 'mvis_pt2' / 'tau1' / 'plot_fractions_AR.pdf', dpi=150, bbox_inches='tight')
             plt.close(fig)
 
+            plot_in_hist1d(
+                input_values=[df.data.AR_tau1['fraction_pt_binned_1'], df.data.AR_tau2['fraction_pt_binned_2']], 
+                label=[r'$AR_1$', r'$AR_2$'],
+                cat_title='inclusive',
+                input_name='combinatorial weight',
+                save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
+                save_name='fractions',
+                )
+
         elif args.frac == 'DNN':
             plot_in_hist1d(
                 input_values=[df.data.AR_tau1['fraction_dnn_1'], df.data.AR_tau2['fraction_dnn_2']], 
@@ -536,15 +569,16 @@ def main():
                 )
             logger.info('Plotted fraction factors calculated with multiclass classification...')
 
-            plot_NN_output_frac_stacked(
-                df = df,
-                cat_title='inclusive',
-                model_path=cfg_path['multiclass_results']+'/split/ungrouped',
-                n_classes=2,
-                training_variables=training_variables_multiclass,
-                save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
-                save_name='nn_output'
-            )
+            for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio):
+                plot_nn_output(
+                    df = df,
+                    cat_title='inclusive',
+                    model_path=cfg_path['multiclass_results']+'/split/ungrouped',
+                    n_classes=2,
+                    training_variables=training_variables_multiclass,
+                    save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
+                    save_name='nn_output'
+                )
             logger.info('Plotted NN outputs of multiclass classification...')
         
         # ----- FF closure in AR -----
@@ -707,6 +741,15 @@ def main():
 
                 logger.info(f'Plotted fraction factor in bins of pt_2 and m_vis for {tau}')
 
+            plot_in_hist1d(
+                input_values=[df.data.AR_1['fraction_pt_binned_1'], df.data.AR_2['fraction_pt_binned_2'], df.data.AR_3['fraction_pt_binned_3']], 
+                label=[r'$AR_1$', r'$AR_2$', r'$AR_3$'],
+                cat_title='inclusive',
+                input_name='combinatorial weight',
+                save_dir=PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
+                save_name='fractions',
+                )
+            
         elif args.frac == 'DNN':
             plot_in_hist1d(
                 input_values=[df.data.AR_1['fraction_dnn_1'], df.data.AR_2['fraction_dnn_2'], df.data.AR_3['fraction_dnn_3']], 
@@ -718,15 +761,16 @@ def main():
                 )
             logger.info('Plotted fraction factors calculated with multiclass classification...')
 
-            plot_NN_output_frac_stacked(
-                df = df,
-                cat_title='inclusive',
-                model_path=cfg_path['multiclass_results']+'/3split/ungrouped',
-                n_classes=3,
-                training_variables=training_variables_multiclass,
-                save_dir=PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
-                save_name='nn_output'
-            )
+            for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio):
+                plot_nn_output(
+                    df = df,
+                    cat_title='inclusive',
+                    model_path=cfg_path['multiclass_results']+'/3split/ungrouped',
+                    n_classes=3,
+                    training_variables=training_variables_multiclass,
+                    save_dir=PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
+                    save_name='nn_output'
+                )
             logger.info('Plotted NN outputs of multiclass classification...')
 
 
@@ -870,7 +914,17 @@ def main():
                 plot_fractions_grouped_3split('AR', grouped_frac=grouped_frac, grouping=grouping, safe_path=safe_path, tau=tau, label=get_label, var1='m_vis')
 
                 logger.info(f'Plotted fraction factor in bins of pt_2 and m_vis for {tau}')
- 
+
+            plot_in_hist1d(
+                input_values=[df.data.AR_1['fraction_pt_binned_1_njets'], df.data.AR_2['fraction_pt_binned_2_njets'], df.data.AR_3['fraction_pt_binned_3_njets']], 
+                label=[r'$AR_1$', r'$AR_2$', r'$AR_3$'],
+                cat_title='njets inclusive',
+                input_name='combinatorial weight',
+                save_dir=PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / grouping / f'{args.frac}_fraction',
+                save_name='fractions',
+                )
+            logger.info('Plotted fraction factors calculated with multiclass classification...')
+                
         if args.frac=='DNN':
             plot_in_hist1d(
                 input_values=[df.data.AR_1['fraction_dnn_1_njets'], df.data.AR_2['fraction_dnn_2_njets'], df.data.AR_3['fraction_dnn_3_njets']], 
@@ -883,37 +937,27 @@ def main():
             logger.info('Plotted fraction factors calculated with multiclass classification...')
 
             for x in ['0', '1', '2_1000']:
-                plot_NN_output_frac_stacked(
-                    df = df,
-                    cat_title='inclusive',
-                    model_path=cfg_path['multiclass_results']+f'/3split/njets/{x}',
-                    n_classes=3,
-                    training_variables=training_variables_multiclass,
-                    grouping='njets',
-                    save_dir=PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'njets' / f'{args.frac}_fraction',
-                    save_name=f'nn_output{x}'
-                )
-            logger.info('Plotted NN outputs of multiclass classification...')
-            exit()
-
-            nn_output = load_config(cfg_path['DNN_output'] + f'/frac_{args.taus}.yaml')
-            nn_output = nn_output['njets']
-            for x in ['0', '1', '2_1000']:
-                plot_NN_output_frac(
-                    nn_output=nn_output[x],
-                    cat_title='inclusive',
-                    label=[r'class 1: $AR_1$', r'class 2: $AR_2$', r'$class 3: AR_3$'],
-                    save_dir=PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'njets' / f'{args.frac}_fraction',
-                    save_name=f'nn_output_{x}',
+                for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio):
+                    plot_nn_output(
+                        df = df,
+                        cat_title=f'njets = {x}' if x != '2_1000' else r'$2 \leq n_{jets} \leq 1000$',
+                        model_path=cfg_path['multiclass_results']+f'/3split/njets/{x}',
+                        n_classes=3,
+                        training_variables=training_variables_multiclass,
+                        grouping='njets',
+                        group_key=x,
+                        grouping_definition=grouping_njets,
+                        save_dir=PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'njets' / f'{args.frac}_fraction',
+                        save_name=f'nn_output_{x}'
                     )
-                logger.info('Plotted NN outputs of multiclass classification...')
+            logger.info('Plotted NN outputs of multiclass classification...')
 
 
         # ----- FF closure in AR -----
         if args.closure_AR:
-            x = uproot.open("/work/ptoedter/MA-Pascal/smhtt_ul/output/2018-et-2025-12_15_with_uncertainties_ntupels_v1-final_v3_2026_02_19/control_shapes-2018-et-2025-12_15_with_uncertainties_ntupels_v1-final_v3_2026_02_19.root")
-            bkgs = [it for it in x.keys() if "#q_1;" in it and "Nominal" in it and any(subit in it for subit in ["TT-TTL", "DY-ZL", "jetFakes#", "VV-VVL", "EMB#"])]
-            corr_emb_ff = sum([x[it].to_numpy()[0] for it in bkgs]) / [x[next(it for it in x.keys() if "data" in it and "Nominal" in it and "#q_1" in it)].to_numpy()[0]]
+            #x = uproot.open("/work/ptoedter/MA-Pascal/smhtt_ul/output/2018-et-2025-12_15_with_uncertainties_ntupels_v1-final_v3_2026_02_19/control_shapes-2018-et-2025-12_15_with_uncertainties_ntupels_v1-final_v3_2026_02_19.root")
+            #bkgs = [it for it in x.keys() if "#q_1;" in it and "Nominal" in it and any(subit in it for subit in ["TT-TTL", "DY-ZL", "jetFakes#", "VV-VVL", "EMB#"])]
+            #corr_emb_ff = sum([x[it].to_numpy()[0] for it in bkgs]) / [x[next(it for it in x.keys() if "data" in it and "Nominal" in it and "#q_1" in it)].to_numpy()[0]]
 
             for var in variables:
                 bins, label = get_bins_and_label(var)

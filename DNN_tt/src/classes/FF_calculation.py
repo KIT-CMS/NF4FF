@@ -307,12 +307,15 @@ def calculate_fake_factor_frac(
         df2[ff_tau2.removesuffix('_raw')] = 0.5 * _df2[ff_tau2]
 
     elif fraction == "pt_binned":
+        suffix = "" if grouping is None else f"_{grouping}"
         if grouping is None:
             frac, pt1_edges, pt2_edges, _, _ = fraction_in_bins(df.data.AR_like_tau1, df.data.AR_like_tau2, frac_file)
 
             frac_tau1 = fractions_for_events(_df1, frac, pt1_edges, pt2_edges)
             frac_tau2 = fractions_for_events(_df2, frac, pt1_edges, pt2_edges)
 
+            df1[f"fraction_pt_binned_1{suffix}"] = frac_tau1
+            df2[f"fraction_pt_binned_2{suffix}"] = 1.0 - frac_tau2
             df1[ff_tau1.removesuffix('_raw')] = frac_tau1 * _df1[ff_tau1]
             df2[ff_tau2.removesuffix('_raw')] = (1.0 - frac_tau2) * _df2[ff_tau2]
             logger.info(f'Saved Fraction Factors for ungrouped')
@@ -348,6 +351,8 @@ def calculate_fake_factor_frac(
                 grouping_variable=grouping_var_2,
                 grouping_definition=grouping_definition,
             )
+            df1[f"fraction_pt_binned_1{suffix}"] = frac_tau1
+            df2[f"fraction_pt_binned_2{suffix}"] = 1.0 - frac_tau2
             target_dtype = _df1[ff_tau1].dtype
             df1[ff_tau1.removesuffix('_raw')] = (frac_tau1 * _df1[ff_tau1]).astype(target_dtype)
             target_dtype = _df2[ff_tau2].dtype
@@ -359,7 +364,7 @@ def calculate_fake_factor_frac(
         if grouping is None or grouping == "tau_dm":
             grouping = 'ungrouped' if grouping is None else grouping
             output_dir = f"/work/tapp/TauFF/NF4FF/DNN_tt/Training_multiclass_results/split/{grouping}"
-            suffix = "" if grouping is None else "_tau_dm"
+            suffix = "_tau_dm" if grouping == "tau_dm" else ""
             if grouping == "tau_dm":
                 # Both classes must describe the same event categories. Selecting
                 # dm_1 for class 0 and dm_2 for class 1 breaks this correspondence.
@@ -830,7 +835,7 @@ def calculate_fake_factor_frac_3split(
 
     :fraction: "global" (yield fractions), "pt_binned", or "DNN".
     Grouped DNN fractions train one three-class classifier per njets category
-    using weight_qcd times the corresponding njets DR fake factor.
+    using weight_qcdr.
     '''
     
     df1 = df.AR_1
@@ -868,20 +873,25 @@ def calculate_fake_factor_frac_3split(
             frac3 = np.sum(_df3['weight']) / denominator
         else:
             raise ValueError(f"Invalid value for where_calc_frac: {where_calc_frac}. Must be 'AR_like' or 'AR'.")
-        
+
+        frac1 = 1/3
+        frac2 = 1/3
+        frac3 = 1/3
         df1[ff_tau1.removesuffix('_raw')] = frac1 * _df1[ff_tau1]
         df2[ff_tau2.removesuffix('_raw')] = frac2 * _df2[ff_tau2]
         df3[ff_tau3.removesuffix('_raw')] = frac3 * _df3[ff_tau3]
         logger.info(f"Saved Fraction Factors: \nfrac1 = {frac1:.4f}, frac2 = {frac2:.4f}, frac3 = {frac3:.4f}")
         
     elif fraction == "pt_binned":
+        suffix = "" if grouping is None else f"_{grouping}"
         if grouping is None:
-            for tau, dfn, _dfn, ff in zip(['tau1', 'tau2', 'tau1&2'], [df1, df2, df3], [_df1, _df2, _df3], [ff_tau1, ff_tau2, ff_tau3]):
+            for class_idx, (tau, dfn, _dfn, ff) in enumerate(zip(['tau1', 'tau2', 'tau1&2'], [df1, df2, df3], [_df1, _df2, _df3], [ff_tau1, ff_tau2, ff_tau3]), start=1):
                 file = frac_file+f'/fractions_{tau}.yaml'
                 frac, pt1_edges, pt2_edges, _, _ = fraction_in_bins_3split(which_frac=tau, df_tau1=df.data.AR_like_1, df_tau2=df.data.AR_like_2, df_tau3=df.data.AR_like_3, frac_file=file)
 
                 frac = fractions_for_events(_dfn, frac, pt1_edges, pt2_edges, fallback=1/3)
 
+                dfn[f"fraction_pt_binned_{class_idx}{suffix}"] = frac
                 dfn[ff.removesuffix('_raw')] = frac * _dfn[ff]
                 logger.info(f'Saved Fraction Factors for ungrouped {tau}')
             
@@ -896,7 +906,7 @@ def calculate_fake_factor_frac_3split(
             else:
                 grouping_var_1 = grouping_var_2 = grouping_variable
 
-            for tau, dfn, _dfn, ff in zip(['tau1', 'tau2', 'tau1&2'], [df1, df2, df3], [_df1, _df2, _df3], [ff_tau1, ff_tau2, ff_tau3]):
+            for class_idx, (tau, dfn, _dfn, ff) in enumerate(zip(['tau1', 'tau2', 'tau1&2'], [df1, df2, df3], [_df1, _df2, _df3], [ff_tau1, ff_tau2, ff_tau3]), start=1):
                 file = frac_file+f'/fractions_{tau}.yaml'
                 grouped_frac = fraction_in_bins_grouped_3split(
                     tau,
@@ -915,6 +925,7 @@ def calculate_fake_factor_frac_3split(
                     grouping_definition=grouping_definition,
                     fallback=1/3,
                 )
+                dfn[f"fraction_pt_binned_{class_idx}{suffix}"] = frac
                 target_dtype = _dfn[ff].dtype
                 dfn[ff.removesuffix('_raw')] = (frac * _dfn[ff]).astype(target_dtype)
                 logger.info(f"Saved Fraction Factors for grouping {grouping} for {tau}")
