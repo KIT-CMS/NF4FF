@@ -33,18 +33,19 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
     fraction_max_bins: int = 0 # Maximum displayed bins per axis for 3split fractions; 0 keeps all bins
     dnn_grouped: bool = True
     classic: bool = False
 
+    wo_train: bool = False
     vars: Literal['small', 'large'] = 'small' # small: use small set of variables | large: use large set of variables
 
     closure_DR: bool = False
     FF_dist: bool = False
-    frac: Literal['global', 'pt_binned', 'DNN'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
-    closure_AR: bool = True
+    frac: Literal['global', 'pt_binned', 'DNN'] = 'DNN' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
+    closure_AR: bool = False
 
 args = Args().parse_args()
 
@@ -362,6 +363,7 @@ def main():
                         grouping_definition=grouping_njets,
                         save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'njets' / f'{args.frac}_fraction',
                         save_name=f'nn_output_{x}',
+                        wo_train=args.wo_train
                     )
             for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio):
                 plot_nn_output(
@@ -374,6 +376,7 @@ def main():
                     group_key='combined',
                     save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'tau_decaymode' / f'{args.frac}_fraction',
                     save_name='nn_output',
+                    wo_train=args.wo_train,
                 )
             logger.info('Plotted NN outputs of multiclass classification...')
         
@@ -577,7 +580,8 @@ def main():
                     n_classes=2,
                     training_variables=training_variables_multiclass,
                     save_dir=PLOTS_DIR / 'tau_split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
-                    save_name='nn_output'
+                    save_name='nn_output',
+                    wo_train=args.wo_train,
                 )
             logger.info('Plotted NN outputs of multiclass classification...')
         
@@ -769,7 +773,8 @@ def main():
                     n_classes=3,
                     training_variables=training_variables_multiclass,
                     save_dir=PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'ungrouped' / f'{args.frac}_fraction',
-                    save_name='nn_output'
+                    save_name='nn_output',
+                    wo_train=args.wo_train,
                 )
             logger.info('Plotted NN outputs of multiclass classification...')
 
@@ -948,7 +953,8 @@ def main():
                         group_key=x,
                         grouping_definition=grouping_njets,
                         save_dir=PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / 'njets' / f'{args.frac}_fraction',
-                        save_name=f'nn_output_{x}'
+                        save_name=f'nn_output_{x}',
+                        wo_train=args.wo_train,
                     )
             logger.info('Plotted NN outputs of multiclass classification...')
 

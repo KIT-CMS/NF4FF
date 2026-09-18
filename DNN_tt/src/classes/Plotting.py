@@ -2742,7 +2742,7 @@ def plot_in_hist1d(input_values, label, cat_title, input_name, save_dir, save_na
         plt.savefig(save_dir / f'plot_{save_name}_{region}.pdf', dpi=150, bbox_inches='tight')
         plt.close(fig)
 
-def _nn_fraction_predictions(df, model_path, n_classes, training_variables, grouping=None, *, group_key=None, grouping_definition=None):
+def _nn_fraction_predictions(df, model_path, n_classes, training_variables, grouping=None, *, group_key=None, grouping_definition=None, wo_train=False):
     """Return scores and QCD weights using the model's training selection."""
     grouping = 'ungrouped' if grouping is None else grouping
     if n_classes not in (2, 3):
@@ -2780,8 +2780,22 @@ def _nn_fraction_predictions(df, model_path, n_classes, training_variables, grou
             raise ValueError(f"Class {class_idx} requires finite, nonnegative weight_qcd values with positive sum.")
         event_weights.append(weights)
 
-    model = load_model(model_path, device="cpu")
-    model.eval()
+    if wo_train:
+        model = load_model(model_path, device="cpu")
+
+        # Reinitialize weights and biases in both folds.
+        # Keep the input scaler unchanged for a fair comparison.
+        with t.random.fork_rng(devices=[]):
+            t.manual_seed(42)
+            for layer in model.modules():
+                if isinstance(layer, t.nn.Linear):
+                    layer.reset_parameters()
+
+        model.eval()  # Disable dropout when plotting.
+    else:
+        model = load_model(model_path, device="cpu")
+        model.eval()
+
     predictions = []
     for frame in df:
         data = test_data(frame, training_variables)
@@ -2792,7 +2806,7 @@ def _nn_fraction_predictions(df, model_path, n_classes, training_variables, grou
     return predictions, event_weights
 
 
-def plot_NN_output_frac_stacked(df, cat_title, model_path, n_classes, training_variables, grouping=None, save_dir=None, save_name='', *, group_key=None, grouping_definition=None):
+def plot_NN_output_frac_stacked(df, cat_title, model_path, n_classes, training_variables, grouping=None, save_dir=None, save_name='', *, group_key=None, grouping_definition=None, wo_train=False):
     """Plot QCD-weighted score yields and their combined weighted mean/std.
 
     For njets, pass the model's group_key and grouping_definition. The combined
@@ -2802,6 +2816,7 @@ def plot_NN_output_frac_stacked(df, cat_title, model_path, n_classes, training_v
     predictions, event_weights = _nn_fraction_predictions(
         df, model_path, n_classes, training_variables, grouping,
         group_key=group_key, grouping_definition=grouping_definition,
+        wo_train=wo_train,
     )
     all_weights = np.concatenate(event_weights)
     colors = ['darkorange', 'dodgerblue', 'lawngreen']
@@ -2861,7 +2876,7 @@ def plot_NN_output_frac_stacked(df, cat_title, model_path, n_classes, training_v
     plt.savefig(save_dir / f'plot_{save_name}.pdf', dpi=150, bbox_inches='tight')
     plt.close(fig)
 
-def plot_NN_output_frac_overlay(df, cat_title, model_path, n_classes, training_variables, grouping=None, save_dir=None, save_name='', *, group_key=None, grouping_definition=None):
+def plot_NN_output_frac_overlay(df, cat_title, model_path, n_classes, training_variables, grouping=None, save_dir=None, save_name='', *, group_key=None, grouping_definition=None, wo_train=False):
     """Overlay QCD-weighted score densities, normalized per source class.
 
     Uses the same selections as plot_NN_output_frac_stacked. Each curve has
@@ -2871,6 +2886,7 @@ def plot_NN_output_frac_overlay(df, cat_title, model_path, n_classes, training_v
     predictions, event_weights = _nn_fraction_predictions(
         df, model_path, n_classes, training_variables, grouping,
         group_key=group_key, grouping_definition=grouping_definition,
+        wo_train=wo_train,
     )
     colors = ['darkorange', 'dodgerblue', 'forestgreen']
     labels = [r'$ARlike_1$', r'$ARlike_2$', r'$ARlike_3$']
@@ -2901,48 +2917,45 @@ def plot_NN_output_frac_overlay(df, cat_title, model_path, n_classes, training_v
     plt.close(fig)
 
 
-def plot_NN_output_frac_ratio(df, cat_title, model_path, n_classes, training_variables, grouping=None, save_dir=None, save_name='', *, group_key=None, grouping_definition=None, ratio_max=5.0):
-    """Overlay p_i / sum(p_j, j != i), weighted and normalized per source class.
+def plot_NN_output_frac_ratio(df, cat_title, model_path, n_classes, training_variables, grouping=None, save_dir=None, save_name='', *, group_key=None, grouping_definition=None, wo_train=False):
+    """Plot ARlike_i / sum(ARlike_j, j != i) in bins of NN score i.
 
-    Uses the same event selection as the other fraction-score plots. Ratios
-    above ratio_max, including infinite ratios, enter the last bin so their
-    event weights remain in the normalization. Files end in _ratio.
+    Each histogram contains weight_qcd yields with no per-class normalization.
+    Bins with zero background yield are undefined and omitted from the curve.
+    Uses the same selections as the other score plots; files end in _ratio.
     """
-    if not np.isfinite(ratio_max) or ratio_max <= 0:
-        raise ValueError("ratio_max must be finite and positive.")
     hep.style.use(hep.style.CMS)
     predictions, event_weights = _nn_fraction_predictions(
         df, model_path, n_classes, training_variables, grouping,
         group_key=group_key, grouping_definition=grouping_definition,
+        wo_train=wo_train
     )
     colors = ['darkorange', 'dodgerblue', 'forestgreen']
-    labels = [r'$ARlike_1$', r'$ARlike_2$', r'$ARlike_3$']
-    bins = np.linspace(0, ratio_max, 51)
+    labels = [r'ARlike_1', r'ARlike_2', r'ARlike_3']
+    bins = np.linspace(0, 1.0, 51)
     fig, axes = plt.subplots(n_classes, 1, figsize=(11.7, 11.7))
 
     for i, ax in enumerate(axes):
         background_classes = [k for k in range(n_classes) if k != i]
-        for j in range(n_classes):
-            signal = predictions[j][:, i].astype(np.float64)
-            background = predictions[j][:, background_classes].sum(axis=1, dtype=np.float64)
-            ratios = np.divide(
-                signal, background, out=np.full_like(signal, np.inf),
-                where=background > 0,
-            )
-            ax.hist(
-                np.minimum(ratios, ratio_max), bins=bins, weights=event_weights[j],
-                density=True, histtype='step', linewidth=2,
-                color=colors[j], label=labels[j],
-            )
-        if ratio_max >= 1:
-            ax.axvline(1, color='black', linestyle='--', linewidth=1, label='Signal = background')
-        denominator = ' + '.join(f'p_{{{k + 1}}}' for k in background_classes)
-        ax.set_xlabel(
-            rf'$p_{{{i + 1}}}/({denominator})$'
-            + f'\nLast bin includes all ratios ≥ {bins[-2]:g}'
+        yields = [
+            np.histogram(predictions[j][:, i], bins=bins, weights=event_weights[j])[0]
+            for j in range(n_classes)
+        ]
+        signal = yields[i]
+        background = np.sum([yields[j] for j in background_classes], axis=0)
+        ratios = np.divide(
+            signal, background, out=np.full(signal.shape, np.nan),
+            where=background > 0,
         )
-        ax.set_ylabel('Weighted density (unit area)')
-        ax.set_xlim(0, ratio_max)
+        denominator = ' + '.join(labels[j] for j in background_classes)
+        ax.stairs(
+            ratios, bins, color=colors[i], linewidth=2, baseline=None,
+            label=f'${labels[i]}/({denominator})$',
+        )
+        ax.axhline(1, color='black', linestyle='--', linewidth=1, label='Signal = background')
+        ax.set_xlabel(f'NN score for class {i + 1}')
+        ax.set_ylabel('Weighted yield ratio')
+        ax.set_xlim(0, 1)
         ax.set_ylim(bottom=0)
         ax.legend(loc='upper right', frameon=False)
 
