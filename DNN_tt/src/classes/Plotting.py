@@ -2742,8 +2742,8 @@ def plot_in_hist1d(input_values, label, cat_title, input_name, save_dir, save_na
         plt.savefig(save_dir / f'plot_{save_name}_{region}.pdf', dpi=150, bbox_inches='tight')
         plt.close(fig)
 
-def _nn_fraction_predictions(df, model_path, n_classes, training_variables, grouping=None, *, group_key=None, grouping_definition=None, wo_train=False):
-    """Return scores and QCD weights using the model's training selection."""
+def _nn_fraction_predictions(df, model_path, n_classes, training_variables, grouping=None, *, group_key=None, grouping_definition=None, wo_train=False, return_event_ids=False):
+    """Return scores, weights, and optionally aligned IDs for selected events."""
     grouping = 'ungrouped' if grouping is None else grouping
     if n_classes not in (2, 3):
         raise ValueError("n_classes must be 2 or 3.")
@@ -2803,6 +2803,9 @@ def _nn_fraction_predictions(df, model_path, n_classes, training_variables, grou
         with t.inference_mode():
             logits = model(X).reshape(-1, n_classes)
             predictions.append(t.softmax(logits, dim=1).cpu().numpy())
+    if return_event_ids:
+        event_ids = [frame['event'].to_numpy(copy=True) for frame in df]
+        return predictions, event_weights, event_ids
     return predictions, event_weights
 
 
@@ -2966,6 +2969,54 @@ def plot_NN_output_frac_ratio(df, cat_title, model_path, n_classes, training_var
     fig.tight_layout()
     plt.savefig(save_dir / f'plot_{save_name}_ratio.png', dpi=150, bbox_inches='tight')
     plt.savefig(save_dir / f'plot_{save_name}_ratio.pdf', dpi=150, bbox_inches='tight')
+    plt.close(fig)
+
+
+def plot_NN_output_frac_events(df, cat_title, model_path, n_classes, training_variables, grouping=None, save_dir=None, save_name='', *, group_key=None, grouping_definition=None, wo_train=False):
+    """Plot all class probabilities per event, one panel per AR-like region.
+
+    In region i, sort by increasing probability of class i and apply that same
+    permutation to every class. The x positions are event ranks with no numeric
+    tick labels. Probabilities are not event-weighted.
+    """
+    hep.style.use(hep.style.CMS)
+    predictions, _ = _nn_fraction_predictions(
+        df, model_path, n_classes, training_variables, grouping,
+        group_key=group_key, grouping_definition=grouping_definition,
+        wo_train=wo_train,
+    )
+    colors = ['darkorange', 'dodgerblue', 'forestgreen']
+    fig, axes = plt.subplots(n_classes, 1, figsize=(11.7, 4.5 * n_classes))
+
+    for i, ax in enumerate(axes):
+        order = np.argsort(predictions[i][:, i], kind='stable')
+        probabilities = predictions[i][order]
+        positions = np.arange(len(order))
+        for j in range(n_classes):
+            own_class = j == i
+            ax.plot(
+                positions, probabilities[:, j], color=colors[j],
+                label=f'Class {j + 1}' + (' (signal)' if own_class else ' (background)'),
+                linestyle='-' if own_class else 'None',
+                marker='.' if not own_class or len(order) == 1 else None,
+                markersize=2, linewidth=3.0 if own_class else 1.5, alpha=1.0 if own_class else 0.5,
+                zorder=3 if own_class else 2, rasterized=True,
+            )
+        ax.set_xticks([])
+        ax.set_xlim(-0.5, len(order) - 0.5)
+        ax.set_ylim(0, 1)
+        ax.set_xlabel(f'Event ID (ordered by increasing class-{i + 1} probability)')
+        ax.set_ylabel('Class probability')
+        ax.legend(loc='upper right', fontsize=14, frameon=True, facecolor='white', edgecolor='gray', framealpha=0.9)
+        CMS_CATEGORY_TITLE(ax, title=rf'$ARlike_{{{i + 1}}}$')
+
+    CMS_LABEL(axes[0])
+    CMS_CATEGORY_TITLE(axes[0], title=cat_title + r' — $ARlike_1$')
+    CMS_LUMI_TITLE(axes[0])
+    CMS_CHANNEL_TITLE(axes[0])
+    fig.tight_layout()
+    plt.savefig(save_dir / f'plot_{save_name}_events.png', dpi=150, bbox_inches='tight')
+    plt.savefig(save_dir / f'plot_{save_name}_events.pdf', dpi=150, bbox_inches='tight')
     plt.close(fig)
 
 

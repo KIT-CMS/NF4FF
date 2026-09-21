@@ -18,7 +18,7 @@ from classes.Plotting import plot_fake_factors, plot_closure, plot_fake_factors_
 from classes.Plotting import FF_closure_in_DR_tau1, FF_closure_in_DR_tau2, FF_closure_in_DR_incl, plot_fake_factors_grouped_combTaus, plot_classic_fake_factors, plot_fake_factors_incl, plot_closure_incl, plot_fake_factors_combTaus, plot_fake_factors_grouped_incl
 from classes.Plotting import plot_closure_3split, FF_closure_in_DR_3split, plot_fake_factors_3split, plot_fake_factors_combTaus_3split, plot_fake_factors_grouped_3split, plot_fake_factors_grouped_combTaus_3split
 from classes.Plotting import plot_fractions, plot_fractions_grouped, plot_fractions_3split, plot_fractions_grouped_3split
-from classes.Plotting import plot_in_hist1d, plot_NN_output_frac, plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio
+from classes.Plotting import plot_in_hist1d, plot_NN_output_frac, plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio, plot_NN_output_frac_events
 
 SEED = 42
 logger = logging.getLogger(__name__)
@@ -351,7 +351,7 @@ def main():
             logger.info('Plotted fraction factors calculated with multiclass classification...')
 
             for x in ['0', '1', '2_1000']:
-                for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio):
+                for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio, plot_NN_output_frac_events):
                     plot_nn_output(
                         df=df,
                         cat_title=f'njets = {x}' if x != '2_1000' else r'$2 \leq n_{jets} \leq 1000$',
@@ -365,7 +365,7 @@ def main():
                         save_name=f'nn_output_{x}',
                         wo_train=args.wo_train
                     )
-            for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio):
+            for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio, plot_NN_output_frac_events):
                 plot_nn_output(
                     df=df,
                     cat_title='tau decaymode inclusive',
@@ -572,7 +572,7 @@ def main():
                 )
             logger.info('Plotted fraction factors calculated with multiclass classification...')
 
-            for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio):
+            for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio, plot_NN_output_frac_events):
                 plot_nn_output(
                     df = df,
                     cat_title='inclusive',
@@ -765,7 +765,7 @@ def main():
                 )
             logger.info('Plotted fraction factors calculated with multiclass classification...')
 
-            for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio):
+            for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio, plot_NN_output_frac_events):
                 plot_nn_output(
                     df = df,
                     cat_title='inclusive',
@@ -942,7 +942,7 @@ def main():
             logger.info('Plotted fraction factors calculated with multiclass classification...')
 
             for x in ['0', '1', '2_1000']:
-                for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio):
+                for plot_nn_output in (plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio, plot_NN_output_frac_events):
                     plot_nn_output(
                         df = df,
                         cat_title=f'njets = {x}' if x != '2_1000' else r'$2 \leq n_{jets} \leq 1000$',

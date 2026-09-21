@@ -552,7 +552,7 @@ def train_fraction_classifier(
 
     even_model = DNN(
         input_nodes=n_features,
-        hidden_nodes=(200, 200),
+        hidden_nodes=(200, 200, 200, 200),
         output_nodes=n_classes,
         dropout=0.1,
         activation="ReLU",
@@ -562,7 +562,7 @@ def train_fraction_classifier(
 
     odd_model = DNN(
         input_nodes=n_features,
-        hidden_nodes=(200, 200),
+        hidden_nodes=(200, 200, 200, 200),
         output_nodes=n_classes,
         dropout=0.1,
         activation="ReLU",

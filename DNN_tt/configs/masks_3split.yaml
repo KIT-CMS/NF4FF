@@ -39,6 +39,10 @@ masks:
   AR3:
     - id_tau_vsJet_Tight_1 < 0.5
     - id_tau_vsJet_Tight_2 < 0.5
+  
+  AR_comb:
+    - (id_tau_vsJet_Tight_1 < 0.5) | (id_tau_vsJet_Tight_2 < 0.5)
+
 
 
 regions:
@@ -62,6 +66,11 @@ regions:
     - preselection
     - Anti_DR
     - AR3
+
+  AR_comb:
+    - preselection
+    - Anti_DR
+    - AR_comb
 
   SR_like:
     - preselection
