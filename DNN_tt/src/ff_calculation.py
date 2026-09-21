@@ -32,8 +32,8 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
     
-    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
-    incl: Literal['and', 'or', 'andor'] = 'and' # Combine tau1 and tau2 AR with and or or
+    taus: Literal['split', 'incl', '3split'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_binned', 'DNN'] = 'DNN' # global: use global fraction | pt_binned: use pt-binned fraction
     dnn_grouped: bool = True
     classic: bool = False
