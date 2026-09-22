@@ -279,6 +279,29 @@ def draw_stacked_stepfill(ax, bin_edges, components: list[tuple[np.ndarray, str,
 
     return final_top
 
+def estimate_qcd_SS(
+	df,
+	bins,
+	var,
+    yield_corr = 1.0,
+):
+    # controlplot in SS -> SR_like
+    counts = {}
+    variance = {}
+
+    list_processes = ['data', 'diboson', 'DYjets', 'ST', 'embedding', 'ttbar', 'wjets']
+    for proc in list_processes:
+        counts[proc], _ = np.histogram(df[proc].SR_like[var], weights = df[proc].SR_like.weight, bins = bins)
+        variance[proc], _ = np.histogram(df[proc].SR_like[var], weights = (df[proc].SR_like.weight)**2, bins = bins)
+        
+    qcd_counts = counts['data'] - counts['diboson'] - counts['DYjets'] - counts['ST'] - counts['embedding'] - counts['ttbar'] - counts['wjets']
+    qcd_var = variance['data'] + variance['diboson'] + variance['DYjets'] + variance['ST'] + variance['embedding'] + variance['ttbar'] + variance['wjets']
+
+    qcd = yield_corr * qcd_counts
+    var_qcd  = qcd_var
+
+    return qcd, var_qcd
+
 
 def plot_closure(
     df,
@@ -1019,6 +1042,7 @@ def plot_closure_MC(
     bins: np.ndarray,
     label: str,
     embedding = True,
+    yield_corr = 1.0,
 ):
     hep.style.use(hep.style.CMS)
 
@@ -1026,6 +1050,7 @@ def plot_closure_MC(
     histograms = {}
 
     if embedding:
+        cat_title = 'MC + embedding'
         list_processes = [
             'data',
             'diboson',
@@ -1035,6 +1060,8 @@ def plot_closure_MC(
             'embedding',
             'wjets',
         ]
+    else:
+        cat_title = 'MC only'
 
 
     for proc in list_processes:
@@ -1050,18 +1077,16 @@ def plot_closure_MC(
             'variance': proc_variance,
         }
 
-    jet_fakes_dnn, var_jet_fakes_dnn = estimate_jet_fakes(
+    qcd_counts, var_qcd = estimate_qcd_SS(
         df,
         bins,
         var,
-        ff_dnn_tau1,
-        ff_dnn_tau2,
-        AR_comb=AR_comb,
+        yield_corr=yield_corr,
     )
 
-    histograms['jet_fakes_dnn'] = {
-        'counts': jet_fakes_dnn,
-        'variance': var_jet_fakes_dnn,
+    histograms['qcd'] = {
+        'counts': qcd_counts,
+        'variance': var_qcd,
     }
 
     background_dnn = (
@@ -1071,7 +1096,7 @@ def plot_closure_MC(
         + histograms['ttbar']['counts']
         + histograms['embedding']['counts']
         + histograms['wjets']['counts']
-        + histograms['jet_fakes_dnn']['counts']
+        + histograms['qcd']['counts']
     )
 
     variance_background_dnn = (
@@ -1081,7 +1106,7 @@ def plot_closure_MC(
         + histograms['ttbar']['variance']
         + histograms['embedding']['variance']
         + histograms['wjets']['variance']
-        + histograms['jet_fakes_dnn']['variance']
+        + histograms['qcd']['variance']
     )
 
     histograms['background_dnn'] = {
@@ -1128,7 +1153,7 @@ def plot_closure_MC(
         (histograms['ST']['counts'], "#717581", r"Single t"),
         (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
         (histograms['wjets']['counts'], '#e76300', r"W+jets"),
-        (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
+        (histograms['qcd']['counts'], "#b9ac70", r'QCD multijet'),
         (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
     ]
 

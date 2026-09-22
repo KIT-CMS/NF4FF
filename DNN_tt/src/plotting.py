@@ -19,6 +19,7 @@ from classes.Plotting import FF_closure_in_DR_tau1, FF_closure_in_DR_tau2, FF_cl
 from classes.Plotting import plot_closure_3split, FF_closure_in_DR_3split, plot_fake_factors_3split, plot_fake_factors_combTaus_3split, plot_fake_factors_grouped_3split, plot_fake_factors_grouped_combTaus_3split
 from classes.Plotting import plot_fractions, plot_fractions_grouped, plot_fractions_3split, plot_fractions_grouped_3split
 from classes.Plotting import plot_in_hist1d, plot_NN_output_frac, plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio, plot_NN_output_frac_events
+from classes.Plotting import plot_closure_MC
 
 SEED = 42
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ class Args(Tap):
     fraction_max_bins: int = 0 # Maximum displayed bins per axis for 3split fractions; 0 keeps all bins
     dnn_grouped: bool = False
     AR_comb: bool = False
+    closure_MC: bool = True
     classic: bool = False
 
     wo_train: bool = False
@@ -46,7 +48,8 @@ class Args(Tap):
     closure_DR: bool = False
     FF_dist: bool = False
     frac: Literal['global', 'pt_binned', 'DNN'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
-    closure_AR: bool = True
+    closure_AR: bool = False
+    
 
 args = Args().parse_args()
 
@@ -187,6 +190,30 @@ def main():
         plt.close(fig_ar)
         logger.info(f'Saved FF distributions in AR for classic')
 
+        return None
+
+    if args.closure_MC:
+        logger.info('Plotting control plots without fake factors')
+
+        df = load_data(DATA_PATH, MASKS_PATH)
+
+        for var in variables:
+            bins, label = get_bins_and_label(var)
+            label = labels_cfg['tt'][var]
+            fig, ax, _ = plot_closure_MC(
+                    df = df,
+                    var = var,
+                    bins = bins,
+                    label = label,
+                    embedding=True,
+                    yield_corr=1.37
+                )
+
+            mc_dir = PLOTS_DIR / 'without_FF' / 'control_plots' / 'MC_embedding'
+            mc_dir.mkdir(parents=True, exist_ok=True)
+            plt.savefig(mc_dir / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
+            plt.savefig(mc_dir / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig)
         return None
 
     
@@ -1134,7 +1161,6 @@ def main():
                 plt.close(fig)
 
             logger.info('Saved all closure plots for tau inclusive ungrouped DNN')
-
 
 
 # -------------------------------------------
