@@ -60,8 +60,29 @@ def estimate_jet_fakes(
 	bins,
 	var,
 	ff_var_tau1,
-    ff_var_tau2
+    ff_var_tau2,
+    AR_comb=False,
 ):
+
+    if AR_comb:
+        counts = {}
+        variances = {}
+
+        processes = ['data', 'diboson', 'DYjets', 'ST', 'embedding', 'ttbar', 'wjets']
+
+        for proc in processes:
+            ar = df[proc].AR_comb
+
+            weights = ar.weight * (ar[ff_var_tau1] + ar[ff_var_tau2])
+
+            counts[proc], _ = np.histogram(ar[var], bins=bins, weights=weights)
+            variances[proc], _ = np.histogram(ar[var], bins=bins, weights=weights**2)
+
+        jet_fakes = counts['data'] - sum(counts[proc] for proc in processes[1:])
+        var_jet_fakes = sum(variances.values())
+
+        return jet_fakes, var_jet_fakes
+    
     counts_tau1 = {}
     counts_tau2 = {}
     variance_tau1 = {}
@@ -247,6 +268,7 @@ def plot_closure(
     corr_emb_ff = 1.0,
     plot_classic_ff_comp = False,
     plot_corr_hline = False,
+    AR_comb = False,
 ):
     hep.style.use(hep.style.CMS)
 
@@ -295,6 +317,7 @@ def plot_closure(
         var,
         ff_dnn_tau1,
         ff_dnn_tau2,
+        AR_comb=AR_comb,
     )
 
     histograms['jet_fakes_dnn'] = {

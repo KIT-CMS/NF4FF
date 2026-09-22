@@ -99,6 +99,7 @@ def calculate_fake_factors_ungrouped(
     model_tau2: t.nn.Module = None,
     training_variables=None,
     DR: bool = False,
+    AR_comb: bool = False
 ):
     if model_tau1 is None and model_tau2 is None:
         logger.error("Both model_tau1 and model_tau2 are None. No fake factors will be calculated.")
@@ -106,12 +107,16 @@ def calculate_fake_factors_ungrouped(
 
     # ----- FF calculation specifics in DR or SR -----
     if DR:
-        ratio_tau1 = _compute_ratio(model_tau1, df.AR_like_tau1, training_variables)
-        ratio_tau2 = _compute_ratio(model_tau2, df.AR_like_tau2, training_variables)
+        ar1, ar2 = df.AR_like_tau1, df.AR_like_tau2
+    elif AR_comb:
+        ar = df.AR_comb
+        ar1, ar2 = ar, ar
     else:
-        ratio_tau1 = _compute_ratio(model_tau1, df.AR_tau1, training_variables)
-        ratio_tau2 = _compute_ratio(model_tau2, df.AR_tau2, training_variables) 
+        ar1, ar2 = df.AR_tau1, df.AR_tau2
 
+    ratio_tau1 = _compute_ratio(model_tau1, ar1, training_variables)
+    ratio_tau2 = _compute_ratio(model_tau2, ar2, training_variables)
+    
     # ----- FF calculation -----
     norm_tau1 = (
         np.sum(df.data.SR_like.weight_qcd)
@@ -139,21 +144,21 @@ def calculate_fake_factors_ungrouped(
         logger.error("FF for tau 1 is None or FF for tau 2 is None")
 
     if DR:
-        df.AR_like_tau1[f"ff_DR_unclipped_dnn_tau1"] = fake_factor_tau1
+        ar1[f"ff_DR_unclipped_dnn_tau1"] = fake_factor_tau1
         fake_factor_tau1 = np.clip(fake_factor_tau1, 0, 3)
-        df.AR_like_tau1[f"ff_DR_dnn_tau1"] = fake_factor_tau1            
+        ar1[f"ff_DR_dnn_tau1"] = fake_factor_tau1            
 
-        df.AR_like_tau2[f"ff_DR_unclipped_dnn_tau2"] = fake_factor_tau2
+        ar2[f"ff_DR_unclipped_dnn_tau2"] = fake_factor_tau2
         fake_factor_tau2 = np.clip(fake_factor_tau2, 0, 3)
-        df.AR_like_tau2[f"ff_DR_dnn_tau2"] = fake_factor_tau2
+        ar2[f"ff_DR_dnn_tau2"] = fake_factor_tau2
     else:
-        df.AR_tau1[f"ff_unclipped_dnn_tau1"] = fake_factor_tau1
+        ar1[f"ff_unclipped_dnn_tau1"] = fake_factor_tau1
         fake_factor_tau1 = np.clip(fake_factor_tau1, 0, 3)
-        df.AR_tau1[f"ff_dnn_tau1_raw"] = fake_factor_tau1            
+        ar1[f"ff_dnn_tau1_raw"] = fake_factor_tau1            
 
-        df.AR_tau2[f"ff_unclipped_dnn_tau2"] = fake_factor_tau2
+        ar2[f"ff_unclipped_dnn_tau2"] = fake_factor_tau2
         fake_factor_tau2 = np.clip(fake_factor_tau2, 0, 3)
-        df.AR_tau2[f"ff_dnn_tau2_raw"] = fake_factor_tau2
+        ar2[f"ff_dnn_tau2_raw"] = fake_factor_tau2
 
 def calculate_fake_factors_grouped(
     df,

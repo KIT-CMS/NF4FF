@@ -32,10 +32,11 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
     
-    taus: Literal['split', 'incl', '3split'] = 'incl' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_binned', 'DNN'] = 'DNN' # global: use global fraction | pt_binned: use pt-binned fraction
-    dnn_grouped: bool = True
+    dnn_grouped: bool = False
+    AR_comb: bool = True
     classic: bool = False
 
 args = Args().parse_args()
@@ -204,6 +205,7 @@ def main():
             model_tau1=model1,
             model_tau2=model2,
             training_variables=training_variables,
+            AR_comb=args.AR_comb,
         )
 
         logger.info("Calculating fake factors in DR...")
@@ -216,10 +218,15 @@ def main():
         )
 
         logger.info(f"Applying fake factor {args.frac} fractions...")
+        if args.AR_comb:
+            ar = df.AR_comb
+            ar1, ar2 = ar, ar
+        else:
+            ar1, ar2 = df.AR_tau1, df.AR_tau2
         calculate_fake_factor_frac(
             df=df,
-            df1=df.AR_tau1,
-            df2=df.AR_tau2,
+            df1=ar1,
+            df2=ar2,
             frac_file=cfg_path['fractions']+"/fractions.yaml",
             fraction=args.frac,
             training_variables=training_variables_multiclass,
