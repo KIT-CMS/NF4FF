@@ -133,7 +133,28 @@ def estimate_jet_fakes_3split(
 	ff1,
     ff2,
     ff3,
+    AR_comb=False,
 ):
+
+    if AR_comb:
+        counts = {}
+        variances = {}
+
+        processes = ['data', 'diboson', 'DYjets', 'ST', 'embedding', 'ttbar', 'wjets']
+
+        for proc in processes:
+            ar = df[proc].AR_comb
+
+            weights = ar.weight * (ar[ff1] + ar[ff2] + ar[ff3])
+
+            counts[proc], _ = np.histogram(ar[var], bins=bins, weights=weights)
+            variances[proc], _ = np.histogram(ar[var], bins=bins, weights=weights**2)
+
+        jet_fakes = counts['data'] - sum(counts[proc] for proc in processes[1:])
+        var_jet_fakes = sum(variances.values())
+
+        return jet_fakes, var_jet_fakes
+    
     counts_tau1 = {}
     counts_tau2 = {}
     counts_3 = {}
@@ -753,6 +774,7 @@ def plot_closure_3split(
     grouping = None,
     corr_emb_ff = 1.0,
     plot_corr_hline = False,
+    AR_comb = False,
 ):
     hep.style.use(hep.style.CMS)
 
@@ -805,6 +827,7 @@ def plot_closure_3split(
         ff1,
         ff2,
         ff3,
+        AR_comb=AR_comb,
     )
 
     histograms['jet_fakes_dnn'] = {
@@ -990,6 +1013,236 @@ def plot_closure_3split(
 
     return fig, ax, histograms
 
+def plot_closure_MC(
+    df,
+    var: str,
+    bins: np.ndarray,
+    label: str,
+    embedding = True,
+):
+    hep.style.use(hep.style.CMS)
+
+
+    histograms = {}
+
+    if embedding:
+        list_processes = [
+            'data',
+            'diboson',
+            'DYjets',
+            'ST',
+            'ttbar',
+            'embedding',
+            'wjets',
+        ]
+
+
+    for proc in list_processes:
+
+        proc_counts, proc_variance, bin_edges = weighted_histogram(
+            values=df[proc].SR[var],
+            weights=df[proc].SR.weight,
+            bins=bins,
+        )
+
+        histograms[proc] = {
+            'counts': proc_counts,
+            'variance': proc_variance,
+        }
+
+    jet_fakes_dnn, var_jet_fakes_dnn = estimate_jet_fakes(
+        df,
+        bins,
+        var,
+        ff_dnn_tau1,
+        ff_dnn_tau2,
+        AR_comb=AR_comb,
+    )
+
+    histograms['jet_fakes_dnn'] = {
+        'counts': jet_fakes_dnn,
+        'variance': var_jet_fakes_dnn,
+    }
+
+    background_dnn = (
+        histograms['diboson']['counts']
+        + histograms['DYjets']['counts']
+        + histograms['ST']['counts']
+        + histograms['ttbar']['counts']
+        + histograms['embedding']['counts']
+        + histograms['wjets']['counts']
+        + histograms['jet_fakes_dnn']['counts']
+    )
+
+    variance_background_dnn = (
+        histograms['diboson']['variance']
+        + histograms['DYjets']['variance']
+        + histograms['ST']['variance']
+        + histograms['ttbar']['variance']
+        + histograms['embedding']['variance']
+        + histograms['wjets']['variance']
+        + histograms['jet_fakes_dnn']['variance']
+    )
+
+    histograms['background_dnn'] = {
+        'counts': background_dnn,
+        'variance': variance_background_dnn,
+    }
+
+
+    bin_widths = np.diff(bin_edges)
+    bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+    err_bin = 0.5 * bin_widths
+
+
+    err_data = np.sqrt(histograms['data']['variance'])
+
+
+    err_stat_dnn = np.sqrt(
+        histograms['background_dnn']['variance']
+    )
+
+
+    err_stat_rel_dnn = np.divide(
+        err_stat_dnn,
+        histograms['background_dnn']['counts'],
+        out=np.zeros_like(err_stat_dnn),
+        where=histograms['background_dnn']['counts'] > 0,
+    )
+
+    fig, ax = plt.subplots(
+        3,
+        1,
+        figsize=(11.7, 11.4),
+        sharex=True,
+        gridspec_kw={
+            'height_ratios': [3, 1, 1],
+            'hspace': 0.05,
+        },
+        constrained_layout=True,
+    )    
+
+    stack_components = [
+        (histograms['diboson']['counts'], "#94a4a2", 'Diboson'),
+        (histograms['ttbar']['counts'], '#832db6', r'$t\bar{t} \to \tau$'),
+        (histograms['ST']['counts'], "#717581", r"Single t"),
+        (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
+        (histograms['wjets']['counts'], '#e76300', r"W+jets"),
+        (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
+        (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
+    ]
+
+    counts_stack_total = draw_stacked_stepfill(
+        ax[0],
+        bin_edges,
+        stack_components,
+    )
+
+
+    ax[0].stairs(
+        counts_stack_total,
+        bin_edges,
+        color='black',
+        linewidth=0.7,
+    )
+
+    ax[0].errorbar(
+        bin_centers,
+        histograms['data']['counts'],
+        yerr=err_data,
+        xerr=err_bin,
+        fmt='o',
+        color='black',
+        label='Data',
+        markersize=6,
+        elinewidth=1.2,
+        capsize=0,
+    )
+
+    ax[0].set_ylabel("Events")
+    handles, labels = ax[0].get_legend_handles_labels()
+    handles = handles[::-1]
+    labels = labels[::-1]
+    handles, labels = _reorder_for_rowwise_legend(handles, labels, ncol=4)
+    ax[0].legend(handles, labels, title=' ', title_fontsize=20, loc='upper left', ncol=4, frameon=False)
+    adjust_ylim_for_legend(ax[0])
+    ax[0].tick_params(direction='in', top=True, right=True)
+
+    CMS_LABEL(ax)
+    CMS_CATEGORY_TITLE(ax, title=cat_title)
+    CMS_LUMI_TITLE(ax)
+    CMS_CHANNEL_TITLE(ax)
+
+    ratio_dnn = np.divide(
+        histograms['data']['counts'],
+        histograms['background_dnn']['counts'],
+        out=np.zeros_like(histograms['data']['counts'], dtype=float),
+        where=histograms['background_dnn']['counts'] > 0,
+    )
+
+    ratio_err_dnn = np.divide(
+        err_data,
+        histograms['background_dnn']['counts'],
+        out=np.zeros_like(err_data),
+        where=histograms['background_dnn']['counts'] > 0,
+    )
+
+    ax[1].errorbar(
+        bin_centers,
+        ratio_dnn,
+        xerr=err_bin,
+        yerr=ratio_err_dnn,
+        fmt='o',
+        color='black',
+        markersize=6,
+        label=r'DNN $F_\mathrm{F}$',
+    )
+
+    ax[1].fill_between(
+        bin_centers,
+        1 - err_stat_rel_dnn,
+        1 + err_stat_rel_dnn,
+        color='gray',
+        alpha=0.3,
+        step='mid',
+        label='Stat. Unc.',
+    )
+    
+    ax[1].axhline(1, color='red', linestyle='--', linewidth=1.5)
+    
+    ax[1].set_ylabel("Data / Model", loc='center')
+    ax[1].set_ylim([0.75, 1.25])
+    ax[1].grid(True, linestyle=':', alpha=0.7)
+    ax[1].tick_params(direction='in', top=True, right=True)
+    ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
+
+    # Normalize the model components per bin, leaving empty bins blank.
+    fraction_bottom = np.zeros_like(background_dnn, dtype=float)
+    for counts, color, process_label in stack_components:
+        fraction = np.divide(
+            counts,
+            background_dnn,
+            out=np.zeros_like(counts, dtype=float),
+            where=background_dnn > 0,
+        )
+        ax[2].bar(
+            bin_centers,
+            fraction,
+            bottom=fraction_bottom,
+            width=bin_widths,
+            color=color,
+            label=process_label,
+        )
+        fraction_bottom += fraction
+
+    ax[2].set_ylabel('Proc. frac.', loc='center')
+    ax[2].set_ylim(0, 1)
+    ax[2].tick_params(direction='in', top=True, right=True)
+    ax[2].set_xlabel(label)
+
+    return fig, ax, histograms
+
+
 
 def plot_fake_factors(
         df,
@@ -1110,9 +1363,15 @@ def plot_fake_factors_3split(
         category_title = None,
         clipped = True,
         grouping = None,
-        in_one_plot = False
+        in_one_plot = False,
+        AR_comb = False,
 ) -> None:
     hep.style.use(hep.style.CMS)
+
+    if AR_comb:
+        frame_tau1 = frame_tau2 = frame_tau3 = df.data.AR_comb
+    else:
+        frame_tau1, frame_tau2, frame_tau3 = df.data.AR_1, df.data.AR_2, df.data.AR_3
 
     if grouping is None: suffix = ''
     else: suffix = f'_{grouping}'
@@ -1136,9 +1395,9 @@ def plot_fake_factors_3split(
     if in_one_plot:
         fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
 
-        n1 = ax.hist(df.data.AR_1[ff_dnn_1], bins=bins_tau1, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 1')
-        n2 = ax.hist(df.data.AR_2[ff_dnn_2], bins=bins_tau2, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 2')
-        n3 = ax.hist(df.data.AR_3[ff_dnn_3], bins=bins_tau3, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 3')
+        n1 = ax.hist(frame_tau1[ff_dnn_1], bins=bins_tau1, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 1')
+        n2 = ax.hist(frame_tau2[ff_dnn_2], bins=bins_tau2, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 2')
+        n3 = ax.hist(frame_tau3[ff_dnn_3], bins=bins_tau3, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 3')
         ax.set_ylabel("Events")
         ax.set_xlabel("fake_factor")
         ax.legend()
@@ -1151,7 +1410,7 @@ def plot_fake_factors_3split(
     else:
         fig, ax = plt.subplots(3, 1, figsize=(11.7, 9.1))
 
-        n = ax[0].hist(df.data.AR_1[ff_dnn_1], bins=bins_tau1, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 1')
+        n = ax[0].hist(frame_tau1[ff_dnn_1], bins=bins_tau1, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 1')
         ax[0].set_ylabel("Events")
         ax[0].legend()
         ax[0].set_ylim(top=1.2*np.max(n[0]))
@@ -1162,19 +1421,25 @@ def plot_fake_factors_3split(
         CMS_CATEGORY_TITLE([ax[0]], title = category_title)
 
         ax[1].set_ylabel('Events')
-        ax[1].hist(df.data.AR_2[ff_dnn_2], bins=bins_tau2, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 2')
+        ax[1].hist(frame_tau2[ff_dnn_2], bins=bins_tau2, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 2')
         ax[1].legend()
 
-        ax[2].hist(df.data.AR_3[ff_dnn_3], bins=bins_tau3, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 3')
+        ax[2].hist(frame_tau3[ff_dnn_3], bins=bins_tau3, histtype = 'step', linewidth = 2, label=r'$F_F$ AR 3')
         ax[2].set_xlabel("fake_factor")
         ax[2].legend()
     return fig, ax
 
 def plot_fake_factors_combTaus_3split(
         df,
-        clipped = True
+        clipped = True,
+        AR_comb = False,
 ) -> None:
     hep.style.use(hep.style.CMS)
+
+    if AR_comb:
+        frame_tau1 = frame_tau2 = frame_tau3 = df.data.AR_comb
+    else:
+        frame_tau1, frame_tau2, frame_tau3 = df.data.AR_1, df.data.AR_2, df.data.AR_3
 	
     if clipped:
         ff_dnn_tau1 = 'ff_dnn_1'
@@ -1193,14 +1458,16 @@ def plot_fake_factors_combTaus_3split(
         bins_tau2 = np.linspace(0, 2., 51)
         bins_tau3 = np.linspace(0, 2., 51)
 
-    fig, ax = plt.subplots(2, 1, figsize=(11.7, 9.1))
+    n1, binedges = np.histogram(frame_tau1[ff_dnn_tau1], bins=bins_tau1)
+    n2, _ = np.histogram(frame_tau2[ff_dnn_tau2], bins=bins_tau2)
+    n3, _ = np.histogram(frame_tau3[ff_dnn_tau3], bins=bins_tau3)
 
-
-    n1, binedges = np.histogram(df.data.AR_1[ff_dnn_tau1], bins=bins_tau1)
-    n2, _ = np.histogram(df.data.AR_2[ff_dnn_tau2], bins=bins_tau2)
-    n3, _ = np.histogram(df.data.AR_3[ff_dnn_tau3], bins=bins_tau3)
-
-    n = n1 + n2 + n3
+    if AR_comb:
+        # Each event contributes one total FF, just as in the closure estimate.
+        total_ff = frame_tau1[ff_dnn_tau1] + frame_tau1[ff_dnn_tau2] + frame_tau1[ff_dnn_tau3]
+        n, binedges = np.histogram(total_ff, bins=bins_tau1)
+    else:
+        n = n1 + n2 + n3
 
     fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
 
@@ -1837,7 +2104,7 @@ def plot_fake_factors_grouped_incl(df, incl, category_title, grouping='tau_decay
     return fig, ax
 
 def plot_fake_factors_grouped_3split(
-    df, category_title, grouping='tau_decaymode', clipped = True
+    df, category_title, grouping='tau_decaymode', clipped = True, AR_comb=False
     ):
     hep.style.use(hep.style.CMS)
 
@@ -1875,9 +2142,10 @@ def plot_fake_factors_grouped_3split(
             raise ValueError(f'Unsupported grouping: {grouping}')
 
 
-    frame_tau1 = df.data.AR_1
-    frame_tau2 = df.data.AR_2
-    frame_tau3 = df.data.AR_3
+    if AR_comb:
+        frame_tau1 = frame_tau2 = frame_tau3 = df.data.AR_comb
+    else:
+        frame_tau1, frame_tau2, frame_tau3 = df.data.AR_1, df.data.AR_2, df.data.AR_3
 
     if isinstance(grouping, list):
         group_mask_tau1 = _grouping_masks(frame_tau1, grouping[0])
@@ -1983,7 +2251,7 @@ def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymo
 
     return fig, ax
 
-def plot_fake_factors_grouped_combTaus_3split(df, category_title, grouping='njets'):
+def plot_fake_factors_grouped_combTaus_3split(df, category_title, grouping='njets', AR_comb=False):
     hep.style.use(hep.style.CMS)
 
     if grouping == 'tau_decaymode':
@@ -2002,9 +2270,10 @@ def plot_fake_factors_grouped_combTaus_3split(df, category_title, grouping='njet
     bins_tau2 = np.linspace(0, 0.5, 51)
     bins_tau3 = np.linspace(0, 0.5, 51)
 
-    frame_tau1 = df.data.AR_1
-    frame_tau2 = df.data.AR_2
-    frame_tau3 = df.data.AR_3
+    if AR_comb:
+        frame_tau1 = frame_tau2 = frame_tau3 = df.data.AR_comb
+    else:
+        frame_tau1, frame_tau2, frame_tau3 = df.data.AR_1, df.data.AR_2, df.data.AR_3
 
     if isinstance(grouping, list):
         group_mask_tau1 = _grouping_masks(frame_tau1, grouping[0])
@@ -2019,7 +2288,11 @@ def plot_fake_factors_grouped_combTaus_3split(df, category_title, grouping='njet
     n2, _ = np.histogram(frame_tau2[ff2], bins=bins_tau2)
     n3, _ = np.histogram(frame_tau3[ff3], bins=bins_tau3)
 
-    n = n1 + n2 + n3
+    if AR_comb:
+        total_ff = frame_tau1[ff1] + frame_tau1[ff2] + frame_tau1[ff3]
+        n, binedges = np.histogram(total_ff, bins=bins_tau1)
+    else:
+        n = n1 + n2 + n3
 
     n1_split = []
     n2_split = []
@@ -2039,7 +2312,12 @@ def plot_fake_factors_grouped_combTaus_3split(df, category_title, grouping='njet
 
     n_split = []
     for i in range(len(n1_split)):
-        n_split.append(n1_split[i] + n2_split[i] + n3_split[i])
+        if AR_comb:
+            mask, _ = group_mask_tau1[i]
+            h, _ = np.histogram(total_ff[mask], bins=bins_tau1)
+            n_split.append(h)
+        else:
+            n_split.append(n1_split[i] + n2_split[i] + n3_split[i])
 
     fig, ax = plt.subplots(1, 1, figsize=(11.7, 9.1))
     CMS_CHANNEL_TITLE(ax)
@@ -2831,7 +3109,6 @@ def _nn_fraction_predictions(df, model_path, n_classes, training_variables, grou
         return predictions, event_weights, event_ids
     return predictions, event_weights
 
-
 def plot_NN_output_frac_stacked(df, cat_title, model_path, n_classes, training_variables, grouping=None, save_dir=None, save_name='', *, group_key=None, grouping_definition=None, wo_train=False):
     """Plot QCD-weighted score yields and their combined weighted mean/std.
 
@@ -2942,7 +3219,6 @@ def plot_NN_output_frac_overlay(df, cat_title, model_path, n_classes, training_v
     plt.savefig(save_dir / f'plot_{save_name}_overlay.pdf', dpi=150, bbox_inches='tight')
     plt.close(fig)
 
-
 def plot_NN_output_frac_ratio(df, cat_title, model_path, n_classes, training_variables, grouping=None, save_dir=None, save_name='', *, group_key=None, grouping_definition=None, wo_train=False):
     """Plot ARlike_i / sum(ARlike_j, j != i) in bins of NN score i.
 
@@ -2983,7 +3259,7 @@ def plot_NN_output_frac_ratio(df, cat_title, model_path, n_classes, training_var
         ax.set_ylabel('Weighted yield ratio')
         ax.set_xlim(0, 1)
         ax.set_ylim(bottom=0)
-        ax.legend(loc='upper right', frameon=False)
+        ax.legend(loc='center left', frameon=False)
 
     CMS_LABEL(axes[0])
     CMS_CATEGORY_TITLE(axes[0], title=cat_title)
@@ -2993,7 +3269,6 @@ def plot_NN_output_frac_ratio(df, cat_title, model_path, n_classes, training_var
     plt.savefig(save_dir / f'plot_{save_name}_ratio.png', dpi=150, bbox_inches='tight')
     plt.savefig(save_dir / f'plot_{save_name}_ratio.pdf', dpi=150, bbox_inches='tight')
     plt.close(fig)
-
 
 def plot_NN_output_frac_events(df, cat_title, model_path, n_classes, training_variables, grouping=None, save_dir=None, save_name='', *, group_key=None, grouping_definition=None, wo_train=False):
     """Plot all class probabilities per event, one panel per AR-like region.
@@ -3041,7 +3316,6 @@ def plot_NN_output_frac_events(df, cat_title, model_path, n_classes, training_va
     plt.savefig(save_dir / f'plot_{save_name}_events.png', dpi=150, bbox_inches='tight')
     plt.savefig(save_dir / f'plot_{save_name}_events.pdf', dpi=150, bbox_inches='tight')
     plt.close(fig)
-
 
 def plot_NN_output_frac(nn_output, cat_title, label, save_dir=None, save_name=''):
     hep.style.use(hep.style.CMS)

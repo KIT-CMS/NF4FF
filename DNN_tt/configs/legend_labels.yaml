@@ -1,0 +1,61 @@
+rare: 'rare'
+rem_H: 'other H'
+qqH: "qq#rightarrowH"
+VH: "qq#rightarrowVH"
+WH: "qq#rightarrowWH"
+ZTT: "Z#rightarrow#tau#tau"
+EMB: "#tau embedded"
+EMBCMB: "Z/t#bar{t}/VV#rightarrow#tau#tau"
+MUEMB: "#mu#rightarrow#mu embedded"
+TotalBkg: "Background"
+REST: "Sim. Bkg."
+ZLL_mm: "Z#rightarrow#mu#mu"
+ZL: "Z#rightarrowll"
+ZJ: "Z#rightarrowll (jet#rightarrow^{}#tau_{h})"
+TTT: "t#bar{t} (#tau#tau)"
+TTL: "t#bar{t} (l#tau)"
+TTJ: "t#bar{t} (jet#rightarrow^{}#tau_{h})"
+W: "W+jets"
+WT: "(W#rightarrow#tau)+jets"
+WL: "(W#slash{#rightarrow}#tau)+jets"
+VV: "Diboson"
+VVT: "Diboson (#tau#tau)"
+VVJ: "Diboson (jet#rightarrow^{}#tau_{h})"
+VVL: "Diboson (l#tau)"
+ST: "Single t"
+STT: "Single t"
+STL: "Single t"
+QCD: "QCD multijet"
+QCDEMB: "QCD multijet"
+EWK: "Electroweak"
+EWKT: "Electroweak (t#rightarrow^{}#tau_{h})"
+EWKL: "Electroweak (l#rightarrow^{}#tau_{h})"
+EWKJ: "Electroweak (jet#rightarrow^{}#tau_{h})"
+EWKZ: "EWKZ"
+jetFakes: "Jet#rightarrow^{}#tau_{h}"
+jetFakesCMB: "Jet#rightarrow^{}#tau"
+jetFakesW: "Jet#rightarrow^{}#tau_{h} (W)"
+jetFakesQCD: "Jet#rightarrow^{}#tau_{h} (QCD)"
+jetFakesTT: "Jet#rightarrow^{}#tau_{h} (TT)"
+jetFakesEMB: "Jet#rightarrow^{}#tau_{h}"
+data_obs: "Data"
+VHWW: 'VH#rightarrowWW'
+VVV: "VVV"
+ggZZ: "ggZZ"
+TTV: "ttVjets"
+rem_ttbar: "ttVjets"
+ZZ: "ZZ"
+WZ: "WZ"
+WH_htt_plus: 'W^{+}H#rightarrow#tau#tau'
+WH_htt_minus: 'W^{-}H#rightarrow#tau#tau'
+WH_hww_plus: 'W^{+}H#rightarrowWW'
+WH_hww_minus: 'W^{-}H#rightarrowWW'
+ZH: 'ZH'
+Wjets: 'W+jets'
+TT: 't#bar{t}'
+DY: 'DY'
+rem_VV: "VV#rightarrowq"
+HTT: 'H#rightarrow#tau#tau'
+ggH: 'gg#rightarrowH'
+qqZH: 'qq#rightarrowZH'
+ZLL: 'Z#rightarrowll'

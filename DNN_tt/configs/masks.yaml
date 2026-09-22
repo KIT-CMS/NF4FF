@@ -124,7 +124,12 @@ regions:
   AR_like_tau2:
     - preselection
     - DR_qcd
-    - AR_tau2
+    - AR_tau2  
+
+  AR_like_comb:
+    - preselection
+    - DR_qcd
+    - AR_comb
 
   Anti_DR:
     - preselection

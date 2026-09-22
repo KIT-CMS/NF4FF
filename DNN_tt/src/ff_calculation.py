@@ -32,11 +32,11 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
     
-    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
-    frac: Literal['global', 'pt_binned', 'DNN'] = 'DNN' # global: use global fraction | pt_binned: use pt-binned fraction
+    frac: Literal['global', 'pt_binned', 'DNN'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction
     dnn_grouped: bool = False
-    AR_comb: bool = True
+    AR_comb: bool = False
     classic: bool = False
 
 args = Args().parse_args()
@@ -156,6 +156,7 @@ def main():
                 grouping_variable = group_var,
                 grouping_definition = group_def,
                 output_suffix = name,
+                AR_comb=args.AR_comb,
             )
 
             # ----- calculate fake factors in DR -----
@@ -172,10 +173,15 @@ def main():
             )
 
             logger.info("Applying fake factor fractions...")
+            if args.AR_comb:
+                ar = df.AR_comb
+                ar1, ar2 = ar, ar
+            else:
+                ar1, ar2 = df.AR_tau1, df.AR_tau2
             calculate_fake_factor_frac(
                 df=df,
-                df1=df.AR_tau1,
-                df2=df.AR_tau2,
+                df1=ar1,
+                df2=ar2,
                 frac_file=cfg_path['fractions']+'/fractions.yaml',
                 grouping=name,
                 grouping_variable = group_var,
@@ -336,6 +342,7 @@ def main():
             model2=model2,
             model3=model3,
             training_variables=training_variables,
+            AR_comb=args.AR_comb,
         )
 
         logger.info("Calculating fake factors in DR...")
@@ -346,6 +353,7 @@ def main():
             model3=model3,
             training_variables=training_variables,
             DR = True,
+            AR_comb=args.AR_comb,
         )
 
         logger.info(f"Applying fake factor {args.frac} fractions...")
@@ -356,6 +364,7 @@ def main():
             where_calc_frac = 'AR_like',
             training_variables=training_variables_multiclass,
             train_frac=True,
+            AR_comb=args.AR_comb,
         )       
 
     elif args.taus=='3split' and args.dnn_grouped:
@@ -387,6 +396,7 @@ def main():
             grouping_variable = 'njets',
             grouping_definition = grouping_njets,
             output_suffix = 'njets',
+            AR_comb=args.AR_comb,
         )
 
         # ----- calculate fake factors in DR -----
@@ -401,6 +411,7 @@ def main():
             grouping_variable = 'njets',
             grouping_definition = grouping_njets,
             output_suffix = 'njets',
+            AR_comb=args.AR_comb,
         )
 
         logger.info("Applying fake factor fractions...")
@@ -414,6 +425,7 @@ def main():
             where_calc_frac = 'AR_like',
             training_variables=training_variables_multiclass,
             train_frac=True,
+            AR_comb=args.AR_comb,
         )
 
     if args.taus == 'split' or args.taus == '3split':

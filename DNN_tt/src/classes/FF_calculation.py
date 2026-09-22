@@ -169,9 +169,10 @@ def calculate_fake_factors_grouped(
     grouping_variable=None,
     grouping_definition=None,
     output_suffix=None,
+    AR_comb = False
 ):
     if output_suffix is None or grouping_variable is None or grouping_definition is None:
-        calculate_fake_factors_ungrouped(df, model_tau1=model_tau1, model_tau2=model_tau2, training_variables=training_variables, DR=DR)
+        calculate_fake_factors_ungrouped(df, model_tau1=model_tau1, model_tau2=model_tau2, training_variables=training_variables, DR=DR, AR_comb=AR_comb)
         logger.warning("Grouping variable, grouping definition, or output suffix is None. Calculating ungrouped fake factors instead.")
         return
 
@@ -189,17 +190,19 @@ def calculate_fake_factors_grouped(
 
     # ----- FF calculation specifics in DR or SR -----
     if DR:
-        ar_tau1_group_values = np.asarray(df.AR_like_tau1[grouping_var_1])
-        ar_tau2_group_values = np.asarray(df.AR_like_tau2[grouping_var_2])
-
-        ratio_tau1 = _compute_ratio(model_tau1, df.AR_like_tau1, training_variables)
-        ratio_tau2 = _compute_ratio(model_tau2, df.AR_like_tau2, training_variables)
+        ar1, ar2 = df.AR_like_tau1, df.AR_like_tau2
+    elif AR_comb:
+        ar = df.AR_comb
+        ar1, ar2 = ar, ar
     else:
-        ar_tau1_group_values = np.asarray(df.AR_tau1[grouping_var_1])
-        ar_tau2_group_values = np.asarray(df.AR_tau2[grouping_var_2])
+        ar1, ar2 = df.AR_tau1, df.AR_tau2
+    
+    ar_tau1_group_values = np.asarray(ar1[grouping_var_1])
+    ar_tau2_group_values = np.asarray(ar2[grouping_var_2])
 
-        ratio_tau1 = _compute_ratio(model_tau1, df.AR_tau1, training_variables)
-        ratio_tau2 = _compute_ratio(model_tau2, df.AR_tau2, training_variables)
+    ratio_tau1 = _compute_ratio(model_tau1, ar1, training_variables)
+    ratio_tau2 = _compute_ratio(model_tau2, ar2, training_variables)
+    
 
 
     # Ar masks for each group
@@ -258,21 +261,21 @@ def calculate_fake_factors_grouped(
         print("FF for tau 1 is None or FF for tau 2 is None")
 
     if DR:
-        df.AR_like_tau1[f"ff_DR_unclipped_dnn_tau1{suffix}"] = fake_factor_tau1
+        ar1[f"ff_DR_unclipped_dnn_tau1{suffix}"] = fake_factor_tau1
         fake_factor_tau1 = np.clip(fake_factor_tau1, 0, 3)
-        df.AR_like_tau1[f"ff_DR_dnn_tau1{suffix}"] = fake_factor_tau1
+        ar1[f"ff_DR_dnn_tau1{suffix}"] = fake_factor_tau1
 
-        df.AR_like_tau2[f"ff_DR_unclipped_dnn_tau2{suffix}"] = fake_factor_tau2
+        ar2[f"ff_DR_unclipped_dnn_tau2{suffix}"] = fake_factor_tau2
         fake_factor_tau2 = np.clip(fake_factor_tau2, 0, 3)
-        df.AR_like_tau2[f"ff_DR_dnn_tau2{suffix}"] = fake_factor_tau2
+        ar2[f"ff_DR_dnn_tau2{suffix}"] = fake_factor_tau2
     else:
-        df.AR_tau1[f"ff_unclipped_dnn_tau1{suffix}"] = fake_factor_tau1
+        ar1[f"ff_unclipped_dnn_tau1{suffix}"] = fake_factor_tau1
         fake_factor_tau1 = np.clip(fake_factor_tau1, 0, 3)
-        df.AR_tau1[f"ff_dnn_tau1{suffix}_raw"] = fake_factor_tau1
+        ar1[f"ff_dnn_tau1{suffix}_raw"] = fake_factor_tau1
 
-        df.AR_tau2[f"ff_unclipped_dnn_tau2{suffix}"] = fake_factor_tau2
+        ar2[f"ff_unclipped_dnn_tau2{suffix}"] = fake_factor_tau2
         fake_factor_tau2 = np.clip(fake_factor_tau2, 0, 3)
-        df.AR_tau2[f"ff_dnn_tau2{suffix}_raw"] = fake_factor_tau2
+        ar2[f"ff_dnn_tau2{suffix}_raw"] = fake_factor_tau2
 
 def calculate_fake_factor_frac(
         df,
@@ -602,20 +605,23 @@ def calculate_fake_factors_3split_ungrouped(
     model3: t.nn.Module = None,
     training_variables=None,
     DR: bool = False,
+    AR_comb: bool = False,
 ):
     if model1 is None or model2 is None or model3 is None:
         logger.error("One or more models are None. No fake factors will be calculated.")
         return
 
-    # ----- FF calculation specifics in DR or SR -----
+    # DR normalization and validation retain their separate regions.
     if DR:
-        ratio_tau1 = _compute_ratio(model1, df.AR_like_1, training_variables)
-        ratio_tau2 = _compute_ratio(model2, df.AR_like_2, training_variables)
-        ratio_tau3 = _compute_ratio(model3, df.AR_like_3, training_variables)
+        ar1, ar2, ar3 = df.AR_like_1, df.AR_like_2, df.AR_like_3
+    elif AR_comb:
+        ar1 = ar2 = ar3 = df.AR_comb
     else:
-        ratio_tau1 = _compute_ratio(model1, df.AR_1, training_variables)
-        ratio_tau2 = _compute_ratio(model2, df.AR_2, training_variables)
-        ratio_tau3 = _compute_ratio(model3, df.AR_3, training_variables)
+        ar1, ar2, ar3 = df.AR_1, df.AR_2, df.AR_3
+
+    ratio_tau1 = _compute_ratio(model1, ar1, training_variables)
+    ratio_tau2 = _compute_ratio(model2, ar2, training_variables)
+    ratio_tau3 = _compute_ratio(model3, ar3, training_variables)
 
     # ----- FF calculation -----
     norm_tau1 = (
@@ -652,29 +658,29 @@ def calculate_fake_factors_3split_ungrouped(
         logger.error("FF for tau 1 is None or FF for tau 2 is None or FF for tau1&2 is None")
 
     if DR:
-        df.AR_like_1[f"ff_DR_unclipped_dnn_1"] = fake_factor_1
+        ar1[f"ff_DR_unclipped_dnn_1"] = fake_factor_1
         fake_factor_1 = np.clip(fake_factor_1, 0, 3)
-        df.AR_like_1[f"ff_DR_dnn_1"] = fake_factor_1            
+        ar1[f"ff_DR_dnn_1"] = fake_factor_1
 
-        df.AR_like_2[f"ff_DR_unclipped_dnn_2"] = fake_factor_2
+        ar2[f"ff_DR_unclipped_dnn_2"] = fake_factor_2
         fake_factor_2 = np.clip(fake_factor_2, 0, 3)
-        df.AR_like_2[f"ff_DR_dnn_2"] = fake_factor_2
+        ar2[f"ff_DR_dnn_2"] = fake_factor_2
 
-        df.AR_like_3[f"ff_DR_unclipped_dnn_3"] = fake_factor_3
+        ar3[f"ff_DR_unclipped_dnn_3"] = fake_factor_3
         fake_factor_3 = np.clip(fake_factor_3, 0, 3)
-        df.AR_like_3[f"ff_DR_dnn_3"] = fake_factor_3
+        ar3[f"ff_DR_dnn_3"] = fake_factor_3
     else:
-        df.AR_1[f"ff_unclipped_dnn_1"] = fake_factor_1
+        ar1[f"ff_unclipped_dnn_1"] = fake_factor_1
         fake_factor_1 = np.clip(fake_factor_1, 0, 3)
-        df.AR_1[f"ff_dnn_1_raw"] = fake_factor_1            
+        ar1[f"ff_dnn_1_raw"] = fake_factor_1
 
-        df.AR_2[f"ff_unclipped_dnn_2"] = fake_factor_2
+        ar2[f"ff_unclipped_dnn_2"] = fake_factor_2
         fake_factor_2 = np.clip(fake_factor_2, 0, 3)
-        df.AR_2[f"ff_dnn_2_raw"] = fake_factor_2
+        ar2[f"ff_dnn_2_raw"] = fake_factor_2
 
-        df.AR_3[f"ff_unclipped_dnn_3"] = fake_factor_3
+        ar3[f"ff_unclipped_dnn_3"] = fake_factor_3
         fake_factor_3 = np.clip(fake_factor_3, 0, 3)
-        df.AR_3[f"ff_dnn_3_raw"] = fake_factor_3
+        ar3[f"ff_dnn_3_raw"] = fake_factor_3
 
 def calculate_fake_factors_grouped_3split(
     df,
@@ -686,9 +692,13 @@ def calculate_fake_factors_grouped_3split(
     grouping_variable=None,
     grouping_definition=None,
     output_suffix=None,
+    AR_comb: bool = False,
 ):
     if output_suffix is None or grouping_variable is None or grouping_definition is None:
-        calculate_fake_factors_ungrouped(df, model_tau1=model1, model_tau2=model2, model_tau3=model3, training_variables=training_variables, DR=DR)
+        calculate_fake_factors_3split_ungrouped(
+            df, model1=model1, model2=model2, model3=model3,
+            training_variables=training_variables, DR=DR, AR_comb=AR_comb,
+        )
         logger.warning("Grouping variable, grouping definition, or output suffix is None. Calculating ungrouped fake factors instead.")
         return
 
@@ -706,24 +716,21 @@ def calculate_fake_factors_grouped_3split(
         grouping_var_2 = grouping_variable
         grouping_var_3 = grouping_variable
 
-    # ----- FF calculation specifics in DR or SR -----
+    # DR normalization and validation retain their separate regions.
     if DR:
-        ar1_group_values = np.asarray(df.AR_like_1[grouping_var_1])
-        ar2_group_values = np.asarray(df.AR_like_2[grouping_var_2])
-        ar3_group_values = np.asarray(df.AR_like_3[grouping_var_3])
-
-        ratio1 = _compute_ratio(model1, df.AR_like_1, training_variables)
-        ratio2 = _compute_ratio(model2, df.AR_like_2, training_variables)
-        ratio3 = _compute_ratio(model3, df.AR_like_3, training_variables)
+        ar1, ar2, ar3 = df.AR_like_1, df.AR_like_2, df.AR_like_3
+    elif AR_comb:
+        ar1 = ar2 = ar3 = df.AR_comb
     else:
-        ar1_group_values = np.asarray(df.AR_1[grouping_var_1])
-        ar2_group_values = np.asarray(df.AR_2[grouping_var_2])
-        ar3_group_values = np.asarray(df.AR_3[grouping_var_3])
+        ar1, ar2, ar3 = df.AR_1, df.AR_2, df.AR_3
 
-        ratio1 = _compute_ratio(model1, df.AR_1, training_variables)
-        ratio2 = _compute_ratio(model2, df.AR_2, training_variables)
-        ratio3 = _compute_ratio(model3, df.AR_3, training_variables)
+    ar1_group_values = np.asarray(ar1[grouping_var_1])
+    ar2_group_values = np.asarray(ar2[grouping_var_2])
+    ar3_group_values = np.asarray(ar3[grouping_var_3])
 
+    ratio1 = _compute_ratio(model1, ar1, training_variables)
+    ratio2 = _compute_ratio(model2, ar2, training_variables)
+    ratio3 = _compute_ratio(model3, ar3, training_variables)
 
     # Ar masks for each group
     group1_masks = _build_group_masks(ar1_group_values, grouping_definition)
@@ -800,29 +807,29 @@ def calculate_fake_factors_grouped_3split(
         print("FF for tau 1 is None or FF for tau 2 is None or FF for tau 3 is None")
 
     if DR:
-        df.AR_like_1[f"ff_DR_unclipped_dnn_1{suffix}"] = fake_factor_1
+        ar1[f"ff_DR_unclipped_dnn_1{suffix}"] = fake_factor_1
         fake_factor_1 = np.clip(fake_factor_1, 0, 3)
-        df.AR_like_1[f"ff_DR_dnn_1{suffix}"] = fake_factor_1
+        ar1[f"ff_DR_dnn_1{suffix}"] = fake_factor_1
 
-        df.AR_like_2[f"ff_DR_unclipped_dnn_2{suffix}"] = fake_factor_2
+        ar2[f"ff_DR_unclipped_dnn_2{suffix}"] = fake_factor_2
         fake_factor_2 = np.clip(fake_factor_2, 0, 3)
-        df.AR_like_2[f"ff_DR_dnn_2{suffix}"] = fake_factor_2
+        ar2[f"ff_DR_dnn_2{suffix}"] = fake_factor_2
 
-        df.AR_like_3[f"ff_DR_unclipped_dnn_3{suffix}"] = fake_factor_3
+        ar3[f"ff_DR_unclipped_dnn_3{suffix}"] = fake_factor_3
         fake_factor_3 = np.clip(fake_factor_3, 0, 3)
-        df.AR_like_3[f"ff_DR_dnn_3{suffix}"] = fake_factor_3
+        ar3[f"ff_DR_dnn_3{suffix}"] = fake_factor_3
     else:
-        df.AR_1[f"ff_unclipped_dnn_1{suffix}"] = fake_factor_1
+        ar1[f"ff_unclipped_dnn_1{suffix}"] = fake_factor_1
         fake_factor_1 = np.clip(fake_factor_1, 0, 3)
-        df.AR_1[f"ff_dnn_1{suffix}_raw"] = fake_factor_1
+        ar1[f"ff_dnn_1{suffix}_raw"] = fake_factor_1
 
-        df.AR_2[f"ff_unclipped_dnn_2{suffix}"] = fake_factor_2
+        ar2[f"ff_unclipped_dnn_2{suffix}"] = fake_factor_2
         fake_factor_2 = np.clip(fake_factor_2, 0, 3)
-        df.AR_2[f"ff_dnn_2{suffix}_raw"] = fake_factor_2
+        ar2[f"ff_dnn_2{suffix}_raw"] = fake_factor_2
 
-        df.AR_3[f"ff_unclipped_dnn_3{suffix}"] = fake_factor_3
+        ar3[f"ff_unclipped_dnn_3{suffix}"] = fake_factor_3
         fake_factor_3 = np.clip(fake_factor_3, 0, 3)
-        df.AR_3[f"ff_dnn_3{suffix}_raw"] = fake_factor_3
+        ar3[f"ff_dnn_3{suffix}_raw"] = fake_factor_3
 
 def calculate_fake_factor_frac_3split(
         df,
@@ -834,23 +841,25 @@ def calculate_fake_factor_frac_3split(
         where_calc_frac = 'AR_like',
         training_variables = None,
         train_frac = True,
+        AR_comb: bool = False,
 ):
     '''
-    Apply fraction factors to the three tau application regions.
+    Apply fraction factors to separate regions or all three FFs on AR_comb.
 
     :fraction: "global" (yield fractions), "pt_binned", or "DNN".
     Grouped DNN fractions train one three-class classifier per njets category
     using weight_qcdr.
     '''
     
-    df1 = df.AR_1
-    df2 = df.AR_2
-    df3 = df.AR_3
+    if AR_comb:
+        df1 = df2 = df3 = df.AR_comb
+    else:
+        df1, df2, df3 = df.AR_1, df.AR_2, df.AR_3
 
     _df = df.copy()
-    _df1 = df.AR_1.copy()
-    _df2 = df.AR_2.copy()
-    _df3 = df.AR_3.copy()
+    _df1 = df1.copy()
+    _df2 = df2.copy()
+    _df3 = df3.copy()
 
     if grouping is None:
         ff_tau1 = "ff_dnn_1_raw"
@@ -872,10 +881,10 @@ def calculate_fake_factor_frac_3split(
             frac2 = np.sum(_df.data.AR_like_2['weight_qcd']) / denominator
             frac3 = np.sum(_df.data.AR_like_3['weight_qcd']) / denominator
         elif where_calc_frac == 'AR':
-            denominator = np.sum(_df1['weight']) + np.sum(_df2['weight']) + np.sum(_df3['weight'])
-            frac1 = np.sum(_df1['weight']) / denominator
-            frac2 = np.sum(_df2['weight']) / denominator
-            frac3 = np.sum(_df3['weight']) / denominator
+            denominator = np.sum(_df.AR_1['weight']) + np.sum(_df.AR_2['weight']) + np.sum(_df.AR_3['weight'])
+            frac1 = np.sum(_df.AR_1['weight']) / denominator
+            frac2 = np.sum(_df.AR_2['weight']) / denominator
+            frac3 = np.sum(_df.AR_3['weight']) / denominator
         else:
             raise ValueError(f"Invalid value for where_calc_frac: {where_calc_frac}. Must be 'AR_like' or 'AR'.")
 
