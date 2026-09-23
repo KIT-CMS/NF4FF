@@ -16,7 +16,7 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 
 class Args(Tap):
     loc: Literal["remote", "present"] = "present"
-    embedding: Literal["embedding", "no_embedding"] = "embedding"
+    embedding: Literal["embedding", "no_embedding"] = "no_embedding"
     classic: bool = False
 
 
@@ -147,3 +147,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    logger.info('Done')

@@ -56,10 +56,12 @@ args = Args().parse_args()
 cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
 
 DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'
+DATA_PATH_NOEMBED = f'{cfg_path["datasets"]}/no_embedding/combined_data.feather'
 DATA_CLASSIC_JV_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_jvoss.feather"
 DATA_CLASSIC_SG_PATH = "/work/tapp/TauFF/NF4FF/Data/datasets/classic/combined_data_sgiappic.feather"
 
 MASKS_PATH = cfg_path["masks"]
+MASKS_MC = cfg_path["masks_mc"]
 MASKS_PATH_INCL = [cfg_path["masks_incl_and"], cfg_path["masks_incl_or"], cfg_path["masks_incl_andor"]]
 MASKS_PATH_3SPLIT = cfg_path["masks_3split"]
 
@@ -210,6 +212,28 @@ def main():
                 )
 
             mc_dir = PLOTS_DIR / 'without_FF' / 'control_plots' / 'MC_embedding'
+            mc_dir.mkdir(parents=True, exist_ok=True)
+            plt.savefig(mc_dir / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
+            plt.savefig(mc_dir / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
+            plt.close(fig)
+
+
+        logger.info('Plotting control plots without fake factors')
+        df = load_data(DATA_PATH_NOEMBED, MASKS_MC)
+        
+        for var in variables:
+            bins, label = get_bins_and_label(var)
+            label = labels_cfg['tt'][var]
+            fig, ax, _ = plot_closure_MC(
+                    df = df,
+                    var = var,
+                    bins = bins,
+                    label = label,
+                    embedding=False,
+                    yield_corr=1.37
+                )
+
+            mc_dir = PLOTS_DIR / 'without_FF' / 'control_plots' / 'MC_only'
             mc_dir.mkdir(parents=True, exist_ok=True)
             plt.savefig(mc_dir / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
             plt.savefig(mc_dir / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')

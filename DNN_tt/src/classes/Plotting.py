@@ -284,18 +284,27 @@ def estimate_qcd_SS(
 	bins,
 	var,
     yield_corr = 1.0,
+    embedding=True,
 ):
     # controlplot in SS -> SR_like
     counts = {}
     variance = {}
 
-    list_processes = ['data', 'diboson', 'DYjets', 'ST', 'embedding', 'ttbar', 'wjets']
+    if embedding:
+        list_processes = ['data', 'diboson', 'DYjets', 'ST', 'embedding', 'ttbar', 'wjets']
+    else:
+        list_processes = ['data', 'diboson', 'DYjets', 'ST', 'ttbar', 'wjets']
     for proc in list_processes:
         counts[proc], _ = np.histogram(df[proc].SR_like[var], weights = df[proc].SR_like.weight, bins = bins)
         variance[proc], _ = np.histogram(df[proc].SR_like[var], weights = (df[proc].SR_like.weight)**2, bins = bins)
+
+    if embedding:    
+        qcd_counts = counts['data'] - counts['diboson'] - counts['DYjets'] - counts['ST'] - counts['embedding'] - counts['ttbar'] - counts['wjets']
+        qcd_var = variance['data'] + variance['diboson'] + variance['DYjets'] + variance['ST'] + variance['embedding'] + variance['ttbar'] + variance['wjets']
+    else:
+        qcd_counts = counts['data'] - counts['diboson'] - counts['DYjets'] - counts['ST'] - counts['ttbar'] - counts['wjets']
+        qcd_var = variance['data'] + variance['diboson'] + variance['DYjets'] + variance['ST'] + variance['ttbar'] + variance['wjets']
         
-    qcd_counts = counts['data'] - counts['diboson'] - counts['DYjets'] - counts['ST'] - counts['embedding'] - counts['ttbar'] - counts['wjets']
-    qcd_var = variance['data'] + variance['diboson'] + variance['DYjets'] + variance['ST'] + variance['embedding'] + variance['ttbar'] + variance['wjets']
 
     qcd = yield_corr * qcd_counts
     var_qcd  = qcd_var
@@ -1062,6 +1071,14 @@ def plot_closure_MC(
         ]
     else:
         cat_title = 'MC only'
+        list_processes = [
+            'data',
+            'diboson',
+            'DYjets',
+            'ST',
+            'ttbar',
+            'wjets',
+        ]
 
 
     for proc in list_processes:
@@ -1082,6 +1099,7 @@ def plot_closure_MC(
         bins,
         var,
         yield_corr=yield_corr,
+        embedding=embedding,
     )
 
     histograms['qcd'] = {
@@ -1089,25 +1107,44 @@ def plot_closure_MC(
         'variance': var_qcd,
     }
 
-    background_dnn = (
-        histograms['diboson']['counts']
-        + histograms['DYjets']['counts']
-        + histograms['ST']['counts']
-        + histograms['ttbar']['counts']
-        + histograms['embedding']['counts']
-        + histograms['wjets']['counts']
-        + histograms['qcd']['counts']
-    )
+    if embedding:
+        background_dnn = (
+            histograms['diboson']['counts']
+            + histograms['DYjets']['counts']
+            + histograms['ST']['counts']
+            + histograms['ttbar']['counts']
+            + histograms['embedding']['counts']
+            + histograms['wjets']['counts']
+            + histograms['qcd']['counts']
+        )
 
-    variance_background_dnn = (
-        histograms['diboson']['variance']
-        + histograms['DYjets']['variance']
-        + histograms['ST']['variance']
-        + histograms['ttbar']['variance']
-        + histograms['embedding']['variance']
-        + histograms['wjets']['variance']
-        + histograms['qcd']['variance']
-    )
+        variance_background_dnn = (
+            histograms['diboson']['variance']
+            + histograms['DYjets']['variance']
+            + histograms['ST']['variance']
+            + histograms['ttbar']['variance']
+            + histograms['embedding']['variance']
+            + histograms['wjets']['variance']
+            + histograms['qcd']['variance']
+        )
+    else:
+        background_dnn = (
+            histograms['diboson']['counts']
+            + histograms['DYjets']['counts']
+            + histograms['ST']['counts']
+            + histograms['ttbar']['counts']
+            + histograms['wjets']['counts']
+            + histograms['qcd']['counts']
+        )
+    
+        variance_background_dnn = (
+            histograms['diboson']['variance']
+            + histograms['DYjets']['variance']
+            + histograms['ST']['variance']
+            + histograms['ttbar']['variance']
+            + histograms['wjets']['variance']
+            + histograms['qcd']['variance']
+        )
 
     histograms['background_dnn'] = {
         'counts': background_dnn,
@@ -1147,15 +1184,25 @@ def plot_closure_MC(
         constrained_layout=True,
     )    
 
-    stack_components = [
-        (histograms['diboson']['counts'], "#94a4a2", 'Diboson'),
-        (histograms['ttbar']['counts'], '#832db6', r'$t\bar{t} \to \tau$'),
-        (histograms['ST']['counts'], "#717581", r"Single t"),
-        (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
-        (histograms['wjets']['counts'], '#e76300', r"W+jets"),
-        (histograms['qcd']['counts'], "#b9ac70", r'QCD multijet'),
-        (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
-    ]
+    if embedding:
+        stack_components = [
+            (histograms['diboson']['counts'], "#94a4a2", 'Diboson'),
+            (histograms['ttbar']['counts'], '#832db6', r'$t\bar{t} \to \tau$'),
+            (histograms['ST']['counts'], "#717581", r"Single t"),
+            (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
+            (histograms['wjets']['counts'], '#e76300', r"W+jets"),
+            (histograms['qcd']['counts'], "#b9ac70", r'QCD multijet'),
+            (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
+        ]
+    else:
+        stack_components = [
+                (histograms['diboson']['counts'], "#94a4a2", 'Diboson'),
+                (histograms['ttbar']['counts'], '#832db6', r'$t\bar{t} \to \tau$'),
+                (histograms['ST']['counts'], "#717581", r"Single t"),
+                (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
+                (histograms['wjets']['counts'], '#e76300', r"W+jets"),
+                (histograms['qcd']['counts'], "#b9ac70", r'QCD multijet'),
+            ]
 
     counts_stack_total = draw_stacked_stepfill(
         ax[0],
