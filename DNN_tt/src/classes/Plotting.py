@@ -9,6 +9,7 @@ import torch as t
 from classes.Fraction_factor import fraction_in_bins, _build_group_masks
 from classes.NeuralNetworks import load_model, FoldCombinedDNN
 from classes.DataHandling import test_data
+from classes.Yield_correction_qcd import calculate_qcd_yield_corrections
 
 def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
     if isinstance(ax, Iterable):
@@ -304,8 +305,9 @@ def estimate_qcd_SS(
     else:
         qcd_counts = counts['data'] - counts['diboson'] - counts['DYjets'] - counts['ST'] - counts['ttbar'] - counts['wjets']
         qcd_var = variance['data'] + variance['diboson'] + variance['DYjets'] + variance['ST'] + variance['ttbar'] + variance['wjets']
-        
 
+    yield_corr = calculate_qcd_yield_corrections(df, list_processes[1:])
+    #print(yield_corr)
     qcd = yield_corr * qcd_counts
     var_qcd  = qcd_var
 
