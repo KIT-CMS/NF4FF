@@ -104,7 +104,6 @@ def reserve_cms_label_space(ax, factor=5.0):
     ymin, ymax = ax.get_ylim()
     ax.set_ylim(ymin, ymax * factor)
 
-
 def equi_populated_bins(data, n_bins):
 
     data = np.asarray(data)
@@ -112,10 +111,8 @@ def equi_populated_bins(data, n_bins):
     bin_edges = np.quantile(data, quantiles)
     return bin_edges
 
-
 def should_log_plot_progress(index: int, total: int, step: int = 5) -> bool:
     return index == 1 or index == total or index % step == 0
-
 
 def draw_stacked_stepfill(ax, bin_edges, components: list[tuple[np.ndarray, str, str]]) -> np.ndarray:
     cumulative = np.zeros(len(bin_edges) - 1, dtype=float)

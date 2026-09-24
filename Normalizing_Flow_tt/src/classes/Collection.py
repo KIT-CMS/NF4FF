@@ -346,15 +346,7 @@ def compute_eventwise_fake_factors(
     # while enforcing a minimum clip value of 1.0
     ff_eventwise_nominal = global_ff * ratio
 
-    valid_ff_mask = np.isfinite(ff_eventwise_nominal)
-    '''
-    if np.any(valid_ff_mask):
-        clip_quantile = 1.0 - FF_CLIP_TAIL_FRACTION
-        clip_value = float(np.quantile(ff_eventwise_nominal[valid_ff_mask], clip_quantile))
-        clip_value = max(clip_value, 1.0)
-    else:
-    '''
-    clip_value = 2.0
+    clip_value = 3.0
 
     # ---- mask for clipping and nonzero PDFs
     clip_mask = (ff_eventwise_nominal <= clip_value) & (pdf_AR > 0) & (pdf_SR > 0)
@@ -373,3 +365,26 @@ def compute_eventwise_fake_factors(
     ff_eventwise_clipped = ff_eventwise_full[clip_mask]
 
     return ff_eventwise_full, ff_eventwise_clipped, global_ff_cor, clip_mask, clip_value
+
+
+def compute_eventwise_fake_factors_new(
+    pdf_AR: np.ndarray,
+    pdf_SR: np.ndarray,
+    global_ff: float,
+) -> tuple[np.ndarray, np.ndarray, float, np.ndarray, float]:
+
+    # ----- safe ratio -----
+    ratio = np.divide(
+        pdf_SR,
+        np.maximum(pdf_AR, 1e-6),
+        out=np.zeros_like(pdf_SR, dtype=float),
+        where=(pdf_AR > 0) & (pdf_SR > 0)
+)
+
+    # ---- determine adaptive clip value so the highest tail fraction is clipped,
+    # while enforcing a minimum clip value of 1.0
+    fake_factors = global_ff * ratio
+    clip_value = 3.0
+    ff_clipped = np.clip(fake_factors, 0, clip_value)
+ 
+    return  fake_factors, ff_clipped

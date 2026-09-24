@@ -62,10 +62,12 @@ class Args(Tap):
     test_size: float = 0.25  # Validation fraction for the train/validation split.
     random_state: int = SEED  # Random seed used for train/validation splitting.
 
-    training_model: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = TRAINING_MODEL_CONDITIONAL  # Training mode: grouped split, single inclusive NF, or conditional NF with njets input.
-    taus = [1, 2] #[1, 2, 12] # list of tau fakes
+    training_model: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = TRAINING_MODEL_SINGLE  # Training mode: grouped split, single inclusive NF, or conditional NF with njets input.
+    taus = [1, 2] #[1, 2, 12] # list of tau fakes 1, 2, 12 notimplemented
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables_61"
+
+    for_final_plotting: bool = True
 
     def configure(self) -> None:
         self.add_argument('--split_njets', action='store_true')
@@ -617,7 +619,10 @@ def main():
 
     mode_dir = MODE_DIR_BY_TRAINING_MODEL[training_model]
     training_variables_tag = build_training_variables_tag(variables)
-    model_root_dir = Path(cfg_path['NF_results']) / mode_dir / f"training_{training_variables_tag}"
+    if args.for_final_plotting:
+        model_root_dir = Path(cfg_path['NF_results']) / mode_dir / f"training_DNNplotting"
+    else:
+        model_root_dir = Path(cfg_path['NF_results']) / mode_dir / f"training_{training_variables_tag}"
     logger.info("Model output root: %s", model_root_dir)
 
     # ----- load data -----
