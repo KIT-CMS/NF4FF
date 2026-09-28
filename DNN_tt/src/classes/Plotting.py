@@ -56,6 +56,40 @@ def CMS_LABEL(ax, *args, **kwargs):
     )
 
 
+def validate_nf_weights(df, grouping='njets'):
+    """Reject incomplete exports before NaN weights enter the histogram stack."""
+    suffix = '_njets' if grouping == 'njets' else ''
+    for process in ('data', 'diboson', 'DYjets', 'ST', 'embedding', 'ttbar', 'wjets'):
+        for tau in (1, 2):
+            frame = getattr(df[process], f'AR_tau{tau}')
+            if not len(frame):
+                continue
+            column = f'ff_nf_tau{tau}{suffix}'
+            if column not in frame.columns or f'{column}_kept' not in frame.columns:
+                raise ValueError(f'Missing NF export for {process}, AR_tau{tau}; '
+                                 'rerun Normalizing_Flow_tt/src/NF_ff_calculation.py')
+            invalid = ~np.isfinite(frame[column].to_numpy())
+            if invalid.any():
+                raise ValueError(f'{process}, AR_tau{tau}: {invalid.sum()} invalid {column} weights; '
+                                 'rerun Normalizing_Flow_tt/src/NF_ff_calculation.py')
+
+
+def _nf_distribution_frame(frame, column, clipped=True):
+    """Show physical FFs, excluding rejected events from clipped distributions."""
+    frame = frame.copy()
+    if clipped:
+        frame = frame.loc[frame[f'{column}_kept'].eq(True)].copy()
+    # Stored weights include 0.5 for combining taus; the FF itself does not.
+    frame[column] = 2.0 * frame[column]
+    return frame
+
+
+def _nf_distribution_bins(*values):
+    finite = np.concatenate([np.asarray(value, dtype=float) for value in values])
+    finite = finite[np.isfinite(finite)]
+    return np.linspace(0, max(1.25, float(finite.max()) if finite.size else 0), 51)
+
+
 def estimate_jet_fakes(
 	df,
 	bins,
@@ -324,20 +358,24 @@ def plot_closure(
     plot_classic_ff_comp = False,
     plot_corr_hline = False,
     AR_comb = False,
+    mode='dnn',
 ):
     hep.style.use(hep.style.CMS)
 
+    if mode=='nf' and grouping=='tau_decaymode':
+        return None, None, None
+
     if grouping == 'tau_decaymode':
-        ff_dnn_tau1 = 'ff_dnn_tau1_tau_dm'
-        ff_dnn_tau2 = 'ff_dnn_tau2_tau_dm'
+        ff_dnn_tau1 = f'ff_{mode}_tau1_tau_dm'
+        ff_dnn_tau2 = f'ff_{mode}_tau2_tau_dm'
         cat_title = r'$\tau$ DM: inclusive'
     elif grouping == 'njets':
-        ff_dnn_tau1 = 'ff_dnn_tau1_njets'
-        ff_dnn_tau2 = 'ff_dnn_tau2_njets'
+        ff_dnn_tau1 = f'ff_{mode}_tau1_njets'
+        ff_dnn_tau2 = f'ff_{mode}_tau2_njets'
         cat_title = r'$N_{jets}$: inclusive'
     else:
-        ff_dnn_tau1 = 'ff_dnn_tau1'
-        ff_dnn_tau2 = 'ff_dnn_tau2'
+        ff_dnn_tau1 = f'ff_{mode}_tau1'
+        ff_dnn_tau2 = f'ff_{mode}_tau2'
         cat_title = 'inclusive'
 
     histograms = {}
@@ -2064,20 +2102,23 @@ def _grouping_masks(frame, grouping):
     raise ValueError(f'Unsupported grouping: {grouping}')
 
 
-def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode', clipped = True):
+def plot_fake_factors_grouped(df, category_title, grouping='njets', clipped = True, mode='dnn'):
     hep.style.use(hep.style.CMS)
+
+    if mode=='nf' and grouping=='tau_decaymode':
+        return None, None
 
     if clipped:
         bins_tau1 = np.linspace(0, 1.25, 51)
         bins_tau2 = np.linspace(0, 1.25, 51)
 
         if grouping == 'tau_decaymode':
-            ff_tau1 = 'ff_dnn_tau1_tau_dm'
-            ff_tau2 = 'ff_dnn_tau2_tau_dm'
+            ff_tau1 = f'ff_{mode}_tau1_tau_dm'
+            ff_tau2 = f'ff_{mode}_tau2_tau_dm'
             grouping = ['tau_decaymode_1', 'tau_decaymode_2']
         elif grouping == 'njets':
-            ff_tau1 = 'ff_dnn_tau1_njets'
-            ff_tau2 = 'ff_dnn_tau2_njets'
+            ff_tau1 = f'ff_{mode}_tau1_njets'
+            ff_tau2 = f'ff_{mode}_tau2_njets'
         else:
             raise ValueError(f'Unsupported grouping: {grouping}')
     else:
@@ -2085,18 +2126,22 @@ def plot_fake_factors_grouped(df, category_title, grouping='tau_decaymode', clip
         bins_tau2 = np.linspace(0, 2., 51)
 
         if grouping == 'tau_decaymode':
-            ff_tau1 = 'ff_unclipped_dnn_tau1_tau_dm'
-            ff_tau2 = 'ff_unclipped_dnn_tau2_tau_dm'
+            ff_tau1 = f'ff_unclipped_{mode}_tau1_tau_dm'
+            ff_tau2 = f'ff_unclipped_{mode}_tau2_tau_dm'
             grouping = ['tau_decaymode_1', 'tau_decaymode_2']
         elif grouping == 'njets':
-            ff_tau1 = 'ff_unclipped_dnn_tau1_njets'
-            ff_tau2 = 'ff_unclipped_dnn_tau2_njets'
+            ff_tau1 = f'ff_unclipped_{mode}_tau1_njets'
+            ff_tau2 = f'ff_unclipped_{mode}_tau2_njets'
         else:
             raise ValueError(f'Unsupported grouping: {grouping}')
 
 
     frame_tau1 = df.data.AR_tau1
     frame_tau2 = df.data.AR_tau2
+    if mode == 'nf':
+        frame_tau1 = _nf_distribution_frame(frame_tau1, ff_tau1, clipped=clipped)
+        frame_tau2 = _nf_distribution_frame(frame_tau2, ff_tau2, clipped=clipped)
+        bins_tau1 = bins_tau2 = _nf_distribution_bins(frame_tau1[ff_tau1], frame_tau2[ff_tau2])
 
     if isinstance(grouping, list):
         group_mask_tau1 = _grouping_masks(frame_tau1, grouping[0])
@@ -2261,16 +2306,19 @@ def plot_fake_factors_grouped_3split(
 
     return fig, ax
 
-def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymode'):
+def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymode', mode='dnn'):
     hep.style.use(hep.style.CMS)
 
+    if mode=='nf' and grouping=='tau_decaymode':
+        return None, None
+
     if grouping == 'tau_decaymode':
-        ff1 = 'ff_dnn_tau1_tau_dm'
-        ff2 = 'ff_dnn_tau2_tau_dm'
+        ff1 = f'ff_{mode}_tau1_tau_dm'
+        ff2 = f'ff_{mode}_tau2_tau_dm'
         grouping = ['tau_decaymode_1', 'tau_decaymode_2']
     elif grouping == 'njets':
-        ff1 = 'ff_dnn_tau1_njets'
-        ff2 = 'ff_dnn_tau2_njets'
+        ff1 = f'ff_{mode}_tau1_njets'
+        ff2 = f'ff_{mode}_tau2_njets'
     else:
         raise ValueError(f'Unsupported grouping: {grouping}')
 
@@ -2279,6 +2327,10 @@ def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymo
 
     frame_tau1 = df.data.AR_tau1
     frame_tau2 = df.data.AR_tau2
+    if mode == 'nf':
+        frame_tau1 = _nf_distribution_frame(frame_tau1, ff1, clipped=True)
+        frame_tau2 = _nf_distribution_frame(frame_tau2, ff2, clipped=True)
+        bins_tau1 = bins_tau2 = _nf_distribution_bins(frame_tau1[ff1], frame_tau2[ff2])
 
     if isinstance(grouping, list):
         group_mask_tau1 = _grouping_masks(frame_tau1, grouping[0])
@@ -2411,8 +2463,11 @@ def plot_fake_factors_grouped_combTaus_3split(df, category_title, grouping='njet
 
     return fig, ax
 
-def plot_fake_factors_in_dr_grouped(df, category_title, grouping='tau_decaymode'):
+def plot_fake_factors_in_dr_grouped(df, category_title, grouping='tau_decaymode', mode='dnn'):
     hep.style.use(hep.style.CMS)
+
+    if mode=='nf':
+        return None, None
 
     if grouping == 'tau_decaymode':
         ff_tau1 = 'ff_DR_dnn_tau1_tau_dm'

@@ -25,14 +25,15 @@ from classes.Logging import setup_logging
 from classes.NeuralNetworks import RealNVP
 from classes.Dataclasses import ModelConfig
 from classes.Collection import load_model_config, load_flow, load_conditional_flow, evaluate_pdf, compute_eventwise_fake_factors, get_my_data_qcd
-from classes.Collection import load_config, load_grouped_qcd_njets_router, compute_eventwise_fake_factors_new
+from classes.Collection import load_config, load_grouped_qcd_njets_router
 
 logger = setup_logging(logger=logging.getLogger(__name__))
 
 SEED = 42
 
 class Args(Tap):
-    model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'conditional_nf'  # Training mode to load: grouped NF split by njets, single inclusive NF, or conditional NF with njets as input.
+    model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'conditional_nf'  # Same default as plot_results_njets.py.
+    training_tag: str = ''  # Empty resolves the same training as plot_results_njets.py; use DNNplotting for that explicit checkpoint.
     classifier_training_tag: str = ''  # Optional classifier training folder suffix after 'training_'. Empty -> pick most recent.
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
 
@@ -49,6 +50,7 @@ args = Args().parse_args()
 config_path = cfg_path['config_NF']
 plot_root_dir = Path('plots')
 MASKS_CONFIG_PATH = Path('/work/tapp/TauFF/NF4FF/Normalizing_Flow_tt/configs/masks.yaml')
+MASKS_CONFIG: dict[str, list[str]] = {}
 
 def build_training_variables_tag(variables: list[str]) -> str:
     variables_joined = "|".join(variables)
@@ -289,72 +291,65 @@ def normalizing_flow_ff(
     include_njets=True,
     grouped=True,
 ):
+    """Evaluate one process group, preserving event indices for Feather export.
+
+    Use the reference clipping/acceptance correction. Rejected events receive
+    zero prediction weight and an explicit keep flag for FF distributions.
+    The stored weights already contain the tau-combination factor of 0.5.
     """
-    Computes eventwise fake factors for W+jets and QCD, and returns
-    a single DataFrame with the FFs added as new columns.
-
-    Args:
-        df : pandas DataFrame with the input events
-        variables : list of NF feature names
-        model_* : trained RealNVP models
-        global_ff_* : global fake factor normalization
-        device : torch device
-        plotting : bool, plot histograms of FFs
-        plot_dir : output directory for diagnostic NF plots
-
-    Returns:
-        df : pandas DataFrame with added columns:
-             'ff_nf_wjets', 'ff_nf_qcd'
-    """
-    df1 = df1.copy()
-    if df1.empty:
-        df1['ff_nf_tau1'] = pd.Series(dtype=float)
-        df1['ff_nf'] = pd.Series(dtype=float)
-        return df1
-    
-    df2 = df2.copy()
-    if df2.empty:
-        df2['ff_nf_tau2'] = pd.Series(dtype=float)
-        df2['ff_nf'] = pd.Series(dtype=float)
-        return df2
-
     input_variables = (['njets'] + variables) if include_njets else list(variables)
-    
-    # --- FF ---
-    # Evaluate tau1 PDFs
-    df_pt_tau1 = get_my_data_qcd(df1, input_variables).to_torch().to(device)
+    suffix = '_njets' if grouped else ''
+    results = []
+    for tau, frame, model_ar, model_sr, global_ff in (
+        (1, df1, model_AR_like_tau1, model_SR_like_tau1, global_ff_tau1),
+        (2, df2, model_AR_like_tau2, model_SR_like_tau2, global_ff_tau2),
+    ):
+        frame = frame.copy()
+        ff_column = f'ff_nf_tau{tau}{suffix}'
+        full_column = f'ff_unclipped_nf_tau{tau}{suffix}'
+        if frame.empty:
+            frame[full_column] = pd.Series(index=frame.index, dtype=float)
+            frame[ff_column] = pd.Series(index=frame.index, dtype=float)
+            frame[f'{ff_column}_kept'] = pd.Series(index=frame.index, dtype=bool)
+            results.append(frame)
+            continue
 
-    pdf_AR_like_tau1 = evaluate_pdf(model_AR_like_tau1, df_pt_tau1.X)
-    pdf_SR_like_tau1 = evaluate_pdf(model_SR_like_tau1, df_pt_tau1.X)
+        inputs = get_my_data_qcd(frame, input_variables).to_torch().to(device)
+        # Promote before the reference division: 1e-100 underflows in float32.
+        pdf_ar = np.asarray(evaluate_pdf(model_ar, inputs.X), dtype=float)
+        pdf_sr = np.asarray(evaluate_pdf(model_sr, inputs.X), dtype=float)
+        if not (np.isfinite(pdf_ar).all() and np.isfinite(pdf_sr).all()):
+            raise ValueError(f'Non-finite NF densities for tau {tau}')
+        full, _, _, keep, _ = compute_eventwise_fake_factors(pdf_ar, pdf_sr, global_ff)
+        frame[full_column] = 0.5 * full
+        frame[ff_column] = 0.5 * np.where(keep, full, 0.0)
+        frame[f'{ff_column}_kept'] = keep
+        logger.info('Tau %d: retained %d/%d events after FF clipping', tau, keep.sum(), len(keep))
+        results.append(frame)
+    return tuple(results)
 
-    ff_full_tau1, ff_clipped_tau1 = compute_eventwise_fake_factors_new(
-        pdf_AR_like_tau1, pdf_SR_like_tau1, global_ff_tau1
-    )
 
-    # Evaluate tau2 PDFs
-    df_pt_tau2 = get_my_data_qcd(df2, input_variables).to_torch().to(device)
+def nf_output_columns(grouped):
+    suffix = '_njets' if grouped else ''
+    return [
+        column
+        for tau in (1, 2)
+        for column in (f'ff_nf_tau{tau}{suffix}',
+                       f'ff_unclipped_nf_tau{tau}{suffix}',
+                       f'ff_nf_tau{tau}{suffix}_kept')
+    ]
 
-    pdf_AR_like_tau2 = evaluate_pdf(model_AR_like_tau2, df_pt_tau2.X)
-    pdf_SR_like_tau2 = evaluate_pdf(model_SR_like_tau2, df_pt_tau2.X)
 
-    ff_full_tau2, ff_clipped_tau2 = compute_eventwise_fake_factors_new(
-        pdf_AR_like_tau2, pdf_SR_like_tau2, global_ff_tau2
-    )
-
-    # ----- Factor 0.5 to avoid over-scaling when combining two taus' FFs in the final product -----
-
-    if grouped:
-        df1[f"ff_unclipped_nf_tau1_njets"] = 0.5 * ff_full_tau1
-        df1[f"ff_nf_tau1"] = 0.5 * ff_clipped_tau1            
-
-        df2[f"ff_unclipped_nf_tau2_njets"] = 0.5 * ff_full_tau2
-        df2[f"ff_nf_tau2_njets"] = 0.5 * ff_clipped_tau2
-    else:
-        df1[f"ff_unclipped_nf_tau1"] = 0.5 * ff_full_tau1
-        df1[f"ff_nf_tau1"] = 0.5 * ff_clipped_tau1            
-
-        df2[f"ff_unclipped_nf_tau2"] = 0.5 * ff_full_tau2
-        df2[f"ff_nf_tau2"] = 0.5 * ff_clipped_tau2
+def nf_process_groups(process_map):
+    """Match the background groups used by plot_results_njets.py."""
+    groups = {'data': [process_map['data']]}
+    for name in ('diboson', 'DYjets', 'ST', 'ttbar'):
+        groups[name] = [process_map[f'{name}_{kind}']
+                        for kind in ('J', 'L', 'T') if f'{name}_{kind}' in process_map]
+    if 'embedding' in process_map:
+        groups['embedding'] = [process_map['embedding']]
+    groups['wjets'] = [process_map['Wjets']]
+    return groups
 
 
 def main():
@@ -381,13 +376,13 @@ def main():
     mode_dir = _MODE_DIR[args.model_mode]
     include_njets_feature = args.model_mode in ('grouped_njets_split', 'conditional_nf')    
 
-    resolved_tag = resolve_training_tag(variables, mode_dir)
+    resolved_tag = args.training_tag or resolve_training_tag(variables, mode_dir)
     logger.info('Using training tag: %s (exact computed: %s)', resolved_tag, training_variables_tag)
 
-    chk_pth_model_AR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_DNNplotting/tau1/all/AR-like/latest'
-    chk_pth_model_SR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_DNNplotting/tau1/all/SR-like/latest'
-    chk_pth_model_AR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_DNNplotting/tau2/all/AR-like/latest'
-    chk_pth_model_SR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_DNNplotting/tau2/all/SR-like/latest'
+    chk_pth_model_AR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau1/all/AR-like/latest'
+    chk_pth_model_SR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau1/all/SR-like/latest'
+    chk_pth_model_AR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau2/all/AR-like/latest'
+    chk_pth_model_SR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau2/all/SR-like/latest'
 
     config_AR_like_tau1 = load_saved_model_config(chk_pth_model_AR_like_tau1, config_path)
     config_SR_like_tau1 = load_saved_model_config(chk_pth_model_SR_like_tau1, config_path)
@@ -436,198 +431,66 @@ def main():
     
     # Step 3: load data and plotting labels/binning
     data_complete = pd.read_feather(f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather')
-    
-    if args.plot_complete_variables:
-        list_variables = cfg_set['variables']
-        list_variables.remove('q_1')
-        list_variables.remove('q_2')
-        list_variables.remove('event')
-        list_variables.remove('metphi')
-    else:
-        list_variables = variables
 
+    # Export both inclusive and category-normalized FFs, independently of the
+    # model architecture. This matches all four reference njets categories.
+    process_groups = nf_process_groups(load_config(cfg_path['process_map'][args.embedding]))
+    for grouped in (False, True):
+        for column in nf_output_columns(grouped):
+            # Reset only this export's columns so previous runs cannot fill gaps.
+            data_complete[column] = False if column.endswith('_kept') else np.nan
 
-    # ----- Starting FF calculation
-    njets_categories = [
-            ('njets_0', r'$\mathrm{N_{jets}} = 0$'),
-            ('njets_1', r'$\mathrm{N_{jets}} = 1$'),
-            ('njets_geq_2', r'$\mathrm{N_{jets}} \geq 2$'),
-            ('njets_inclusive', r'$\mathrm{N_{jets}} \geq 0$'),
-        ]
+    categories = [('njets_inclusive', False), ('njets_0', True),
+                  ('njets_1', True), ('njets_geq_2', True)]
+    for category_name, grouped in categories:
+        selected = mask_preselection_for_estimator(select_njets_category(data_complete, category_name))
+        ar1 = AR_tau1(selected)
+        ar1 = ar1[ar1.OS == True]
+        ar2 = AR_tau2(selected)
+        ar2 = ar2[ar2.OS == True]
+        if ar1.empty and ar2.empty:
+            continue
 
-    if args.model_mode=='conditional_nf':
-        for category_name, njets_title in njets_categories:
-            logger.info(f'Calculating fake factor for {njets_title}')
+        ar_like1 = AR_like_tau1(selected)
+        ar_like2 = AR_like_tau2(selected)
+        sr_like = SR_like(selected)
+        data_process = process_groups['data'][0]
+        samples = [frame[(frame.process == data_process) & (frame.SS == True)]
+                   for frame in (ar_like1, ar_like2, sr_like)]
+        if any(frame.empty for frame in samples):
+            raise ValueError(f'{category_name}: empty same-sign normalization sample; export aborted')
+        global_ff_tau1 = len(samples[2]) / len(samples[0])
+        global_ff_tau2 = len(samples[2]) / len(samples[1])
+        logger.info('%s: global FF tau1=%.6g, tau2=%.6g',
+                    category_name, global_ff_tau1, global_ff_tau2)
 
-            data_complete_njets = select_njets_category(data_complete, category_name)
-            data_preselected = mask_preselection_for_estimator(data_complete_njets)
+        known_processes = [value for values in process_groups.values() for value in values]
+        for frame in (ar1, ar2):
+            if not frame.process.isin(known_processes).all():
+                raise ValueError(f'{category_name}: AR contains unmapped processes')
 
-            # ----- prepare data for FF estimation -----
-            logger.info(
-                f"Starting {category_name}: {len(data_complete_njets)} input events, {len(data_preselected)} after preselection"
+        # The acceptance correction depends on the sample. Do not pool data,
+        # embedding and MC, or split a background's J/L/T components here.
+        for process, ids in process_groups.items():
+            logger.info('%s: evaluating %s', category_name, process)
+            frames = normalizing_flow_ff(
+                ar1[ar1.process.isin(ids)], ar2[ar2.process.isin(ids)], variables,
+                model_AR_like_tau1, model_SR_like_tau1,
+                model_AR_like_tau2, model_SR_like_tau2,
+                global_ff_tau1, global_ff_tau2, device,
+                include_njets=include_njets_feature, grouped=grouped,
             )
-        
-            # ----- Anti-DR -----
-        
-            data_AR_tau1 = AR_tau1(data_preselected)
-            data_AR_tau1 = data_AR_tau1[data_AR_tau1.OS == True]
-            data_AR_OS_tau1 = data_AR_tau1[(data_AR_tau1.process == 0)].copy()
-        
-            data_AR_tau2 = AR_tau2(data_preselected)
-            data_AR_tau2 = data_AR_tau2[data_AR_tau2.OS == True]
-            data_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == 0)].copy()
-        
-            data_SR = SR(data_preselected)
-            data_SR_OS = data_SR[(data_SR.OS == True)]
-        
-        
-            # ----- DR -----
-        
-            data_AR_like_tau1 = AR_like_tau1(data_preselected)
-            data_AR_like_tau2 = AR_like_tau2(data_preselected)
-            data_SR_like = SR_like(data_preselected)
-        
-            data_AR_like_SS_tau1 = data_AR_like_tau1[(data_AR_like_tau1.process == 0) & (data_AR_like_tau1.SS == True)]
-            data_SR_like_SS_tau1 = data_SR_like[(data_SR_like.process == 0) & (data_SR_like.SS == True)]
-            data_AR_like_SS_tau2 = data_AR_like_tau2[(data_AR_like_tau2.process == 0) & (data_AR_like_tau2.SS == True)]
-            data_SR_like_SS_tau2 = data_SR_like[(data_SR_like.process == 0) & (data_SR_like.SS == True)]
-        
-            required_samples = {
-                'AR_like_SS_tau1': data_AR_like_SS_tau1,
-                'SR_like_SS_tau1': data_SR_like_SS_tau1,
-                'AR_like_SS_tau2': data_AR_like_SS_tau2,
-                'SR_like_SS_tau2': data_SR_like_SS_tau2,
-            }
-        
-            empty_required = [name for name, sample in required_samples.items() if sample.empty]
-            if empty_required:
-                logger.warning('Skipping %s because required samples are empty: %s', category_name, ', '.join(empty_required))
-                return
-        
-            
-        
-            global_ff_tau1 = len(data_SR_like_SS_tau1) / len(data_AR_like_SS_tau1)
-            global_ff_tau2 = len(data_SR_like_SS_tau2) / len(data_AR_like_SS_tau2)
-        
-            
-        
-        
-            logger.info(
-                "Prepared %s for Tau 1: AR(OS)=%d, SR(OS)=%d, QCD FF=%.4f",
-                category_name,
-                len(data_AR_OS_tau1),
-                len(data_SR_OS[(data_SR_OS.process == 0)]),
-                global_ff_tau1,
-            )
-            logger.info(
-                "Prepared %s for Tau 2: AR(OS)=%d, SR(OS)=%d, QCD FF=%.4f",
-                category_name,
-                len(data_AR_OS_tau2),
-                len(data_SR_OS[(data_SR_OS.process == 0)]),
-                global_ff_tau2,
-            )
-        
-            normalizing_flow_ff(
-                data_AR_OS_tau1,
-                data_AR_OS_tau2,
-                variables,
-                model_AR_like_tau1,
-                model_SR_like_tau1,
-                model_AR_like_tau2,
-                model_SR_like_tau2,
-                global_ff_tau1,
-                global_ff_tau2,
-                device,
-                include_njets=include_njets_feature,
-                grouped=True
-                )
-    else:
-        logger.info(f'Calculating fake factor ungrouped')
+            for tau, frame in enumerate(frames, start=1):
+                # Copy only the newly evaluated tau's columns, never old FFs
+                # carried in the source dataframe.
+                columns = [column for column in nf_output_columns(grouped)
+                           if f'_tau{tau}' in column]
+                if not frame.empty:
+                    data_complete.loc[frame.index, columns] = frame[columns]
 
-        data_preselected = mask_preselection_for_estimator(data_complete)
-
-        # ----- prepare data for FF estimation -----
-        logger.info(
-            f"Starting {category_name}: {len(data_complete)} input events, {len(data_preselected)} after preselection"
-        )
-    
-        # ----- Anti-DR -----
-    
-        data_AR_tau1 = AR_tau1(data_preselected)
-        data_AR_tau1 = data_AR_tau1[data_AR_tau1.OS == True]
-        data_AR_OS_tau1 = data_AR_tau1[(data_AR_tau1.process == 0)].copy()
-    
-        data_AR_tau2 = AR_tau2(data_preselected)
-        data_AR_tau2 = data_AR_tau2[data_AR_tau2.OS == True]
-        data_AR_OS_tau2 = data_AR_tau2[(data_AR_tau2.process == 0)].copy()
-    
-        data_SR = SR(data_preselected)
-        data_SR_OS = data_SR[(data_SR.OS == True)]
-    
-    
-        # ----- DR -----
-    
-        data_AR_like_tau1 = AR_like_tau1(data_preselected)
-        data_AR_like_tau2 = AR_like_tau2(data_preselected)
-        data_SR_like = SR_like(data_preselected)
-    
-        data_AR_like_SS_tau1 = data_AR_like_tau1[(data_AR_like_tau1.process == 0) & (data_AR_like_tau1.SS == True)]
-        data_SR_like_SS_tau1 = data_SR_like[(data_SR_like.process == 0) & (data_SR_like.SS == True)]
-        data_AR_like_SS_tau2 = data_AR_like_tau2[(data_AR_like_tau2.process == 0) & (data_AR_like_tau2.SS == True)]
-        data_SR_like_SS_tau2 = data_SR_like[(data_SR_like.process == 0) & (data_SR_like.SS == True)]
-    
-        required_samples = {
-            'AR_like_SS_tau1': data_AR_like_SS_tau1,
-            'SR_like_SS_tau1': data_SR_like_SS_tau1,
-            'AR_like_SS_tau2': data_AR_like_SS_tau2,
-            'SR_like_SS_tau2': data_SR_like_SS_tau2,
-        }
-    
-        empty_required = [name for name, sample in required_samples.items() if sample.empty]
-        if empty_required:
-            logger.warning('Skipping %s because required samples are empty: %s', category_name, ', '.join(empty_required))
-            return
-    
-        
-    
-        global_ff_tau1 = len(data_SR_like_SS_tau1) / len(data_AR_like_SS_tau1)
-        global_ff_tau2 = len(data_SR_like_SS_tau2) / len(data_AR_like_SS_tau2)
-    
-        
-    
-    
-        logger.info(
-            "Prepared %s for Tau 1: AR(OS)=%d, SR(OS)=%d, QCD FF=%.4f",
-            category_name,
-            len(data_AR_OS_tau1),
-            len(data_SR_OS[(data_SR_OS.process == 0)]),
-            global_ff_tau1,
-        )
-        logger.info(
-            "Prepared %s for Tau 2: AR(OS)=%d, SR(OS)=%d, QCD FF=%.4f",
-            category_name,
-            len(data_AR_OS_tau2),
-            len(data_SR_OS[(data_SR_OS.process == 0)]),
-            global_ff_tau2,
-        )
-    
-        normalizing_flow_ff(
-            data_AR_OS_tau1,
-            data_AR_OS_tau2,
-            variables,
-            model_AR_like_tau1,
-            model_SR_like_tau1,
-            model_AR_like_tau2,
-            model_SR_like_tau2,
-            global_ff_tau1,
-            global_ff_tau2,
-            device,
-            include_njets=include_njets_feature,
-            grouped=False
-            )
-
-    logger.info(f"Saving main dataframe to feather file: f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'")
-    data_complete.to_feather(f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather')
+    output_path = Path(cfg_path['datasets']) / args.embedding / 'combined_data_updated.feather'
+    logger.info('Saving main dataframe to %s', output_path)
+    data_complete.to_feather(output_path)
 
 if __name__ == '__main__':
     main()

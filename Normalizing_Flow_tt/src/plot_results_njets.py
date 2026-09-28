@@ -1065,6 +1065,8 @@ def select_njets_category(df, category_name):
 def _build_main_bins_by_variable() -> dict[str, np.ndarray]:
     return {
     # Existing defaults (kept identical to plot_complete_variables == False setup)
+    #'pt_1': np.linspace(0, 150, 31),
+    #'pt_2': np.linspace(0, 150, 31),
     'pt_1': np.linspace(30, 150, 31),
     'pt_2': np.linspace(30, 150, 31),
     'm_vis': np.linspace(0, 220, 31),

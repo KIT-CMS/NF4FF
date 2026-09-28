@@ -19,7 +19,7 @@ from classes.Plotting import FF_closure_in_DR_tau1, FF_closure_in_DR_tau2, FF_cl
 from classes.Plotting import plot_closure_3split, FF_closure_in_DR_3split, plot_fake_factors_3split, plot_fake_factors_combTaus_3split, plot_fake_factors_grouped_3split, plot_fake_factors_grouped_combTaus_3split
 from classes.Plotting import plot_fractions, plot_fractions_grouped, plot_fractions_3split, plot_fractions_grouped_3split
 from classes.Plotting import plot_in_hist1d, plot_NN_output_frac, plot_NN_output_frac_stacked, plot_NN_output_frac_overlay, plot_NN_output_frac_ratio, plot_NN_output_frac_events
-from classes.Plotting import plot_closure_MC
+from classes.Plotting import plot_closure_MC, validate_nf_weights
 
 SEED = 42
 logger = logging.getLogger(__name__)
@@ -34,21 +34,23 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
     fraction_max_bins: int = 0 # Maximum displayed bins per axis for 3split fractions; 0 keeps all bins
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
+
     AR_comb: bool = False
-    closure_MC: bool = True
+    closure_MC: bool = False
     classic: bool = False
 
+    mode: Literal['dnn', 'nf'] = 'nf'
     wo_train: bool = False
     vars: Literal['small', 'large'] = 'small' # small: use small set of variables | large: use large set of variables
 
     closure_DR: bool = False
-    FF_dist: bool = False
+    FF_dist: bool = True
     frac: Literal['global', 'pt_binned', 'DNN'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
-    closure_AR: bool = False
+    closure_AR: bool = True
     
 
 args = Args().parse_args()
@@ -70,7 +72,9 @@ LABELS_CONFIG_PATH = cfg_path["labels"]
 
 TRAINING_VAR_PATH = cfg_path["train_var"]
 
-PLOTS_DIR = Path(cfg_path["plots"])
+if args.mode=='dnn': PLOTS_DIR = Path(cfg_path["plots"])
+if args.mode=='nf' and args.taus=='split': PLOTS_DIR = Path('/work/tapp/TauFF/NF4FF/Normalizing_Flow_tt/plots')
+else: 'Not implemented'
 PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
 PLOT_GROUPINGS = ('njets', 'tau_decaymode', 'ungrouped', 'classic')
@@ -248,9 +252,13 @@ def main():
         logger.info('Initiaize plotting for tau split FF calculated through grouped DNN...')
 
         df = load_data(DATA_PATH, MASKS_PATH)
+        if args.mode == 'nf':
+            validate_nf_weights(df, grouping='njets')
+        #print(list(df.columns))
+        #exit()
 
         # ----- Closure plots in DR -----
-        if args.closure_DR:
+        if args.closure_DR and args.mode=='dnn':
             for grouping in PLOT_GROUPINGS:
                 for var in variables:
                     bins, label = get_bins_and_label(var)
@@ -289,8 +297,9 @@ def main():
                     df=df,
                     category_title=f'split in {grouping}',
                     grouping=grouping,
+                    mode=args.mode,
                 )
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_splitTau.png', dpi=150, bbox_inches='tight')
+                plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_splitTaus.png', dpi=150, bbox_inches='tight')
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_splitTaus.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig_ar)
                 logger.info(f'Saved FF distributions in AR for {grouping}')
@@ -300,6 +309,7 @@ def main():
                     df=df,
                     category_title=f'split in {grouping}',
                     grouping=grouping,
+                    mode=args.mode,
                 )
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_combTaus.png', dpi=150, bbox_inches='tight')
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_combTaus.pdf', dpi=150, bbox_inches='tight')
@@ -311,6 +321,7 @@ def main():
                     df=df,
                     category_title=f'split in {grouping}',
                     grouping=grouping,
+                    mode=args.mode,
                 )
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_DR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_DR_splitTaus.png', dpi=150, bbox_inches='tight')
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_DR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_DR_splitTaus.pdf', dpi=150, bbox_inches='tight')
@@ -323,7 +334,8 @@ def main():
                     df=df,
                     category_title=f'split in {grouping}',
                     grouping=grouping,
-                    clipped=False
+                    clipped=False,
+                    mode=args.mode,
                 )
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_unclipped_splitTaus.png', dpi=150, bbox_inches='tight')
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'FF_distribution_AR' / grouping / f'{args.frac}_fraction'/ f'plot_ff_unclipped_splitTaus.pdf', dpi=150, bbox_inches='tight')
@@ -331,7 +343,7 @@ def main():
                 logger.info(f'Saved FF distributions in AR for {grouping}')
 
         # ----- combinatorial weight/ fraction factor -----
-        if args.frac == 'pt_binned':
+        if args.frac == 'pt_binned' and args.mode=='dnn':
             for grouping, group_name, group_var, group_def in zip(PLOT_GROUPINGS, ['njets', 'tau_dm'], ['njets', ['tau_decaymode_1', 'tau_decaymode_2']], [grouping_njets, grouping_tdm]):
                 # ----- get fraction and bins -----
                 cfg_frac = load_config(cfg_path['fractions']+'/fractions.yaml')
@@ -391,7 +403,7 @@ def main():
                     save_name='fractions',
                     )
                 
-        if args.frac=='DNN':
+        if args.frac=='DNN' and args.mode=='dnn':
             plot_in_hist1d(
                 input_values=[df.data.AR_tau1['fraction_dnn_1_njets'], df.data.AR_tau2['fraction_dnn_2_njets']], 
                 label=[r'$AR_1$', r'$AR_2$'],
@@ -449,6 +461,7 @@ def main():
                         label = label,
                         grouping = 'tau_decaymode',
                         AR_comb=args.AR_comb,
+                        mode=args.mode,
                     )
                 
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'control_plots' / 'tau_decaymode' / f'{args.frac}_fraction' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
@@ -468,6 +481,7 @@ def main():
                         label = label,
                         grouping = 'njets',
                         AR_comb = args.AR_comb,
+                        mode = args.mode
                     )
                 
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'control_plots' / 'njets' / f'{args.frac}_fraction' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')

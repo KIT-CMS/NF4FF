@@ -376,7 +376,7 @@ def compute_eventwise_fake_factors_new(
     # ----- safe ratio -----
     ratio = np.divide(
         pdf_SR,
-        np.maximum(pdf_AR, 1e-6),
+        np.maximum(pdf_AR, 1e-100),
         out=np.zeros_like(pdf_SR, dtype=float),
         where=(pdf_AR > 0) & (pdf_SR > 0)
 )
@@ -386,5 +386,5 @@ def compute_eventwise_fake_factors_new(
     fake_factors = global_ff * ratio
     clip_value = 3.0
     ff_clipped = np.clip(fake_factors, 0, clip_value)
- 
+    #ff_clipped = fake_factors
     return  fake_factors, ff_clipped
