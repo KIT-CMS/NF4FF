@@ -316,7 +316,19 @@ def split_even_odd(df: pd.DataFrame, SEED = 42) -> Tuple[pd.DataFrame, pd.DataFr
     return train1.reset_index(drop=True), val1.reset_index(drop=True), train2.reset_index(drop=True), val2.reset_index(drop=True)
 
 
-# ------- Fake Factor Stuff 
+# ------- Fake Factor Stuff
+def _FF_over_3(ff, tau_label=None):
+    number = 0
+    highest = 0
+    for x in ff:
+        if x > 3.0:
+            number += 1
+            highest = max(highest, x)
+    if tau_label is None:
+        print(f"Number of FF over 3.0: {number}, highest: {highest:.4f}")
+
+    else:
+        print(f"Number of {tau_label} FF over 3.0: {number}, highest: {highest:.4f}")
 
 @torch.no_grad()
 def evaluate_pdf(model: RealNVP, X: torch.Tensor) -> np.ndarray:
@@ -345,6 +357,7 @@ def compute_eventwise_fake_factors(
     # ---- determine adaptive clip value so the highest tail fraction is clipped,
     # while enforcing a minimum clip value of 1.0
     ff_eventwise_nominal = global_ff * ratio
+    _FF_over_3(ff_eventwise_nominal)
 
     clip_value = 3.0
 

@@ -359,23 +359,28 @@ def plot_closure(
     plot_corr_hline = False,
     AR_comb = False,
     mode='dnn',
+    clipped=True,
 ):
     hep.style.use(hep.style.CMS)
 
     if mode=='nf' and grouping=='tau_decaymode':
         return None, None, None
 
+    if clipped: clipped = ""
+    else: clipped = "_unclipped"
+
+
     if grouping == 'tau_decaymode':
-        ff_dnn_tau1 = f'ff_{mode}_tau1_tau_dm'
-        ff_dnn_tau2 = f'ff_{mode}_tau2_tau_dm'
+        ff_dnn_tau1 = f'ff{clipped}_{mode}_tau1_tau_dm'
+        ff_dnn_tau2 = f'ff{clipped}_{mode}_tau2_tau_dm'
         cat_title = r'$\tau$ DM: inclusive'
     elif grouping == 'njets':
-        ff_dnn_tau1 = f'ff_{mode}_tau1_njets'
-        ff_dnn_tau2 = f'ff_{mode}_tau2_njets'
+        ff_dnn_tau1 = f'ff{clipped}_{mode}_tau1_njets'
+        ff_dnn_tau2 = f'ff{clipped}_{mode}_tau2_njets'
         cat_title = r'$N_{jets}$: inclusive'
     else:
-        ff_dnn_tau1 = f'ff_{mode}_tau1'
-        ff_dnn_tau2 = f'ff_{mode}_tau2'
+        ff_dnn_tau1 = f'ff{clipped}_{mode}_tau1'
+        ff_dnn_tau2 = f'ff{clipped}_{mode}_tau2'
         cat_title = 'inclusive'
 
     histograms = {}
@@ -1359,19 +1364,20 @@ def plot_closure_MC(
 def plot_fake_factors(
         df,
         category_title = None,
-        clipped = True
+        clipped = True,
+        mode = 'dnn',
 ) -> None:
     hep.style.use(hep.style.CMS)
 	
     if clipped:
-        ff_dnn_tau1 = 'ff_dnn_tau1'
-        ff_dnn_tau2 = 'ff_dnn_tau2'
+        ff_dnn_tau1 = f'ff_{mode}_tau1'
+        ff_dnn_tau2 = f'ff_{mode}_tau2'
     
         bins_tau1 = np.linspace(0, 1.25, 51)
         bins_tau2 = np.linspace(0, 1.25, 51)
     else:
-        ff_dnn_tau1 = 'ff_unclipped_dnn_tau1'
-        ff_dnn_tau2 = 'ff_unclipped_dnn_tau2'
+        ff_dnn_tau1 = f'ff_unclipped_{mode}_tau1'
+        ff_dnn_tau2 = f'ff_unclipped_{mode}_tau2'
     
         bins_tau1 = np.linspace(0, 2., 51)
         bins_tau2 = np.linspace(0, 2., 51)
@@ -1397,19 +1403,20 @@ def plot_fake_factors(
 
 def plot_fake_factors_combTaus(
         df,
-        clipped = True
+        clipped = True,
+        mode = 'dnn',
 ) -> None:
     hep.style.use(hep.style.CMS)
 	
     if clipped:
-        ff_dnn_tau1 = 'ff_dnn_tau1'
-        ff_dnn_tau2 = 'ff_dnn_tau2'
+        ff_dnn_tau1 = f'ff_{mode}_tau1'
+        ff_dnn_tau2 = f'ff_{mode}_tau2'
     
         bins_tau1 = np.linspace(0, 1.25, 51)
         bins_tau2 = np.linspace(0, 1.25, 51)
     else:
-        ff_dnn_tau1 = 'ff_unclipped_dnn_tau1'
-        ff_dnn_tau2 = 'ff_unclipped_dnn_tau2'
+        ff_dnn_tau1 = f'ff_unclipped_{mode}_tau1'
+        ff_dnn_tau2 = f'ff_unclipped_{mode}_tau2'
     
         bins_tau1 = np.linspace(0, 2., 51)
         bins_tau2 = np.linspace(0, 2., 51)

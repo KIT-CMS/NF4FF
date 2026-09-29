@@ -37,7 +37,7 @@ class Args(Tap):
     taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
     fraction_max_bins: int = 0 # Maximum displayed bins per axis for 3split fractions; 0 keeps all bins
-    dnn_grouped: bool = True
+    dnn_grouped: bool = False
 
     AR_comb: bool = False
     closure_MC: bool = False
@@ -249,7 +249,11 @@ def main():
     # ----- tau split FF -----
         
     if args.taus=='split' and args.dnn_grouped:
-        logger.info('Initiaize plotting for tau split FF calculated through grouped DNN...')
+        if args.mode=='dnn':
+            logger.info('Initiaize plotting for tau split FF calculated through grouped DNN...')
+        elif args.mode=='nf':
+            logger.info('Initiaize plotting for tau split FF calculated through conditional NF...')
+
 
         df = load_data(DATA_PATH, MASKS_PATH)
         if args.mode == 'nf':
@@ -491,12 +495,17 @@ def main():
             logger.info('Saved all closure plots in njets')
         
     elif args.taus=='split' and not args.dnn_grouped:
-        logger.info('Initiaize plotting for tau split FF calculated through single DNN...')
+        if args.mode=='dnn':
+            logger.info('Initiaize plotting for tau split FF calculated through single DNN...')
+        elif args.mode=='nf':
+            logger.info('Initiaize plotting for tau split FF calculated through single NF...')
 
         df = load_data(DATA_PATH, MASKS_PATH)
+        if args.mode == 'nf':
+            validate_nf_weights(df, grouping=None)
 
         # ----- Closure plots in DR -----
-        if args.closure_DR:
+        if args.closure_DR and args.mode=='dnn':
             for var in variables:
                 bins, label = get_bins_and_label(var)
                 label = labels_cfg['tt'][var]
@@ -664,7 +673,8 @@ def main():
                         bins = bins,
                         label = label,
                         grouping = None,
-                        AR_comb = args.AR_comb
+                        AR_comb = args.AR_comb,
+                        mode=args.mode,
                     )
                 
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'control_plots' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')

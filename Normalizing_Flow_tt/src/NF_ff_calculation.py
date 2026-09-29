@@ -32,7 +32,7 @@ logger = setup_logging(logger=logging.getLogger(__name__))
 SEED = 42
 
 class Args(Tap):
-    model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'conditional_nf'  # Same default as plot_results_njets.py.
+    model_mode: Literal['grouped_njets_split', 'single_nf', 'conditional_nf'] = 'single_nf'  # Same default as plot_results_njets.py.
     training_tag: str = ''  # Empty resolves the same training as plot_results_njets.py; use DNNplotting for that explicit checkpoint.
     classifier_training_tag: str = ''  # Optional classifier training folder suffix after 'training_'. Empty -> pick most recent.
     classifier_hidden_layers: int = 2  # Binary-classifier selection helper: pick the most recent training with this number of hidden layers.
@@ -307,6 +307,7 @@ def normalizing_flow_ff(
         frame = frame.copy()
         ff_column = f'ff_nf_tau{tau}{suffix}'
         full_column = f'ff_unclipped_nf_tau{tau}{suffix}'
+
         if frame.empty:
             frame[full_column] = pd.Series(index=frame.index, dtype=float)
             frame[ff_column] = pd.Series(index=frame.index, dtype=float)
@@ -318,9 +319,12 @@ def normalizing_flow_ff(
         # Promote before the reference division: 1e-100 underflows in float32.
         pdf_ar = np.asarray(evaluate_pdf(model_ar, inputs.X), dtype=float)
         pdf_sr = np.asarray(evaluate_pdf(model_sr, inputs.X), dtype=float)
+
         if not (np.isfinite(pdf_ar).all() and np.isfinite(pdf_sr).all()):
             raise ValueError(f'Non-finite NF densities for tau {tau}')
+        
         full, _, _, keep, _ = compute_eventwise_fake_factors(pdf_ar, pdf_sr, global_ff)
+
         frame[full_column] = 0.5 * full
         frame[ff_column] = 0.5 * np.where(keep, full, 0.0)
         frame[f'{ff_column}_kept'] = keep
@@ -379,10 +383,10 @@ def main():
     resolved_tag = args.training_tag or resolve_training_tag(variables, mode_dir)
     logger.info('Using training tag: %s (exact computed: %s)', resolved_tag, training_variables_tag)
 
-    chk_pth_model_AR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau1/all/AR-like/latest'
-    chk_pth_model_SR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau1/all/SR-like/latest'
-    chk_pth_model_AR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau2/all/AR-like/latest'
-    chk_pth_model_SR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_{resolved_tag}/tau2/all/SR-like/latest'
+    chk_pth_model_AR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_DNNplotting/tau1/all/AR-like/latest'
+    chk_pth_model_SR_like_tau1 = f'{cfg_path["NF_results"]}/{mode_dir}/training_DNNplotting/tau1/all/SR-like/latest'
+    chk_pth_model_AR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_DNNplotting/tau2/all/AR-like/latest'
+    chk_pth_model_SR_like_tau2 = f'{cfg_path["NF_results"]}/{mode_dir}/training_DNNplotting/tau2/all/SR-like/latest'
 
     config_AR_like_tau1 = load_saved_model_config(chk_pth_model_AR_like_tau1, config_path)
     config_SR_like_tau1 = load_saved_model_config(chk_pth_model_SR_like_tau1, config_path)
@@ -432,16 +436,22 @@ def main():
     # Step 3: load data and plotting labels/binning
     data_complete = pd.read_feather(f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather')
 
-    # Export both inclusive and category-normalized FFs, independently of the
-    # model architecture. This matches all four reference njets categories.
+    # Single NFs export inclusive FFs; conditional NFs export category-normalized
+    # FFs. Grouped NFs retain both exports.
+    categories = {
+        'single_nf': [('njets_inclusive', False)],
+        'conditional_nf': [('njets_0', True), ('njets_1', True),
+                           ('njets_geq_2', True)],
+        'grouped_njets_split': [('njets_inclusive', False), ('njets_0', True),
+                                ('njets_1', True), ('njets_geq_2', True)],
+    }[args.model_mode]
     process_groups = nf_process_groups(load_config(cfg_path['process_map'][args.embedding]))
-    for grouped in (False, True):
+    
+    for grouped in dict.fromkeys(grouped for _, grouped in categories):
         for column in nf_output_columns(grouped):
             # Reset only this export's columns so previous runs cannot fill gaps.
             data_complete[column] = False if column.endswith('_kept') else np.nan
 
-    categories = [('njets_inclusive', False), ('njets_0', True),
-                  ('njets_1', True), ('njets_geq_2', True)]
     for category_name, grouped in categories:
         selected = mask_preselection_for_estimator(select_njets_category(data_complete, category_name))
         ar1 = AR_tau1(selected)
