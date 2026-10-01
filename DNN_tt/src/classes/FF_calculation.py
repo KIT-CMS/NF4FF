@@ -481,7 +481,7 @@ def calculate_fake_factor_frac(
             for class_idx, region, raw_ff in zip(range(2), [df1, df2], [ff_tau1, ff_tau2]):
                 fraction_i = event_fractions[class_idx]
                 region[f"fraction_dnn_{class_idx + 1}_{grouping}"] = fraction_i
-                region[raw_ff.removesuffix("_raw")] = fraction_i * region[raw_ff]
+                region[raw_ff.removesuffix("_raw")] = fraction_i * region[raw_ff] #* 0.5
 
 
 # ----- tau inclusive FF -----
@@ -1039,7 +1039,7 @@ def calculate_fake_factor_frac_3split(
             for class_idx, region, raw_ff in zip(range(3), application_regions, [ff_tau1, ff_tau2, ff_tau3]):
                 fraction_i = event_fractions[class_idx]
                 region[f"fraction_dnn_{class_idx + 1}_njets"] = fraction_i
-                region[raw_ff.removesuffix("_raw")] = fraction_i * region[raw_ff]
+                region[raw_ff.removesuffix("_raw")] = fraction_i * region[raw_ff] #* 0.5
         else:
             raise NotImplementedError(f"Grouped three-split DNN fractions are not implemented for {grouping!r}.")
 
@@ -1048,7 +1048,7 @@ def calculate_fake_factor_frac_3split(
 
 def calculate_fake_factor_classic(
         df,
-        short,
+        short=None,
         ):
     
     if short=='jv':
@@ -1064,7 +1064,10 @@ def calculate_fake_factor_classic(
         ff = cr.CorrectionSet.from_file('/work/sgiappic/KingMaker/CROWN/analysis_configurations/tau/payloads/fake_factors/sm/2024/fake_factors_tt.json.gz')
         corr = cr.CorrectionSet.from_file('/work/sgiappic/KingMaker/CROWN/analysis_configurations/tau/payloads/fake_factors/sm/2024/FF_corrections_tt.json.gz')
     else:
-        print(f'short = {short} is not implmented. Use either jv or sg')
+        _df1 = df.AR_tau1.copy()
+        _df2 = df.AR_tau2.copy()
+        ff = cr.CorrectionSet.from_file('/work/tapp/TauFF/ClassicFF/TauFakeFactors/workdir/classicFF_2018_tt/2018/fake_factors_tt.json.gz')
+        corr = cr.CorrectionSet.from_file('/work/tapp/TauFF/ClassicFF/TauFakeFactors/workdir/classicFF_2018_tt/2018/FF_corrections_tt_chain_DR_SR.json.gz')
     
     frac1 = ff['process_fractions']
     frac2 = ff['process_fractions_subleading']

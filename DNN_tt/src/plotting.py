@@ -34,23 +34,23 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
 
-    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
     fraction_max_bins: int = 0 # Maximum displayed bins per axis for 3split fractions; 0 keeps all bins
-    dnn_grouped: bool = False
+    dnn_grouped: bool = True
 
     AR_comb: bool = False
     closure_MC: bool = False
     classic: bool = False
 
-    mode: Literal['dnn', 'nf'] = 'nf'
+    mode: Literal['dnn', 'nf'] = 'dnn'
     wo_train: bool = False
     vars: Literal['small', 'large'] = 'small' # small: use small set of variables | large: use large set of variables
 
-    closure_DR: bool = False
-    FF_dist: bool = True
+    closure_DR: bool = True
+    FF_dist: bool = False
     frac: Literal['global', 'pt_binned', 'DNN'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
-    closure_AR: bool = True
+    closure_AR: bool = False
     
 
 args = Args().parse_args()
@@ -275,8 +275,10 @@ def main():
                         label=label,
                         grouping=grouping,
                     )
-                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'{args.frac}_fraction'/ f'FF_closure_DR_tau1_{var}.png', dpi=150, bbox_inches='tight')
-                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'{args.frac}_fraction'/ f'FF_closure_DR_tau1_{var}.pdf', dpi=150, bbox_inches='tight')
+                    safe_path = PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'{args.frac}_fraction' / 'ARlike_1'
+                    safe_path.mkdir(parents=True, exist_ok=True)
+                    plt.savefig(safe_path / f'FF_closure_DR_{var}.png', dpi=150, bbox_inches='tight')
+                    plt.savefig(safe_path / f'FF_closure_DR_{var}.pdf', dpi=150, bbox_inches='tight')
                     plt.close(fig_q)
 
                     fig_q, _ = FF_closure_in_DR_tau2(
@@ -286,8 +288,10 @@ def main():
                         label=label,
                         grouping=grouping,
                     )
-                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'{args.frac}_fraction'/ f'FF_closure_DR_tau2_{var}.png', dpi=150, bbox_inches='tight')
-                    plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'{args.frac}_fraction'/ f'FF_closure_DR_tau2_{var}.pdf', dpi=150, bbox_inches='tight')
+                    safe_path = PLOTS_DIR / 'tau_split' / 'closure_in_DR' / grouping / f'{args.frac}_fraction' / 'ARlike_2'
+                    safe_path.mkdir(parents=True, exist_ok=True)
+                    plt.savefig(safe_path / f'FF_closure_DR_{var}.png', dpi=150, bbox_inches='tight')
+                    plt.savefig(safe_path / f'FF_closure_DR_{var}.pdf', dpi=150, bbox_inches='tight')
                     plt.close(fig_q)
 
                 logger.info(f'Saved closure plots in DR for {grouping}')
@@ -517,8 +521,10 @@ def main():
                     label=label,
                     grouping=None,
                 )
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / 'ungrouped' / f'{args.frac}_fraction' / f'FF_closure_DR_tau1_{var}.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / 'ungrouped' / f'{args.frac}_fraction' / f'FF_closure_DR_tau1_{var}.pdf', dpi=150, bbox_inches='tight')
+                safe_path = PLOTS_DIR / 'tau_split' / 'closure_in_DR' / 'ungrouped' / f'{args.frac}_fraction' / 'ARlike_1'
+                safe_path.mkdir(parents=True, exist_ok=True)
+                plt.savefig(safe_path / f'FF_closure_DR_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(safe_path / f'FF_closure_DR_{var}.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig_q)
 
                 fig_q, _ = FF_closure_in_DR_tau2(
@@ -528,8 +534,10 @@ def main():
                     label=label,
                     grouping=None,
                 )
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / 'ungrouped' / f'{args.frac}_fraction' / f'FF_closure_DR_tau2_{var}.png', dpi=150, bbox_inches='tight')
-                plt.savefig(PLOTS_DIR / 'tau_split' / 'closure_in_DR' / 'ungrouped' / f'{args.frac}_fraction' / f'FF_closure_DR_tau2_{var}.pdf', dpi=150, bbox_inches='tight')
+                safe_path = PLOTS_DIR / 'tau_split' / 'closure_in_DR' / 'ungrouped' / f'{args.frac}_fraction' / 'ARlike_2'
+                safe_path.mkdir(parents=True, exist_ok=True)
+                plt.savefig(safe_path / f'FF_closure_DR_{var}.png', dpi=150, bbox_inches='tight')
+                plt.savefig(safe_path / f'FF_closure_DR_{var}.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig_q)
 
             logger.info(f'Saved closure plots in DR for ungrouped')
@@ -675,6 +683,7 @@ def main():
                         grouping = None,
                         AR_comb = args.AR_comb,
                         mode=args.mode,
+                        clipped=False,
                     )
                 
                 plt.savefig(PLOTS_DIR / 'tau_split' / 'control_plots' / 'ungrouped' / f'{args.frac}_fraction' / f'plot_closure_{var}.png', dpi=150, bbox_inches='tight')
@@ -696,7 +705,7 @@ def main():
             ar1, ar2, ar3 = df.data.AR_1, df.data.AR_2, df.data.AR_3
         # ----- Closure plots in DR -----
         if args.closure_DR:
-            for num, split in zip(['1', '2', '3'], ['tau1', 'tau2', 'tau1&2']):
+            for num, split, folder in zip(['1', '2', '3'], ['tau1', 'tau2', 'tau1&2'], ['ARlike_1', 'ARlike_2', 'ARlike_3']):
                 if split == 'tau1': df_arlike = df.data.AR_like_1
                 elif split == 'tau2': df_arlike = df.data.AR_like_2
                 elif split == 'tau1&2': df_arlike = df.data.AR_like_3                           
@@ -714,8 +723,10 @@ def main():
                         split=num,
                         grouping=None,
                     )
-                    plt.savefig(PLOTS_DIR / 'tau_3split' / 'closure_in_DR' / 'ungrouped' / f'{args.frac}_fraction' / f'FF_closure_DR_{split}_{var}.png', dpi=150, bbox_inches='tight')
-                    plt.savefig(PLOTS_DIR / 'tau_3split' / 'closure_in_DR' / 'ungrouped' / f'{args.frac}_fraction' / f'FF_closure_DR_{split}_{var}.pdf', dpi=150, bbox_inches='tight')
+                    safe_path = PLOTS_DIR / 'tau_3split' / 'closure_in_DR' / 'ungrouped' / f'{args.frac}_fraction' / folder
+                    safe_path.mkdir(parents=True, exist_ok=True)
+                    plt.savefig(safe_path / f'FF_closure_DR_{var}.png', dpi=150, bbox_inches='tight')
+                    plt.savefig(safe_path / f'FF_closure_DR_{var}.pdf', dpi=150, bbox_inches='tight')
                     plt.close(fig_q)
     
             logger.info(f'Saved closure plots in DR for ungrouped')
@@ -861,10 +872,6 @@ def main():
                 )
             logger.info('Plotted NN outputs of multiclass classification...')
 
-
-
-
-
         # ----- FF closure in AR -----
         if args.closure_AR:
                 for var in variables:
@@ -896,7 +903,7 @@ def main():
         grouping = 'njets'
         # ----- Closure plots in DR -----
         if args.closure_DR:
-            for num, split in zip(['1', '2', '3'], ['tau1', 'tau2', 'tau1&2']):
+            for num, split, folder in zip(['1', '2', '3'], ['tau1', 'tau2', 'tau1&2'], ['ARlike_1', 'ARlike_2', 'ARlike_3']):
                 if split == 'tau1': df_arlike = df.data.AR_like_1
                 elif split == 'tau2': df_arlike = df.data.AR_like_2
                 elif split == 'tau1&2': df_arlike = df.data.AR_like_3
@@ -914,8 +921,10 @@ def main():
                         split=num,
                         grouping=grouping,
                     )
-                    plt.savefig(PLOTS_DIR / 'tau_3split' / 'closure_in_DR' / grouping / f'{args.frac}_fraction'/ f'FF_closure_DR_{split}_{var}.png', dpi=150, bbox_inches='tight')
-                    plt.savefig(PLOTS_DIR / 'tau_3split' / 'closure_in_DR' / grouping / f'{args.frac}_fraction'/ f'FF_closure_DR_{split}_{var}.pdf', dpi=150, bbox_inches='tight')
+                    safe_path = PLOTS_DIR / 'tau_3split' / 'closure_in_DR' / grouping / f'{args.frac}_fraction' / folder
+                    safe_path.mkdir(parents=True, exist_ok=True)
+                    plt.savefig(safe_path / f'FF_closure_DR_{var}.png', dpi=150, bbox_inches='tight')
+                    plt.savefig(safe_path / f'FF_closure_DR_{var}.pdf', dpi=150, bbox_inches='tight')
                     plt.close(fig_q)
 
                 logger.info(f'Saved closure plots in DR for {grouping}')
