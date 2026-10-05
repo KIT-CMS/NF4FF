@@ -16,7 +16,7 @@ from classes.Loading import load_config, load_variables, load_data
 from classes.FF_calculation import calculate_fake_factors_ungrouped, calculate_fake_factors_grouped
 from classes.FF_calculation import calculate_fake_factors_incl_ungrouped, calculate_fake_factors_incl_grouped
 from classes.FF_calculation import calculate_fake_factors_3split_ungrouped, calculate_fake_factor_frac_3split, calculate_fake_factors_grouped_3split
-from classes.FF_calculation import calculate_fake_factor_classic, calculate_fake_factor_frac
+from classes.FF_calculation import calculate_fake_factor_classic, calculate_fake_factor_frac, calculate_fake_factor_classic_jvsg
 
 
 SEED = 42
@@ -37,7 +37,7 @@ class Args(Tap):
     frac: Literal['global', 'pt_binned', 'DNN'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction
     dnn_grouped: bool = True
     AR_comb: bool = False
-    classic: bool = False
+    classic: bool = True
 
 args = Args().parse_args()
 
@@ -99,35 +99,26 @@ def main():
             except FileExistsError:
                 logger.info(f'{cfg_path["fractions"]}/fractions_{name}.yaml already exists')
 
-    if args.taus == 'split' or args.taus == '3split':
-        Path(cfg_path['DNN_output']).mkdir(parents=True, exist_ok=True)
-        try:
-            with open(cfg_path['DNN_output']+f"/frac_{args.taus}.yaml", 'x') as file:
-                dict = {'ungrouped': '', 'njets': {}, 'tau_dm': ''}
-                file.write('# saved values of fraction factors for ungrouped, njets and tauDM \n')
-                yaml.safe_dump(dict, file)
-            logger.info(f'Created {cfg_path["DNN_output"]}/frac_{args.taus}.yaml')
-        except FileExistsError:
-            logger.info(f'{cfg_path["DNN_output"]}/frac_{args.taus}.yaml already exists')
-    #exit()
-
     # ----- calculate fake factors -----
     # classic: at the moment from jvoss smhtt ul v12
 
     if args.classic:
         df_classic = load_data(DATA_PATH, MASKS_PATH)
+        #df_classic.drop(['ff_classic_tau1_nocorr', 'ff_classic_tau2_nocorr'], axis=1, inplace=True)
+        #print(list(df_classic.columns))
+        #exit()
 
-        logger.info('Calculating classic FF from jvoss...')
+        logger.info('Calculating classic FF...')
         calculate_fake_factor_classic(df_classic)
 
-        logger.info(f"Saving classic dataframe with fake-factor columns to feather file: {DATA_CLASSIC_JV_PATH} and {DATA_CLASSIC_SG_PATH}")
-        df_classic.to_feather(DATA_CLASSIC_JV_PATH)
+        logger.info(f"Saving classic dataframe with fake-factor columns to feather file: {DATA_PATH}")
+        df_classic.to_feather(DATA_PATH)
 
         #df_classic_jv = load_data(DATA_CLASSIC_JV_PATH, MASKS_PATH)
         #df_classic_sg = load_data(DATA_CLASSIC_SG_PATH, MASKS_PATH)
 
         #logger.info('Calculating classic FF from jvoss...')
-        #calculate_fake_factor_classic(df_classic_jv, 'jv')
+        #calculate_fake_factor_classic_jvsg(df_classic_jv, 'jv')
         #logger.info('Calculating classic FF from sgiappic...')
         #calculate_fake_factor_classic(df_classic_sg, 'sg')
 

@@ -1045,8 +1045,122 @@ def calculate_fake_factor_frac_3split(
 
 
 # -------------- classic fake factor determination -------------
-
 def calculate_fake_factor_classic(
+        df,
+        ):
+    
+    
+    _df1 = df.AR_tau1.copy()
+    _df2 = df.AR_tau2.copy()
+    ff = cr.CorrectionSet.from_file('/work/tapp/TauFF/ClassicFF/TauFakeFactors/workdir/classicFF_2018_tt/2018/fake_factors_tt.json.gz')
+    corr = cr.CorrectionSet.from_file('/work/tapp/TauFF/ClassicFF/TauFakeFactors/workdir/classicFF_2018_tt/2018/FF_corrections_tt_chain_DR_SR.json.gz')
+    
+    frac1 = ff['process_fractions']
+    frac2 = ff['process_fractions_subleading']
+
+
+    ff_tau1 = ff['QCD_fake_factors']
+    ff_tau2 = ff['QCD_subleading_fake_factors']
+
+    # ----- raw FF -----
+    _df1["tau1_classic_ff"] = ff_tau1.evaluate(
+        _df1.pt_1.values,
+        _df1.njets.values,
+        "nominal",
+    )
+    _df2['tau2_classic_ff'] = ff_tau2.evaluate(
+        _df2.pt_2.values,
+        _df2.njets.values,
+        "nominal",
+    )
+
+    # ----- corrected FF -----
+    _df1["tau1_corrected_classic_ff"] = _df1["tau1_classic_ff"] * evaluate_compound_ff_correction(
+        corr,
+        "QCD_compound_correction",
+        _df1,
+    ) * corr["QCD_DR_SR_correction"].evaluate(
+        _df1.pt_tt,
+        _df1.njets,
+        "nominal",
+    )
+
+    _df2["tau2_corrected_classic_ff"] = _df2["tau2_classic_ff"] * evaluate_compound_ff_correction(
+        corr,
+        "QCD_subleading_compound_correction",
+        _df2,
+    ) * corr["QCD_subleading_DR_SR_correction"].evaluate(
+        _df2.pt_tt,
+        _df2.njets,
+        "nominal",
+    )
+    
+
+    _df1['process_fraction_tau1'] = frac1.evaluate(
+        'QCD',
+        _df1.m_vis.values,
+        _df1.njets.values,
+        'nominal'
+    )
+
+    _df2['process_fraction_tau2'] = frac2.evaluate(
+        'QCD',
+        _df2.m_vis.values,
+        _df2.njets.values,
+        'nominal'
+    )
+
+    #_df['corrected_ff'] = _df['process_fraction_wjets'] * _df['wjets_corrected_classic_ff'] + _df['process_fraction_qcd'] * _df['qcd_corrected_classic_ff'] + _df['process_fraction_ttbar'] * _df['ttbar_corrected_classic_ff']
+    _df1['classic_ff_tau1'] = _df1['process_fraction_tau1'] * _df1['tau1_classic_ff']
+    _df2['classic_ff_tau2'] = _df2['process_fraction_tau2'] * _df2['tau2_classic_ff']
+
+    _df1['corrected_classic_ff_tau1'] = _df1['process_fraction_tau1'] * _df1['tau1_corrected_classic_ff']
+    _df2['corrected_classic_ff_tau2'] = _df2['process_fraction_tau2'] * _df2['tau2_corrected_classic_ff']
+
+    df.AR_tau1[f'ff_classic_tau1'] = _df1['classic_ff_tau1'] * 0.5
+    df.AR_tau2[f'ff_classic_tau2'] = _df2['classic_ff_tau2'] * 0.5
+
+    df.AR_tau1[f'ff_classic_tau1_corr'] = _df1['corrected_classic_ff_tau1'] * 0.5
+    df.AR_tau2[f'ff_classic_tau2_corr'] = _df2['corrected_classic_ff_tau2'] * 0.5
+    
+
+def evaluate_compound_ff_correction(correction_set, compound_name: str, df: pd.DataFrame) -> np.ndarray:
+    compound_correction = correction_set.compound[compound_name]
+    # variables in which non closure corrections were done
+    expected_inputs = [input_spec.name for input_spec in compound_correction.inputs]
+
+    # provide connection between json and df
+    input_values = {
+        'tau_decaymode_1': df.tau_decaymode_1,
+        'tau_decaymode_2': df.tau_decaymode_2,
+        'eta_1': df.eta_1,
+        'eta_2': df.eta_2,
+        'jeta_1': df.jeta_1,
+        'jeta_2': df.jeta_2,
+        'jpt_1': df.jpt_1,
+        'jpt_2': df.jpt_2,
+        'deltaR_ditaupair': df.deltaR_ditaupair,
+        'deltaR_1j1': df.deltaR_1j1,
+        'deltaR_12j1': df.deltaR_12j1,
+        'pt_ttjj': df.pt_ttjj,
+        'mass_1': df.mass_1,
+        'mass_2': df.mass_2,
+        'mt_tot': df.mt_tot,
+        'm_vis': df.m_vis,
+        'iso_1': df.iso_1,
+        'iso_2': df.iso_2,
+        'njets': df.njets,
+        'syst': 'nominal',
+    }
+    missing_inputs = [name for name in expected_inputs if name not in input_values]
+    if missing_inputs:
+        raise KeyError(f'Missing input mapping for correction {compound_name}: {missing_inputs}')
+
+    #order the inputs in the same order as the non closure was done
+    ordered_inputs = [input_values[name] for name in expected_inputs]
+    return compound_correction.evaluate(*ordered_inputs)
+
+def calculate_fake_factor_classic_jvsg(
         df,
         short=None,
         ):
@@ -1092,7 +1206,7 @@ def calculate_fake_factor_classic(
     )
 
     if short=='sg':
-        _df1["tau1_corrected_classic_ff"] = _df1["tau1_classic_ff"] * evaluate_compound_ff_correction(
+        _df1["tau1_corrected_classic_ff"] = _df1["tau1_classic_ff"] * evaluate_compound_ff_correction_jvsg(
             corr,
             "QCD_compound_correction",
             _df1,
@@ -1103,7 +1217,7 @@ def calculate_fake_factor_classic(
             "nominal",
         )
 
-        _df2["tau2_corrected_classic_ff"] = _df2["tau2_classic_ff"] * evaluate_compound_ff_correction(
+        _df2["tau2_corrected_classic_ff"] = _df2["tau2_classic_ff"] * evaluate_compound_ff_correction_jvsg(
             corr,
             "QCD_subleading_compound_correction",
             _df2,
@@ -1114,7 +1228,7 @@ def calculate_fake_factor_classic(
             "nominal",
         )
     elif short=='jv':
-        _df1["tau1_corrected_classic_ff"] = _df1["tau1_classic_ff"] * evaluate_compound_ff_correction(
+        _df1["tau1_corrected_classic_ff"] = _df1["tau1_classic_ff"] * evaluate_compound_ff_correction_jvsg(
             corr,
             "QCD_compound_correction",
             _df1,
@@ -1125,7 +1239,7 @@ def calculate_fake_factor_classic(
             "nominal",
         )
 
-        _df2["tau2_corrected_classic_ff"] = _df2["tau2_classic_ff"] * evaluate_compound_ff_correction(
+        _df2["tau2_corrected_classic_ff"] = _df2["tau2_classic_ff"] * evaluate_compound_ff_correction_jvsg(
             corr,
             "QCD_subleading_compound_correction",
             _df2,
@@ -1172,7 +1286,7 @@ def calculate_fake_factor_classic(
     else:
         print(f'short = {short} is not implmented. Use either jv or sg')
 
-def evaluate_compound_ff_correction(correction_set, compound_name: str, df: pd.DataFrame, short) -> np.ndarray:
+def evaluate_compound_ff_correction_jvsg(correction_set, compound_name: str, df: pd.DataFrame, short) -> np.ndarray:
     compound_correction = correction_set.compound[compound_name]
     expected_inputs = [input_spec.name for input_spec in compound_correction.inputs]
 

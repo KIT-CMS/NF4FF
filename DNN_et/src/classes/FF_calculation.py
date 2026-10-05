@@ -513,8 +513,10 @@ def calculate_fake_factors_in_DR_ttbar(
 
 def evaluate_compound_ff_correction(correction_set, compound_name: str, df: pd.DataFrame) -> np.ndarray:
     compound_correction = correction_set.compound[compound_name]
+    # variables in which non closure corrections were done
     expected_inputs = [input_spec.name for input_spec in compound_correction.inputs]
 
+    # provide connection between json and df
     input_values = {
         'tau_decaymode_2': df.tau_decaymode_2,
         'eta_1': df.eta_1,
@@ -540,6 +542,7 @@ def evaluate_compound_ff_correction(correction_set, compound_name: str, df: pd.D
     if missing_inputs:
         raise KeyError(f'Missing input mapping for correction {compound_name}: {missing_inputs}')
 
+    #order the inputs in the same order as the non closure was done
     ordered_inputs = [input_values[name] for name in expected_inputs]
     return compound_correction.evaluate(*ordered_inputs)
 

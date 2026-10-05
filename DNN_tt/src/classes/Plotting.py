@@ -1,6 +1,7 @@
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.transforms import blended_transform_factory
 import mplhep as hep
 from collections.abc import Iterable
 
@@ -10,6 +11,25 @@ from classes.Fraction_factor import fraction_in_bins, _build_group_masks
 from classes.NeuralNetworks import load_model, FoldCombinedDNN
 from classes.DataHandling import test_data
 from classes.Yield_correction_qcd import calculate_qcd_yield_corrections
+
+def _format_closure_yaxis(ax):
+    """Use scientific notation for event counts."""
+    ax.ticklabel_format(axis='y', style='sci', scilimits=(0, 0), useMathText=True, useOffset=False)
+
+
+def _align_closure_ylabels(fig, axes):
+    """Keep panel labels aligned and left of the scientific-notation multiplier."""
+    tick_label = axes[0].get_yticklabels()[0]
+    offset = axes[0].yaxis.get_offset_text()
+    # Match tick-label x positioning while retaining the exponent's vertical position.
+    offset.set(
+        x=tick_label.get_position()[0], ha='right',
+        transform=blended_transform_factory(tick_label.get_transform(), offset.get_transform()),
+    )
+    for ax in axes:
+        ax.yaxis.labelpad = 15
+    fig.align_ylabels(axes)
+
 
 def CMS_CHANNEL_TITLE(ax, *args, **kwargs):
     if isinstance(ax, Iterable):
@@ -360,27 +380,34 @@ def plot_closure(
     AR_comb = False,
     mode='dnn',
     clipped=True,
+    corr=False,
 ):
     hep.style.use(hep.style.CMS)
 
-    if mode=='nf' and grouping=='tau_decaymode':
+    if (mode=='nf' or mode=='classic') and grouping=='tau_decaymode':
         return None, None, None
 
-    if clipped: clipped = ""
-    else: clipped = "_unclipped"
+    if not clipped and mode != 'classic': clipped = "_unclipped"
+    else: clipped = ""
 
+    if corr: corr = '_corr'
+    else: corr = ''
 
     if grouping == 'tau_decaymode':
-        ff_dnn_tau1 = f'ff{clipped}_{mode}_tau1_tau_dm'
-        ff_dnn_tau2 = f'ff{clipped}_{mode}_tau2_tau_dm'
+        ff_dnn_tau1 = f'ff{clipped}_{mode}_tau1_tau_dm{corr}'
+        ff_dnn_tau2 = f'ff{clipped}_{mode}_tau2_tau_dm{corr}'
         cat_title = r'$\tau$ DM: inclusive'
     elif grouping == 'njets':
-        ff_dnn_tau1 = f'ff{clipped}_{mode}_tau1_njets'
-        ff_dnn_tau2 = f'ff{clipped}_{mode}_tau2_njets'
+        if mode == 'classic':
+            ff_dnn_tau1 = f'ff{clipped}_{mode}_tau1{corr}'
+            ff_dnn_tau2 = f'ff{clipped}_{mode}_tau2{corr}'
+        else:
+            ff_dnn_tau1 = f'ff{clipped}_{mode}_tau1_njets{corr}'
+            ff_dnn_tau2 = f'ff{clipped}_{mode}_tau2_njets{corr}'
         cat_title = r'$N_{jets}$: inclusive'
     else:
-        ff_dnn_tau1 = f'ff{clipped}_{mode}_tau1'
-        ff_dnn_tau2 = f'ff{clipped}_{mode}_tau2'
+        ff_dnn_tau1 = f'ff{clipped}_{mode}_tau1{corr}'
+        ff_dnn_tau2 = f'ff{clipped}_{mode}_tau2{corr}'
         cat_title = 'inclusive'
 
     histograms = {}
@@ -519,6 +546,7 @@ def plot_closure(
     )
 
     ax[0].set_ylabel("Events")
+    _format_closure_yaxis(ax[0])
     handles, labels = ax[0].get_legend_handles_labels()
     handles = handles[::-1]
     labels = labels[::-1]
@@ -554,7 +582,8 @@ def plot_closure(
         fmt='o',
         color='black',
         markersize=6,
-        label=r'DNN $F_\mathrm{F}$',
+        label={'dnn': r'DNN $F_\mathrm{F}$', 'nf': r'NF $F_\mathrm{F}$',
+               'classic': r'Classic $F_\mathrm{F}$'}[mode],
     )
 
     ax[1].fill_between(
@@ -599,6 +628,8 @@ def plot_closure(
     ax[2].set_ylim(0, 1)
     ax[2].tick_params(direction='in', top=True, right=True)
     ax[2].set_xlabel(label)
+    ax[0].set_xlim(bins[0], bins[-1])
+    _align_closure_ylabels(fig, ax)
 
     return fig, ax, histograms
 
@@ -761,6 +792,7 @@ def plot_closure_incl(
     )
 
     ax[0].set_ylabel("Events")
+    _format_closure_yaxis(ax[0])
     handles, labels = ax[0].get_legend_handles_labels()
     handles = handles[::-1]
     labels = labels[::-1]
@@ -840,6 +872,8 @@ def plot_closure_incl(
     ax[2].set_ylim(0, 1)
     ax[2].tick_params(direction='in', top=True, right=True)
     ax[2].set_xlabel(label)
+    ax[0].set_xlim(bins[0], bins[-1])
+    _align_closure_ylabels(fig, ax)
 
     return fig, ax, histograms
 
@@ -1008,6 +1042,7 @@ def plot_closure_3split(
     )
 
     ax[0].set_ylabel("Events")
+    _format_closure_yaxis(ax[0])
     handles, labels = ax[0].get_legend_handles_labels()
     handles = handles[::-1]
     labels = labels[::-1]
@@ -1087,6 +1122,8 @@ def plot_closure_3split(
     ax[2].set_ylim(0, 1)
     ax[2].tick_params(direction='in', top=True, right=True)
     ax[2].set_xlabel(label)
+    ax[0].set_xlim(bins[0], bins[-1])
+    _align_closure_ylabels(fig, ax)
 
     return fig, ax, histograms
 
@@ -1277,6 +1314,7 @@ def plot_closure_MC(
     )
 
     ax[0].set_ylabel("Events")
+    _format_closure_yaxis(ax[0])
     handles, labels = ax[0].get_legend_handles_labels()
     handles = handles[::-1]
     labels = labels[::-1]
@@ -1356,6 +1394,8 @@ def plot_closure_MC(
     ax[2].set_ylim(0, 1)
     ax[2].tick_params(direction='in', top=True, right=True)
     ax[2].set_xlabel(label)
+    ax[0].set_xlim(bins[0], bins[-1])
+    _align_closure_ylabels(fig, ax)
 
     return fig, ax, histograms
 
@@ -1366,18 +1406,24 @@ def plot_fake_factors(
         category_title = None,
         clipped = True,
         mode = 'dnn',
+        corr = False,
 ) -> None:
     hep.style.use(hep.style.CMS)
+
+    if corr: corr = '_corr'
+    else: corr = ''
 	
     if clipped:
-        ff_dnn_tau1 = f'ff_{mode}_tau1'
-        ff_dnn_tau2 = f'ff_{mode}_tau2'
+        ff_dnn_tau1 = f'ff_{mode}_tau1{corr}'
+        ff_dnn_tau2 = f'ff_{mode}_tau2{corr}'
     
         bins_tau1 = np.linspace(0, 1.25, 51)
         bins_tau2 = np.linspace(0, 1.25, 51)
     else:
-        ff_dnn_tau1 = f'ff_unclipped_{mode}_tau1'
-        ff_dnn_tau2 = f'ff_unclipped_{mode}_tau2'
+        if mode == 'classic':
+            return None, None
+        ff_dnn_tau1 = f'ff_unclipped_{mode}_tau1{corr}'
+        ff_dnn_tau2 = f'ff_unclipped_{mode}_tau2{corr}'
     
         bins_tau1 = np.linspace(0, 2., 51)
         bins_tau2 = np.linspace(0, 2., 51)
@@ -1405,18 +1451,22 @@ def plot_fake_factors_combTaus(
         df,
         clipped = True,
         mode = 'dnn',
+        corr = False,
 ) -> None:
     hep.style.use(hep.style.CMS)
+
+    if corr: corr = '_corr'
+    else: corr = ''
 	
     if clipped:
-        ff_dnn_tau1 = f'ff_{mode}_tau1'
-        ff_dnn_tau2 = f'ff_{mode}_tau2'
+        ff_dnn_tau1 = f'ff_{mode}_tau1{corr}'
+        ff_dnn_tau2 = f'ff_{mode}_tau2{corr}'
     
         bins_tau1 = np.linspace(0, 1.25, 51)
         bins_tau2 = np.linspace(0, 1.25, 51)
     else:
-        ff_dnn_tau1 = f'ff_unclipped_{mode}_tau1'
-        ff_dnn_tau2 = f'ff_unclipped_{mode}_tau2'
+        ff_dnn_tau1 = f'ff_unclipped_{mode}_tau1{corr}'
+        ff_dnn_tau2 = f'ff_unclipped_{mode}_tau2{corr}'
     
         bins_tau1 = np.linspace(0, 2., 51)
         bins_tau2 = np.linspace(0, 2., 51)
@@ -1709,17 +1759,21 @@ def FF_closure_in_DR_tau1(
 	bins,
 	label,
 	grouping = None,
+    corr=False,
 ):
     hep.style.use(hep.style.CMS)
 
+    if corr: corr = '_corr'
+    else: corr = ''
+
     if grouping == 'tau_decaymode':
-        ff_dnn_tau1 = 'ff_DR_dnn_tau1_tau_dm'
+        ff_dnn_tau1 = f'ff_DR_dnn_tau1_tau_dm{corr}'
         cat_title = r'$\tau$ DM: inclusive'
     elif grouping == 'njets':
-        ff_dnn_tau1 = 'ff_DR_dnn_tau1_njets'
+        ff_dnn_tau1 = f'ff_DR_dnn_tau1_njets{corr}'
         cat_title = r'$N_{jets}$: inclusive'
     else:
-        ff_dnn_tau1 = 'ff_DR_dnn_tau1'
+        ff_dnn_tau1 = f'ff_DR_dnn_tau1{corr}'
         cat_title = 'inclusive'
 
     counts_SR_like, bin_edges = np.histogram(df.data.SR_like[var], weights = df.data.SR_like.weight_qcd, bins = bins)
@@ -1771,6 +1825,7 @@ def FF_closure_in_DR_tau1(
     ax[0].stairs(counts_FF_AR_like, bin_edges, label = r'$F_\mathrm{F} \cdot $ data(AR-like, leading $\tau$)', ls = '--', linewidth = 2)
 
     ax[0].set_ylabel('Events')
+    _format_closure_yaxis(ax[0])
     ax[0].legend()
     adjust_ylim_for_legend(ax[0])
     ratio = np.divide(counts_SR_like, counts_FF_AR_like, out=np.zeros_like(counts_SR_like, dtype=float), where=counts_FF_AR_like > 0)
@@ -1793,6 +1848,8 @@ def FF_closure_in_DR_tau1(
     ax[1].tick_params(direction='in', top=True, right=True)
     ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
     ax[1].set_xlabel(label)
+    ax[0].set_xlim(bins[0], bins[-1])
+    _align_closure_ylabels(fig, ax)
 
     return fig, ax
 
@@ -1802,17 +1859,20 @@ def FF_closure_in_DR_tau2(
 	bins,
 	label,
 	grouping = None,
+    corr = False,
 ):
     hep.style.use(hep.style.CMS)
+    if corr: corr = '_corr'
+    else: corr = ''
 
     if grouping == 'tau_decaymode':
-        ff_dnn_tau2 = 'ff_DR_dnn_tau2_tau_dm'
+        ff_dnn_tau2 = f'ff_DR_dnn_tau2_tau_dm{corr}'
         cat_title = r'$\tau$ DM: inclusive'
     elif grouping == 'njets':
-        ff_dnn_tau2 = 'ff_DR_dnn_tau2_njets'
+        ff_dnn_tau2 = f'ff_DR_dnn_tau2_njets{corr}'
         cat_title = r'$N_{jets}$: inclusive'
     else:
-        ff_dnn_tau2 = 'ff_DR_dnn_tau2'
+        ff_dnn_tau2 = f'ff_DR_dnn_tau2{corr}'
         cat_title = 'inclusive'
 
     counts_SR_like, bin_edges = np.histogram(df.data.SR_like[var], weights = df.data.SR_like.weight_qcd, bins = bins)
@@ -1864,6 +1924,7 @@ def FF_closure_in_DR_tau2(
     ax[0].stairs(counts_FF_AR_like, bin_edges, label = r'$F_\mathrm{F} \cdot $ data(AR-like, trailing $\tau$)', ls = '--', linewidth = 2)
 
     ax[0].set_ylabel('Events')
+    _format_closure_yaxis(ax[0])
     ax[0].legend()
     adjust_ylim_for_legend(ax[0])
     ratio = np.divide(counts_SR_like, counts_FF_AR_like, out=np.zeros_like(counts_SR_like, dtype=float), where=counts_FF_AR_like > 0)
@@ -1886,6 +1947,8 @@ def FF_closure_in_DR_tau2(
     ax[1].tick_params(direction='in', top=True, right=True)
     ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
     ax[1].set_xlabel(label)
+    ax[0].set_xlim(bins[0], bins[-1])
+    _align_closure_ylabels(fig, ax)
 
     return fig, ax
 
@@ -1959,6 +2022,7 @@ def FF_closure_in_DR_incl(
     ax[0].stairs(counts_FF_AR_like, bin_edges, label = r'$F_\mathrm{F} \cdot $ data(AR-like)', ls = '--', linewidth = 2)
 
     ax[0].set_ylabel('Events')
+    _format_closure_yaxis(ax[0])
     ax[0].legend()
     adjust_ylim_for_legend(ax[0])
     ratio = np.divide(counts_SR_like, counts_FF_AR_like, out=np.zeros_like(counts_SR_like, dtype=float), where=counts_FF_AR_like > 0)
@@ -1981,6 +2045,8 @@ def FF_closure_in_DR_incl(
     ax[1].tick_params(direction='in', top=True, right=True)
     ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
     ax[1].set_xlabel(label)
+    ax[0].set_xlim(bins[0], bins[-1])
+    _align_closure_ylabels(fig, ax)
 
     return fig, ax
 
@@ -2054,6 +2120,7 @@ def FF_closure_in_DR_3split(
     ax[0].stairs(counts_FF_AR_like, bin_edges, label = r'$F_\mathrm{F} \cdot $ data(AR-like, leading $\tau$)', ls = '--', linewidth = 2)
 
     ax[0].set_ylabel('Events')
+    _format_closure_yaxis(ax[0])
     ax[0].legend()
     adjust_ylim_for_legend(ax[0])
     ratio = np.divide(counts_SR_like, counts_FF_AR_like, out=np.zeros_like(counts_SR_like, dtype=float), where=counts_FF_AR_like > 0)
@@ -2076,6 +2143,8 @@ def FF_closure_in_DR_3split(
     ax[1].tick_params(direction='in', top=True, right=True)
     ax[1].legend(loc='lower left', bbox_to_anchor=(0.0, 1.02), borderaxespad=0.0, ncol=2, frameon=False)
     ax[1].set_xlabel(label)
+    ax[0].set_xlim(bins[0], bins[-1])
+    _align_closure_ylabels(fig, ax)
 
     return fig, ax
 
@@ -2109,23 +2178,33 @@ def _grouping_masks(frame, grouping):
     raise ValueError(f'Unsupported grouping: {grouping}')
 
 
-def plot_fake_factors_grouped(df, category_title, grouping='njets', clipped = True, mode='dnn'):
+def plot_fake_factors_grouped(df, category_title, grouping='njets', clipped = True, mode='dnn', corr=False):
     hep.style.use(hep.style.CMS)
 
-    if mode=='nf' and grouping=='tau_decaymode':
+    if (mode=='nf' or mode=='classic') and grouping=='tau_decaymode':
         return None, None
+
+    if mode == 'classic' and not clipped:
+        return None, None
+
+    if corr: corr = '_corr'
+    else: corr = ''
 
     if clipped:
         bins_tau1 = np.linspace(0, 1.25, 51)
         bins_tau2 = np.linspace(0, 1.25, 51)
 
         if grouping == 'tau_decaymode':
-            ff_tau1 = f'ff_{mode}_tau1_tau_dm'
-            ff_tau2 = f'ff_{mode}_tau2_tau_dm'
+            ff_tau1 = f'ff_{mode}_tau1_tau_dm{corr}'
+            ff_tau2 = f'ff_{mode}_tau2_tau_dm{corr}'
             grouping = ['tau_decaymode_1', 'tau_decaymode_2']
         elif grouping == 'njets':
-            ff_tau1 = f'ff_{mode}_tau1_njets'
-            ff_tau2 = f'ff_{mode}_tau2_njets'
+            if mode == 'classic':
+                ff_tau1 = f'ff_{mode}_tau1{corr}'
+                ff_tau2 = f'ff_{mode}_tau2{corr}'
+            else:
+                ff_tau1 = f'ff_{mode}_tau1_njets{corr}'
+                ff_tau2 = f'ff_{mode}_tau2_njets{corr}'
         else:
             raise ValueError(f'Unsupported grouping: {grouping}')
     else:
@@ -2133,12 +2212,12 @@ def plot_fake_factors_grouped(df, category_title, grouping='njets', clipped = Tr
         bins_tau2 = np.linspace(0, 2., 51)
 
         if grouping == 'tau_decaymode':
-            ff_tau1 = f'ff_unclipped_{mode}_tau1_tau_dm'
-            ff_tau2 = f'ff_unclipped_{mode}_tau2_tau_dm'
+            ff_tau1 = f'ff_unclipped_{mode}_tau1_tau_dm{corr}'
+            ff_tau2 = f'ff_unclipped_{mode}_tau2_tau_dm{corr}'
             grouping = ['tau_decaymode_1', 'tau_decaymode_2']
         elif grouping == 'njets':
-            ff_tau1 = f'ff_unclipped_{mode}_tau1_njets'
-            ff_tau2 = f'ff_unclipped_{mode}_tau2_njets'
+            ff_tau1 = f'ff_unclipped_{mode}_tau1_njets{corr}'
+            ff_tau2 = f'ff_unclipped_{mode}_tau2_njets{corr}'
         else:
             raise ValueError(f'Unsupported grouping: {grouping}')
 
@@ -2313,19 +2392,26 @@ def plot_fake_factors_grouped_3split(
 
     return fig, ax
 
-def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymode', mode='dnn'):
+def plot_fake_factors_grouped_combTaus(df, category_title, grouping='tau_decaymode', mode='dnn', corr=False):
     hep.style.use(hep.style.CMS)
 
-    if mode=='nf' and grouping=='tau_decaymode':
+    if (mode=='nf' or mode=='classic') and grouping=='tau_decaymode':
         return None, None
 
+    if corr: corr = '_corr'
+    else: corr = ''
+
     if grouping == 'tau_decaymode':
-        ff1 = f'ff_{mode}_tau1_tau_dm'
-        ff2 = f'ff_{mode}_tau2_tau_dm'
+        ff1 = f'ff_{mode}_tau1_tau_dm{corr}'
+        ff2 = f'ff_{mode}_tau2_tau_dm{corr}'
         grouping = ['tau_decaymode_1', 'tau_decaymode_2']
     elif grouping == 'njets':
-        ff1 = f'ff_{mode}_tau1_njets'
-        ff2 = f'ff_{mode}_tau2_njets'
+        if mode == 'classic':
+            ff1 = f'ff_{mode}_tau1{corr}'
+            ff2 = f'ff_{mode}_tau2{corr}'
+        else:
+            ff1 = f'ff_{mode}_tau1_njets{corr}'
+            ff2 = f'ff_{mode}_tau2_njets{corr}'
     else:
         raise ValueError(f'Unsupported grouping: {grouping}')
 
@@ -2470,19 +2556,22 @@ def plot_fake_factors_grouped_combTaus_3split(df, category_title, grouping='njet
 
     return fig, ax
 
-def plot_fake_factors_in_dr_grouped(df, category_title, grouping='tau_decaymode', mode='dnn'):
+def plot_fake_factors_in_dr_grouped(df, category_title, grouping='tau_decaymode', mode='dnn', corr=False):
     hep.style.use(hep.style.CMS)
 
-    if mode=='nf':
+    if mode=='nf' or mode=='classic':
         return None, None
 
+    if corr: corr = '_corr'
+    else: corr = ''
+
     if grouping == 'tau_decaymode':
-        ff_tau1 = 'ff_DR_dnn_tau1_tau_dm'
-        ff_tau2 = 'ff_DR_dnn_tau2_tau_dm'
+        ff_tau1 = f'ff_DR_dnn_tau1_tau_dm{corr}'
+        ff_tau2 = f'ff_DR_dnn_tau2_tau_dm{corr}'
         grouping = ['tau_decaymode_1', 'tau_decaymode_2']
     elif grouping == 'njets':
-        ff_tau1 = 'ff_DR_dnn_tau1_njets'
-        ff_tau2 = 'ff_DR_dnn_tau2_njets'
+        ff_tau1 = f'ff_DR_dnn_tau1_njets{corr}'
+        ff_tau2 = f'ff_DR_dnn_tau2_njets{corr}'
     else:
         raise ValueError(f'Unsupported grouping: {grouping}')
 
