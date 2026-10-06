@@ -173,6 +173,8 @@ processes:
   ttbar: process.isin([10, 11, 12])
   wjets: process == 13
 
+  DY_jets_JL: process.isin([4, 5])
+
   diboson_J: process == 1
   diboson_L: process == 2
   diboson_T: process == 3

@@ -40,17 +40,17 @@ class Args(Tap):
     dnn_grouped: bool = True
 
     AR_comb: bool = False
-    closure_MC: bool = False
+    closure_MC: bool = True
     classic_jvsg: bool = False
 
-    mode: Literal['dnn', 'nf', 'classic'] = 'classic' # nf and classic only with taus = split
-    corrected: bool = True # classic FF with or without non-closure/DRSR correction
+    mode: Literal['dnn', 'nf', 'classic'] = 'dnn' # nf and classic only with taus = split
+    vars: Literal['small', 'large'] = 'small' # small: use small set of variables | large: use large set of variables
+    corrected: bool = False # classic FF with or without non-closure/DRSR correction
 
     wo_train: bool = False
-    vars: Literal['small', 'large'] = 'small' # small: use small set of variables | large: use large set of variables
 
     closure_DR: bool = False
-    FF_dist: bool = False
+    FF_dist: bool = True
     frac: Literal['global', 'pt_binned', 'DNN'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
     closure_AR: bool = True
     

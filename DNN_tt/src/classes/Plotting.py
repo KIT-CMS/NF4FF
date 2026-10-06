@@ -514,7 +514,7 @@ def plot_closure(
         (histograms['ST']['counts'], "#717581", r"Single t"),
         (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
         (histograms['wjets']['counts'], '#e76300', r"W+jets"),
-        (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
+        (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$ (QCD)'),
         (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
     ]
 
@@ -760,7 +760,7 @@ def plot_closure_incl(
         (histograms['ST']['counts'], "#717581", r"Single t"),
         (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
         (histograms['wjets']['counts'], '#e76300', r"W+jets"),
-        (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
+        (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$ (QCD)'),
         (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
     ]
 
@@ -1010,7 +1010,7 @@ def plot_closure_3split(
         (histograms['ST']['counts'], "#717581", r"Single t"),
         (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
         (histograms['wjets']['counts'], '#e76300', r"W+jets"),
-        (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$'),
+        (histograms['jet_fakes_dnn']['counts'], "#a96b59", r'Jet $\rightarrow \tau_h$ (QCD)'),
         (histograms['embedding']['counts'], '#ffa90e', r'$\tau$ embedded'),
     ]
 
@@ -1156,7 +1156,8 @@ def plot_closure_MC(
         list_processes = [
             'data',
             'diboson',
-            'DYjets',
+            'DY_jets_JL',
+            'DY_jets_T',
             'ST',
             'ttbar',
             'wjets',
@@ -1212,7 +1213,8 @@ def plot_closure_MC(
     else:
         background_dnn = (
             histograms['diboson']['counts']
-            + histograms['DYjets']['counts']
+            + histograms['DY_jets_JL']['counts']
+            + histograms['DY_jets_T']['counts']
             + histograms['ST']['counts']
             + histograms['ttbar']['counts']
             + histograms['wjets']['counts']
@@ -1221,7 +1223,8 @@ def plot_closure_MC(
     
         variance_background_dnn = (
             histograms['diboson']['variance']
-            + histograms['DYjets']['variance']
+            + histograms['DY_jets_JL']['variance']
+            + histograms['DY_jets_T']['variance']
             + histograms['ST']['variance']
             + histograms['ttbar']['variance']
             + histograms['wjets']['variance']
@@ -1281,9 +1284,10 @@ def plot_closure_MC(
                 (histograms['diboson']['counts'], "#94a4a2", 'Diboson'),
                 (histograms['ttbar']['counts'], '#832db6', r'$t\bar{t} \to \tau$'),
                 (histograms['ST']['counts'], "#717581", r"Single t"),
-                (histograms['DYjets']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
+                (histograms['DY_jets_JL']['counts'], '#3f90da', r'$Z \to \ell \ell$'),
                 (histograms['wjets']['counts'], '#e76300', r"W+jets"),
                 (histograms['qcd']['counts'], "#b9ac70", r'QCD multijet'),
+                (histograms['DY_jets_T']['counts'], '#ffa90e', r'$Z \to \tau \tau$'),
             ]
 
     counts_stack_total = draw_stacked_stepfill(
