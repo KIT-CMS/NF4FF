@@ -36,21 +36,20 @@ class Args(Tap):
 
     taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
-    fraction_max_bins: int = 0 # Maximum displayed bins per axis for 3split fractions; 0 keeps all bins
     dnn_grouped: bool = True
 
     AR_comb: bool = False
-    closure_MC: bool = True
+    closure_MC: bool = False
     classic_jvsg: bool = False
 
-    mode: Literal['dnn', 'nf', 'classic'] = 'dnn' # nf and classic only with taus = split
-    vars: Literal['small', 'large'] = 'small' # small: use small set of variables | large: use large set of variables
-    corrected: bool = False # classic FF with or without non-closure/DRSR correction
+    mode: Literal['dnn', 'nf', 'classic'] = 'classic' # nf and classic only with taus = split
+    vars: Literal['small', 'large'] = 'large' # small: use small set of variables | large: use large set of variables
+    corrected: bool = True # classic FF with or without non-closure/DRSR correction
 
     wo_train: bool = False
 
     closure_DR: bool = False
-    FF_dist: bool = True
+    FF_dist: bool = False
     frac: Literal['global', 'pt_binned', 'DNN'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
     closure_AR: bool = True
     
@@ -215,8 +214,8 @@ def main():
         return None
 
     if args.closure_MC:
-        logger.info('Plotting control plots without fake factors')
-
+        logger.info('Plotting control plots without fake factors - MC+embedding')
+        '''
         df = load_data(DATA_PATH, MASKS_PATH)
 
         for var in variables:
@@ -238,8 +237,8 @@ def main():
                 fig.savefig(mc_dir / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig)
 
-
-        logger.info('Plotting control plots without fake factors')
+        '''
+        logger.info('Plotting control plots without fake factors - MC only')
         df = load_data(DATA_PATH_NOEMBED, MASKS_MC)
         
         for var in variables:

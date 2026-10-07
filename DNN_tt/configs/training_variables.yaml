@@ -52,6 +52,7 @@ variables:
   - deltaEta_12j2
   - tau_decaymode_1
   - tau_decaymode_2
+  #- pzetamissvis
 
 
 variables_for_multiclass:

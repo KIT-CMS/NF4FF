@@ -1844,7 +1844,7 @@ def FF_closure_in_DR_tau1(
         color='gray',
         alpha=0.3,
         step='mid',
-        label='Sys. Unc.',
+        label='Stat. Unc.',
     )
     ax[1].set_ylabel("Data / Model", loc='center')
     ax[1].set_ylim([0.75, 1.25])
@@ -1943,7 +1943,7 @@ def FF_closure_in_DR_tau2(
         color='gray',
         alpha=0.3,
         step='mid',
-        label='Sys. Unc.',
+        label='Stat. Unc.',
     )
     ax[1].set_ylabel("Data / Model", loc='center')
     ax[1].set_ylim([0.75, 1.25])
@@ -2041,7 +2041,7 @@ def FF_closure_in_DR_incl(
         color='gray',
         alpha=0.3,
         step='mid',
-        label='Sys. Unc.',
+        label='Stat. Unc.',
     )
     ax[1].set_ylabel("Data / Model", loc='center')
     ax[1].set_ylim([0.75, 1.25])
@@ -2139,7 +2139,7 @@ def FF_closure_in_DR_3split(
         color='gray',
         alpha=0.3,
         step='mid',
-        label='Sys. Unc.',
+        label='Stat. Unc.',
     )
     ax[1].set_ylabel("Data / Model", loc='center')
     ax[1].set_ylim([0.75, 1.25])

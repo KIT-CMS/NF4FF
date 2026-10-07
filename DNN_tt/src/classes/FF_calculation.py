@@ -17,7 +17,7 @@ from classes.Fraction_factor import (
     fraction_in_bins_grouped_3split,
 )
 from classes.Multiclass_classification import train_fraction_classifier
-from classes.Loading import load_config
+from classes.Loading import write_yaml_to_file, load_config
 
 cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
 logger = logging.getLogger(__name__)
@@ -169,7 +169,8 @@ def calculate_fake_factors_grouped(
     grouping_variable=None,
     grouping_definition=None,
     output_suffix=None,
-    AR_comb = False
+    AR_comb = False,
+    normalization_file = None
 ):
     if output_suffix is None or grouping_variable is None or grouping_definition is None:
         calculate_fake_factors_ungrouped(df, model_tau1=model_tau1, model_tau2=model_tau2, training_variables=training_variables, DR=DR, AR_comb=AR_comb)
@@ -221,6 +222,7 @@ def calculate_fake_factors_grouped(
     fake_factor_tau1 = np.zeros_like(ratio_tau1) if ratio_tau1 is not None else None
     fake_factor_tau2 = np.zeros_like(ratio_tau2) if ratio_tau2 is not None else None
 
+    normalization_tau1 = {}
     for group_name, ar_mask in group_tau1_masks:
 
         sr_tau1_mask = sr_tau1_masks[group_name]
@@ -230,11 +232,13 @@ def calculate_fake_factors_grouped(
             np.sum(df.data.SR_like.weight_qcd[sr_tau1_mask])
             / np.sum(df.data.AR_like_tau1.weight_qcd[ar_tau1_mask])
         )
+        normalization_tau1[group_name] = norm_tau1
 
         fake_factor_tau1[ar_mask] = (norm_tau1 * ratio_tau1[ar_mask])
 
         print(f"{group_name}:tau1 norm = {norm_tau1:.4f}")
 
+    normalization_tau2 = {}
     for group_name, ar_mask in group_tau2_masks:
 
         sr_tau2_mask = sr_tau2_masks[group_name]
@@ -244,11 +248,20 @@ def calculate_fake_factors_grouped(
             np.sum(df.data.SR_like.weight_qcd[sr_tau2_mask])
             / np.sum(df.data.AR_like_tau2.weight_qcd[ar_tau2_mask])
         )
+        normalization_tau2[group_name] = norm_tau2
 
         fake_factor_tau2[ar_mask] = (norm_tau2 * ratio_tau2[ar_mask])
 
         print(f"{group_name}:tau2 norm = {norm_tau2:.4f}")
 
+    
+    # Save normalization values to YAML file
+    if normalization_file is not None:
+        norm_file = load_config(normalization_file)
+        norm_file['tau1'][output_suffix] = normalization_tau1
+        norm_file['tau2'][output_suffix] = normalization_tau2
+        write_yaml_to_file(norm_file, normalization_file)
+    
     # ----- number of FF over 3 -----
     _FF_over_3(fake_factor_tau1, "tau1")
     _FF_over_3(fake_factor_tau2, "tau2")

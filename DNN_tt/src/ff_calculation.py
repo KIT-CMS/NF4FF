@@ -1,8 +1,6 @@
 from pathlib import Path
-import copy
 import logging
 import random
-import time
 from typing import Literal, Union
 
 import matplotlib.pyplot as plt
@@ -32,12 +30,12 @@ class Args(Tap):
     embedding: Literal["embedding", "no_embedding"] = "embedding"
     var = "variables"
     
-    taus: Literal['split', 'incl', '3split'] = '3split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
+    taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
     incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_binned', 'DNN'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction
     dnn_grouped: bool = True
     AR_comb: bool = False
-    classic: bool = True
+    classic: bool = False
 
 args = Args().parse_args()
 
@@ -85,6 +83,17 @@ def main():
             logger.info(f'Created {cfg_path["fractions"]}/fractions.yaml')
         except FileExistsError:
             logger.info(f'{cfg_path["fractions"]}/fractions.yaml already exists')
+
+        try:
+            with open(cfg_path['ff_normalization'], 'x') as file:
+                dict_tau1 = {'tau1': {'tau_dm': {}, 'njets': {}}}
+                dict_tau2 = {'tau2': {'tau_dm': {}, 'njets': {}}}
+                file.write('# saved values of fraction factor normalization for njets and tauDM \n')
+                yaml.safe_dump(dict_tau1, file)
+                yaml.safe_dump(dict_tau2, file)
+            logger.info(f'Created {cfg_path["ff_normalization"]}')
+        except FileExistsError:
+            logger.info(f'{cfg_path["ff_normalization"]} already exists')
 
     if args.taus == '3split':
         for name in ['tau1', 'tau2', 'tau1&2']:
@@ -156,6 +165,7 @@ def main():
                 grouping_definition = group_def,
                 output_suffix = name,
                 AR_comb=args.AR_comb,
+                normalization_file = cfg_path['ff_normalization'],
             )
 
             # ----- calculate fake factors in DR -----

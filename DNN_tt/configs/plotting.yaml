@@ -44,6 +44,7 @@ bins_by_variable:
     tau_decaymode_2: [-0.5, 12.5, 14]
     mass_1: [0, 2.0, 31]
     mass_2: [0, 2.0, 31]
+    #pzetamissvis: [-150, 150, 31]
 
 variables_set_small:
     - pt_1
@@ -98,3 +99,4 @@ variables_set_large:
     - tau_decaymode_2
     - mass_1
     - mass_2
+    #- pzetamissvis
