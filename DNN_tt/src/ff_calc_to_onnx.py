@@ -1,79 +1,70 @@
-from dataclasses import dataclass
+"""Export grouped, two-tau fake-factor models after running training.py.
+
+Uses the saved fold-combined classifiers and existing ff_normalization.yaml;
+no training data or normalization recalculation is needed.
+"""
+
 import logging
 from pathlib import Path
-from typing import Union, Tuple, Literal
 
-import numpy as np
-import random
 from tap import Tap
 import torch as t
 
-from classes.DataHandling import create_training_dataset
-from classes.NeuralNetworks import DNN, GroupedDNN, FoldCombinedDNN, save_model
-from classes.Training import train_dnn
-from classes.Loading import load_config, load_variables, load_data
+from classes.Loading import load_config
+from classes.NeuralNetworks import (
+    LikelihoodRatioCalculation,
+    convert_models_to_onnx,
+    load_model,
+)
 
-SEED = 42
 logger = logging.getLogger(__name__)
 
 
-t.manual_seed(SEED)
-np.random.seed(SEED)
-random.seed(SEED)
-t.set_num_threads(8)
-
 class Args(Tap):
-    embedding: Literal["embedding", "no_embedding"] = "embedding"
-    var = "variables"
-
-    dnn_grouped: bool = True
-args = Args().parse_args()
-
-cfg_path = load_config('/work/tapp/TauFF/NF4FF/DNN_tt/configs/config_path.yaml')
-
-DATA_PATH = f'{cfg_path["datasets"]}/{args.embedding}/combined_data_updated.feather'
-MASKS_PATH = cfg_path["masks"]
-MASKS_PATH_INCL = [cfg_path["masks_incl_and"], cfg_path["masks_incl_or"], cfg_path["masks_incl_andor"]]
-MASKS_PATH_3SPLIT = cfg_path["masks_3split"]
-TRAINING_VAR_PATH = cfg_path["train_var"]
-NN_CONFIG_PATH = cfg_path["DNN"]
-CHECKPOINT_DIR = cfg_path["training_results"]
-
-
-@dataclass
-class ModelConfig:
-    hidden_nodes: Tuple[int, ...]
-    hidden_nodes_incl: Tuple[int, ...]
-    output_nodes: int
-
-    activation: str = "ReLU"
-    output_activation: str = "Sigmoid"
-
-    dropout: Union[float, Tuple[float, ...]] = 0.1
-
-@dataclass
-class TrainingConfig:
-    epochs: int = 50
-    lr: float = 1e-3
-    loss: str = "BCE"
-
-@dataclass
-class SchedulerConfig:
-    patience: int = 10
-    early_stopping_patience: int = 20
-    factor: float = 0.1
-    min_delta: float = 1.0e-4
-    min_lr: float = 1e-6
-
-@dataclass
-class Config:
-    model: ModelConfig
-    training: TrainingConfig
-    scheduler: SchedulerConfig
+    config_path: str = str(Path(__file__).resolve().parents[1] / 'configs' / 'config_path.yaml')
+    output_dir: str = ''  # Defaults to training_results/onnx.
 
 
 def main():
-    logger.info("Starting FF calculation conversion to ONNX...")
+    args = Args().parse_args()
+    cfg_path = load_config(args.config_path)
+    checkpoint_dir = Path(cfg_path['training_results'])
+    output_dir = Path(args.output_dir) if args.output_dir else checkpoint_dir / 'onnx'
+    normalization = load_config(cfg_path['ff_normalization'])
+    t.set_num_threads(8)
 
-    device = t.device("cuda" if t.cuda.is_available() else "cpu")
-    cfg = load_config(NN_CONFIG_PATH, Config)
+    groupings = (
+        ('tau_decaymode', 'tau_dm', ((0,), (1,), (10,), (11,))),
+        ('njets', 'njets', ((0,), (1,), (2, 1000))),
+    )
+
+    for group_label, normalization_key, groups in groupings:
+        for process in ('tau1', 'tau2'):
+            # YAML stores strings such as '0' and '2_1000'; the wrapper
+            # matches the tuple bounds used by the trained GroupedDNN.
+            constants = {
+                bounds: float(normalization[process][normalization_key][
+                    '_'.join(str(value) for value in bounds)
+                ])
+                for bounds in groups
+            }
+            model_path = checkpoint_dir / group_label / '2split' / process
+            logger.info('Loading trained model from %s', model_path)
+            model = load_model(model_path, device='cpu').eval()
+            ff_model = LikelihoodRatioCalculation(
+                model=model,
+                normalization_constants=constants,
+                clip=(0.0, 3.0),
+            ).eval()
+
+            onnx_path = output_dir / group_label / '2split' / process / 'model.onnx'
+            convert_models_to_onnx(
+                torch_model=ff_model,
+                onnx_model_path=onnx_path,
+            )
+            logger.info('Exported fake-factor model to %s', onnx_path)
+
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
+    main()
