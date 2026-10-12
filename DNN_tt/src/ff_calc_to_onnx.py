@@ -48,6 +48,8 @@ def main():
                 ])
                 for bounds in groups
             }
+
+            # ----- calculate likelihood ratio -----
             model_path = checkpoint_dir / group_label / '2split' / process
             logger.info('Loading trained model from %s', model_path)
             model = load_model(model_path, device='cpu').eval()
@@ -57,6 +59,7 @@ def main():
                 clip=(0.0, 3.0),
             ).eval()
 
+            # ----- export to ONNX -----
             onnx_path = output_dir / group_label / '2split' / process / 'model.onnx'
             convert_models_to_onnx(
                 torch_model=ff_model,

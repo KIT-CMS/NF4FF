@@ -793,11 +793,13 @@ def convert_models_to_onnx(
 
 
 class LikelihoodRatioCalculation(GroupedLayerABC):
+    """Calculate normalized raw fake factors, before fraction weighting."""
+
     def __init__(
         self,
         model: Union[t.nn.Module, DNN, GroupedDNN],
         normalization_constants: Union[Dict[Any, float], float] = 1.0,
-        clip: Tuple[float, float] = (1e-4, 1.0),
+        clip: Tuple[float, float] = (0.0, 3.0),
     ) -> None:
         super().__init__()
         self.wrapped_model = model
@@ -809,7 +811,8 @@ class LikelihoodRatioCalculation(GroupedLayerABC):
 
         self._is_grouped_norm = isinstance(normalization_constants, dict)
         self._norm_dict = normalization_constants if self._is_grouped_norm else {}
-        self._fallback_norm = float(self._norm_dict.get("fallback", 1.0)) if self._is_grouped_norm else float(normalization_constants)
+        # The dataframe calculation leaves events outside all groups at zero.
+        self._fallback_norm = float(self._norm_dict.get("fallback", 0.0)) if self._is_grouped_norm else float(normalization_constants) # fallback is 1.0
         self._group_specs: List[Tuple[List[Tuple[int, Tuple[Any, ...]]], float]] = []
 
         grouping_model = (
@@ -857,13 +860,16 @@ class LikelihoodRatioCalculation(GroupedLayerABC):
 
             if len(bounds) == 1:
                 target = float(bounds[0])
-                target_tensor = t.tensor(target, dtype=vals.dtype, device=vals.device)
-                mask = mask & t.isclose(vals, target_tensor, atol=1e-4, rtol=0.0)
+                # target_tensor = t.tensor(target, dtype=vals.dtype, device=vals.device)
+                # mask = mask & t.isclose(vals, target_tensor, atol=1e-4, rtol=0.0)
+                mask = mask & (vals == target)
             elif len(bounds) == 2:
                 low, high = float(bounds[0]), float(bounds[1])
-                mask = mask & (vals >= (low - 1e-4))
-                if high != float("inf"):
-                    mask = mask & (vals <= (high + 1e-4))
+                # mask = mask & (vals >= (low - 1e-4))
+                # if high != float("inf"):
+                #     mask = mask & (vals <= (high + 1e-4))
+
+                mask = mask & (vals >= low) & (vals <= high)
             else:
                 raise ValueError(f"Invalid bound: {bounds}")
 
@@ -876,7 +882,11 @@ class LikelihoodRatioCalculation(GroupedLayerABC):
         output = self.wrapped_model(X)
         if output.dim() == 0:
             output = output.unsqueeze(0)
-        fraction = output / (1 - output + 1e-8)
+        
+        # fraction = output / (1 - output + 1e-8)
+        # Match FF_calculation._compute_ratio, including its endpoint handling.
+        output = output.clamp(1e-6, 1.0 - 1e-6)
+        fraction = output / (1.0 - output)
 
         if not self._is_grouped_norm:
             return (fraction * self._fallback_norm).clamp(*self.clip)
@@ -894,8 +904,10 @@ class LikelihoodRatioCalculation(GroupedLayerABC):
         return (fraction * norm_vec).clamp(*self.clip)
 
     def _execute_group(self, X, payload) -> t.Tensor:
-        output = self.wrapped_model(X)
-        fraction = output / (1 - output + 1e-8)
+        #output = self.wrapped_model(X)
+        #fraction = output / (1 - output + 1e-8)
+        output = self.wrapped_model(X).clamp(1e-6, 1.0 - 1e-6)
+        fraction = output / (1.0 - output)
         return (fraction * float(payload)).clamp(*self.clip)
 
     @property

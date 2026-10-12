@@ -27,11 +27,11 @@ embedding:
 
 input_dir:
   no_embedding:
-    present: /ceph/tapp/TauFF/smhtt_ul/2018/20261006_FF_fastMTT_wostitch/preselection/2018/tt/
-    remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/ceph/tapp/TauFF/smhtt_ul/2018/20261006_FF_fastMTT_wostitch/preselection/2018/tt/
+    present: /ceph/tapp/TauFF/smhtt_ul/2018/20261006_FF/preselection/2018/tt/
+    remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/ceph/tapp/TauFF/smhtt_ul/2018/20261006_FF/preselection/2018/tt/
   embedding:
-    present: /ceph/tapp/TauFF/smhtt_ul/2018/20260817_FF_fastMTT/preselection/2018/tt/ #0602: normal config, 0609: changed "added" (current wo fastMTT), 0817: with fastMTT
-    remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/ceph/tapp/TauFF/smhtt_ul/2018/20260817_FF_fastMTT/preselection/2018/tt/
+    present: /ceph/tapp/TauFF/smhtt_ul/2018/20261006_FF/preselection/2018/tt/ #20260817_FF_fastMTT #0602: normal config, 0609: changed "added" (current wo fastMTT), 0817: with fastMTT
+    remote: /run/user/1003/gvfs/sftp:host=portal1.etp.kit.edu,user=tapp/ceph/tapp/TauFF/smhtt_ul/2018/20261006_FF/preselection/2018/tt/
 
 input_dir_classic_jvoss: /ceph/jvoss/FFmethod/smhtt_ul_v12/preselection/2018/tt/
 input_dir_classic_sgiappic: /ceph/sgiappic/CMS_FF/260602/preselection/2024/tt/
