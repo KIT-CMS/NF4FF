@@ -1,5 +1,6 @@
 import logging
 #from venv import logger
+from typing import Literal
 
 import torch as t
 import correctionlib as cr
@@ -423,7 +424,7 @@ def calculate_fake_factor_frac(
                     fraction_i = fractions[:, class_idx].cpu().numpy()
 
                 region[f"fraction_dnn_{class_idx + 1}{suffix}"] = fraction_i
-                region[raw_ff.removesuffix("_raw")] = fraction_i * region[raw_ff]
+                region[raw_ff.removesuffix("_raw")] = fraction_i * region[raw_ff] * 1/3
         else:
             if grouping_variable is None or grouping_definition is None:
                 raise ValueError("grouping_variable and grouping_definition are required for grouped fraction factors.")
@@ -1060,8 +1061,8 @@ def calculate_fake_factor_frac_3split(
 # -------------- classic fake factor determination -------------
 def calculate_fake_factor_classic(
         df,
+        correction: Literal['both', 'non_closure', 'drsr'] = "both"
         ):
-    
     
     _df1 = df.AR_tau1.copy()
     _df2 = df.AR_tau2.copy()
@@ -1088,25 +1089,52 @@ def calculate_fake_factor_classic(
     )
 
     # ----- corrected FF -----
-    _df1["tau1_corrected_classic_ff"] = _df1["tau1_classic_ff"] * evaluate_compound_ff_correction(
-        corr,
-        "QCD_compound_correction",
-        _df1,
-    ) * corr["QCD_DR_SR_correction"].evaluate(
-        _df1.pt_tt,
-        _df1.njets,
-        "nominal",
-    )
 
-    _df2["tau2_corrected_classic_ff"] = _df2["tau2_classic_ff"] * evaluate_compound_ff_correction(
-        corr,
-        "QCD_subleading_compound_correction",
-        _df2,
-    ) * corr["QCD_subleading_DR_SR_correction"].evaluate(
-        _df2.pt_tt,
-        _df2.njets,
-        "nominal",
-    )
+    if correction == "both":
+        _df1["tau1_corrected_classic_ff"] = _df1["tau1_classic_ff"] * evaluate_compound_ff_correction(
+            corr,
+            "QCD_compound_correction",
+            _df1,
+        ) * corr["QCD_DR_SR_correction"].evaluate(
+            _df1.pt_tt,
+            _df1.njets,
+            "nominal",
+        )        
+
+        _df2["tau2_corrected_classic_ff"] = _df2["tau2_classic_ff"] * evaluate_compound_ff_correction(
+            corr,
+            "QCD_subleading_compound_correction",
+            _df2,
+        ) * corr["QCD_subleading_DR_SR_correction"].evaluate(
+            _df2.pt_tt,
+            _df2.njets,
+            "nominal",
+        )
+    elif correction == "drsr":
+        _df1["tau1_corrected_classic_ff"] = _df1["tau1_classic_ff"] * corr["QCD_DR_SR_correction"].evaluate(
+                    _df1.pt_tt,
+                    _df1.njets,
+                    "nominal",
+                )
+
+        _df2["tau2_corrected_classic_ff"] = _df2["tau2_classic_ff"] * corr["QCD_subleading_DR_SR_correction"].evaluate(
+            _df2.pt_tt,
+            _df2.njets,
+            "nominal",
+        )
+    elif correction == 'non_closure':
+        _df1["tau1_corrected_classic_ff"] = _df1["tau1_classic_ff"] * evaluate_compound_ff_correction(
+            corr,
+            "QCD_compound_correction",
+            _df1,
+        )
+
+        _df2["tau2_corrected_classic_ff"] = _df2["tau2_classic_ff"] * evaluate_compound_ff_correction(
+            corr,
+            "QCD_subleading_compound_correction",
+            _df2,
+        )
+
     
 
     _df1['process_fraction_tau1'] = frac1.evaluate(

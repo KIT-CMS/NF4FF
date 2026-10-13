@@ -36,7 +36,7 @@ tt:
    jphi_1: "Leading Jet #varphi"
    jphi_2: "Trailing Jet #varphi"
    mjj: "Di-Jet mass m_{jj} / GeV"
-   dijetpt: "Di-Jet p_{T} / GeV"
+   dijetpt: "Di-Jet $p_{T}$ / GeV"
    pt_ttjj: "$p_{T}(\tau\tau + \text{di-Jet}) $(PF) / GeV"
    pt_ttjj_puppi: "$p_{T}(\tau\tau + \text{di-Jet}) $(Puppi) / GeV"
    njets: "Number of Jets"
@@ -116,3 +116,5 @@ tt:
    q_2: Trailing hadronic Tau charge
    event: Event number
    pzetamissvis: $p_{\zeta}^{miss} - 0.85 \cdot p_{\zeta}^{vis}$ (Puppi) / GeV
+   pt_dijet: 'Di-Jet $p_T$ / GeV'
+   deltaEta_ditaupair: '$\Delta\eta(\tau_1, \tau_2)$'

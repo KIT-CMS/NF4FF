@@ -31,11 +31,13 @@ class Args(Tap):
     var = "variables"
     
     taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
-    incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
+    incl: Literal['and', 'or', 'andor'] = 'or' # Combine tau1 and tau2 AR with and or or
     frac: Literal['global', 'pt_binned', 'DNN'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction
     dnn_grouped: bool = True
-    AR_comb: bool = False
+    AR_comb: bool = False                                                              
+    
     classic: bool = False
+    correction: Literal['both', 'non_closure', 'drsr'] = 'non_closure'
 
 args = Args().parse_args()
 
@@ -118,7 +120,7 @@ def main():
         #exit()
 
         logger.info('Calculating classic FF...')
-        calculate_fake_factor_classic(df_classic)
+        calculate_fake_factor_classic(df_classic, correction=args.correction)
 
         logger.info(f"Saving classic dataframe with fake-factor columns to feather file: {DATA_PATH}")
         df_classic.to_feather(DATA_PATH)

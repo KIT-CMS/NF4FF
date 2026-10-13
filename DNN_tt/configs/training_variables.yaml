@@ -19,40 +19,60 @@ variables:
   - pt_2
   - eta_1
   - eta_2
+  - eta_fastmtt
+  - phi_1
+  - phi_2
+  - phi_fastmtt
   - jpt_1
   - jpt_2
   - jeta_1
   - jeta_2
+  - jphi_1
+  - jphi_2
   - m_fastmtt
   - pt_fastmtt
   - met
+  - metphi
+  - mt_1
+  - mt_2
   - njets
   - mt_tot
   - m_vis
+  - mass_1
   - mass_2
   - pt_tt
   - pt_vis
   - mjj
   - pt_dijet
   - pt_ttjj
-  - deltaEta_jj
-  - deltaR_jj
-  - deltaR_ditaupair
-  - deltaR_1j1
-  - deltaR_1j2
-  - deltaR_2j1
-  - deltaR_2j2
-  - deltaR_12j1
-  - deltaR_12j2
   - deltaEta_1j1
   - deltaEta_1j2
   - deltaEta_2j1
   - deltaEta_2j2
   - deltaEta_12j1
   - deltaEta_12j2
+  - deltaEta_jj
+  - deltaEta_ditaupair
+  - deltaPhi_12j1
+  - deltaPhi_12j2
+  - deltaPhi_12jj
+  - deltaPhi_1j1
+  - deltaPhi_1j2
+  - deltaPhi_2j1
+  - deltaPhi_2j2
+  - deltaPhi_ditaupair
+  - deltaPhi_jj
+  - deltaR_1j1
+  - deltaR_1j2
+  - deltaR_2j1
+  - deltaR_2j2
+  - deltaR_12j1
+  - deltaR_12j2
+  - deltaR_jj
+  - deltaR_ditaupair
   - tau_decaymode_1
   - tau_decaymode_2
-  #- pzetamissvis
+  - pzetamissvis
 
 
 variables_for_multiclass:
@@ -60,36 +80,57 @@ variables_for_multiclass:
   - pt_2
   - eta_1
   - eta_2
+  - eta_fastmtt
+  - phi_1
+  - phi_2
+  - phi_fastmtt
   - jpt_1
   - jpt_2
   - jeta_1
   - jeta_2
+  - jphi_1
+  - jphi_2
   - m_fastmtt
   - pt_fastmtt
   - met
+  - metphi
+  - mt_1
+  - mt_2
   - njets
   - mt_tot
   - m_vis
+  - mass_1
   - mass_2
   - pt_tt
   - pt_vis
   - mjj
   - pt_dijet
   - pt_ttjj
-  - deltaEta_jj
-  - deltaR_jj
-  - deltaR_ditaupair
-  - deltaR_1j1
-  - deltaR_1j2
-  - deltaR_2j1
-  - deltaR_2j2
-  - deltaR_12j1
-  - deltaR_12j2
   - deltaEta_1j1
   - deltaEta_1j2
   - deltaEta_2j1
   - deltaEta_2j2
   - deltaEta_12j1
   - deltaEta_12j2
+  - deltaEta_jj
+  - deltaEta_ditaupair
+  - deltaPhi_12j1
+  - deltaPhi_12j2
+  - deltaPhi_12jj
+  - deltaPhi_1j1
+  - deltaPhi_1j2
+  - deltaPhi_2j1
+  - deltaPhi_2j2
+  - deltaPhi_ditaupair
+  - deltaPhi_jj
+  - deltaR_1j1
+  - deltaR_1j2
+  - deltaR_2j1
+  - deltaR_2j2
+  - deltaR_12j1
+  - deltaR_12j2
+  - deltaR_jj
+  - deltaR_ditaupair
   - tau_decaymode_1
   - tau_decaymode_2
+  - pzetamissvis

@@ -35,20 +35,20 @@ class Args(Tap):
     var = "variables"
 
     taus: Literal['split', 'incl', '3split'] = 'split' # split: calc 2 FF for tau1 and tau2 | incl: calc only 1 FF
-    incl: Literal['and', 'or', 'andor'] = 'andor' # Combine tau1 and tau2 AR with and or or
+    incl: Literal['and', 'or', 'andor'] = 'or' # Combine tau1 and tau2 AR with and or or
     dnn_grouped: bool = True
 
     AR_comb: bool = False
     closure_MC: bool = False
     classic_jvsg: bool = False
 
-    mode: Literal['dnn', 'nf', 'classic'] = 'classic' # nf and classic only with taus = split
+    mode: Literal['dnn', 'nf', 'classic'] = 'dnn' # nf and classic only with taus = split
     vars: Literal['small', 'large'] = 'large' # small: use small set of variables | large: use large set of variables
-    corrected: bool = True # classic FF with or without non-closure/DRSR correction
+    corrected: bool = False # classic FF with or without non-closure/DRSR correction
 
     wo_train: bool = False
 
-    closure_DR: bool = False
+    closure_DR: bool = True
     FF_dist: bool = False
     frac: Literal['global', 'pt_binned', 'DNN'] = 'global' # global: use global fraction | pt_binned: use pt-binned fraction | DNN: use DNN-based fraction
     closure_AR: bool = True
@@ -100,6 +100,10 @@ if args.mode=='dnn':
                         (PLOTS_DIR / 'tau_3split' / subdir / grouping / frac_dir).mkdir(parents=True, exist_ok=True)
                         (PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / grouping / frac_dir / plotvar / regdir).mkdir(parents=True, exist_ok=True)
                     shutil.rmtree(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / grouping / frac_dir / plotvar / 'tau1&2')
+            shutil.rmtree(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / grouping / 'DNN_fraction' / 'pt1_pt2')
+            shutil.rmtree(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / grouping / 'DNN_fraction' / 'mvis_pt2')
+            shutil.rmtree(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / grouping / 'DNN_fraction' / 'pt1_pt2')
+            shutil.rmtree(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / grouping / 'DNN_fraction' / 'mvis_pt2')
             shutil.rmtree(PLOTS_DIR / 'tau_split' / 'Fraction_factors' / grouping / 'global_fraction')
             shutil.rmtree(PLOTS_DIR / 'tau_3split' / 'Fraction_factors' / grouping / 'global_fraction')
 else:
@@ -111,6 +115,7 @@ else:
             shutil.rmtree(PLOTS_DIR / 'tau_split' / subdir / grouping / 'pt_binned_fraction')
 
 PLOT_GROUPINGS = ('njets', 'tau_decaymode')
+
 
 matplotlib.rcParams.update({
     'font.size': 16,
@@ -215,7 +220,7 @@ def main():
 
     if args.closure_MC:
         logger.info('Plotting control plots without fake factors - MC+embedding')
-        '''
+        
         df = load_data(DATA_PATH, MASKS_PATH)
 
         for var in variables:
@@ -237,7 +242,7 @@ def main():
                 fig.savefig(mc_dir / f'plot_closure_{var}.pdf', dpi=150, bbox_inches='tight')
                 plt.close(fig)
 
-        '''
+        
         logger.info('Plotting control plots without fake factors - MC only')
         df = load_data(DATA_PATH_NOEMBED, MASKS_MC)
         

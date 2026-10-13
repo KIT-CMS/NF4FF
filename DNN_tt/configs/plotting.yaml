@@ -9,6 +9,7 @@ bins_by_variable:
     m_fastmtt: [0, 220, 31]
     eta_1: [-3, 3, 31]
     eta_2: [-3, 3, 31]
+    eta_fastmtt: [-5, 5, 31]
     met: [0, 150, 31]
     mt_1: [0, 150, 31]
     mt_2: [0, 150, 31]
@@ -37,6 +38,7 @@ bins_by_variable:
     deltaEta_2j2: [-6, 6, 31]
     deltaEta_12j1: [-6, 6, 31]
     deltaEta_12j2: [-6, 6, 31]
+    deltaEta_ditaupair: [-6, 6, 31]
     nbtag: [-0.5, 4.5, 6]
     iso_1: [0.6, 1.2, 31]
     iso_2: [0.6, 1.2, 31]
@@ -44,7 +46,7 @@ bins_by_variable:
     tau_decaymode_2: [-0.5, 12.5, 14]
     mass_1: [0, 2.0, 31]
     mass_2: [0, 2.0, 31]
-    #pzetamissvis: [-150, 150, 31]
+    pzetamissvis: [-150, 150, 31]
 
 variables_set_small:
     - pt_1
@@ -60,31 +62,32 @@ variables_set_small:
 variables_set_large:
     - pt_1
     - pt_2
+    - m_vis
+    - deltaR_ditaupair
+    - pt_vis
+    - pt_tt
+    - m_fastmtt
     - eta_1
     - eta_2
+    - eta_fastmtt
+    - met
+    - mt_1
+    - mt_2
+
     - jpt_1
     - jpt_2
     - jeta_1
     - jeta_2
-    - met
+    - pt_fastmtt
     - njets
     - mt_tot
-    - m_vis
-    - pt_tt
-    - pt_vis
     - mjj
-    #- pt_dijet
+    - pt_dijet
     - pt_ttjj
     - deltaEta_jj
     - deltaR_jj
-    - deltaR_ditaupair
     - deltaR_1j1
     - deltaR_1j2
-    - nbtag
-    - mt_1
-    - mt_2
-    - iso_1
-    - iso_2
     - deltaR_2j1
     - deltaR_2j2
     - deltaR_12j1
@@ -95,8 +98,12 @@ variables_set_large:
     - deltaEta_2j2
     - deltaEta_12j1
     - deltaEta_12j2
+    - deltaEta_ditaupair
+    - nbtag
+    - iso_1
+    - iso_2
     - tau_decaymode_1
     - tau_decaymode_2
     - mass_1
     - mass_2
-    #- pzetamissvis
+    - pzetamissvis
